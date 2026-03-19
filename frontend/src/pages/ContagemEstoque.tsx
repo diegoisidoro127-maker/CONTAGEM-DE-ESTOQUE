@@ -41,6 +41,14 @@ function formatDateKey(dateKey: string) {
   return `${d}/${m}/${y}`
 }
 
+function pickFirstString(row: Record<string, any>, keys: string[]) {
+  for (const key of keys) {
+    const v = row[key]
+    if (typeof v === 'string' && v.trim() !== '') return v
+  }
+  return ''
+}
+
 export default function ContagemEstoque() {
   const [conferentes, setConferentes] = useState<Conferente[]>([])
   const [conferentesLoading, setConferentesLoading] = useState(true)
@@ -94,41 +102,57 @@ export default function ContagemEstoque() {
 
     const handle = setTimeout(async () => {
       setProdutoLoading(true)
-      // Se a tabela ainda não tiver todos os campos extras,
-      // buscamos primeiro o mínimo para permitir a contagem funcionar.
-      const baseSelect = 'id,codigo_interno,descricao,unidade_medida'
+      // Busca em múltiplas tabelas para suportar a base importada ("Todos os Produtos")
+      const tabelas = ['produtos', 'Todos os Produtos', 'todos_os_produtos', 'todos_produtos']
+      const colunasBusca = ['codigo_interno', 'codigo', 'CÓDIGO', 'cod_produto', 'ean', 'dun']
 
-      const candidatos: string[] = ['codigo_interno', 'codigo', 'ean', 'dun']
       let found: Produto | null = null
-      let lastError: any = null
+      let lastMeaningfulError: any = null
 
-      for (const col of candidatos) {
-        // Se a coluna não existir, o PostgREST retorna erro; ignoramos e tentamos a próxima.
-        const resp = await supabase.from('produtos').select(baseSelect).eq(col, codigo).maybeSingle()
-        if (resp.error && resp.error.code !== '42703') {
-          lastError = resp.error
+      for (const tabela of tabelas) {
+        for (const coluna of colunasBusca) {
+          const resp = await supabase.from(tabela).select('*').eq(coluna, codigo).limit(1).maybeSingle()
+
+          // Ignora "coluna não existe" e "tabela não existe", tenta próxima opção.
+          if (resp.error) {
+            const code = String(resp.error.code ?? '')
+            if (code !== '42703' && code !== '42P01') {
+              lastMeaningfulError = resp.error
+            }
+            continue
+          }
+
+          if (resp.data) {
+            const row = resp.data as Record<string, any>
+            const descricao = pickFirstString(row, ['descricao', 'DESCRIÇÃO', 'descrição', 'desc_produto'])
+            const codigoInterno =
+              pickFirstString(row, ['codigo_interno', 'codigo', 'CÓDIGO', 'cod_produto']) || codigo
+            const unidade = pickFirstString(row, ['unidade_medida', 'UNIDADE', 'unidade', 'und']) || null
+
+            found = {
+              id: String(row.id ?? codigoInterno),
+              codigo_interno: codigoInterno,
+              descricao: descricao || 'Produto sem descrição',
+              unidade_medida: unidade,
+              data_fabricacao: row.data_fabricacao ?? null,
+              data_validade: row.data_validade ?? null,
+              ean: row.ean ?? null,
+              dun: row.dun ?? null,
+            }
+            break
+          }
         }
-        if (resp.data) {
-          found = resp.data as Produto
-          break
-        }
+        if (found) break
       }
 
-      if (lastError && !found) {
-        // Mantém mensagem útil em vez de genérica
+      if (!found && lastMeaningfulError) {
         setProduto(null)
-        setProdutoError(`Erro ao buscar o produto: ${lastError.message ?? 'verifique o cadastro'}`)
+        setProdutoError(`Erro ao buscar o produto: ${lastMeaningfulError.message ?? 'verifique o cadastro'}`)
       } else if (!found) {
         setProduto(null)
         setProdutoError('Código não encontrado no cadastro de produtos.')
       } else {
-        setProduto({
-          ...found,
-          data_fabricacao: found.data_fabricacao ?? null,
-          data_validade: found.data_validade ?? null,
-          ean: found.ean ?? null,
-          dun: found.dun ?? null,
-        })
+        setProduto(found)
       }
 
       setProdutoLoading(false)
