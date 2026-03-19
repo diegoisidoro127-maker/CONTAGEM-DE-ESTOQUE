@@ -83,6 +83,7 @@ export default function ContagemEstoque() {
   const [clockBaseMs, setClockBaseMs] = useState(() => Date.now())
   const [clockRealStartMs, setClockRealStartMs] = useState(() => Date.now())
   const [clockTick, setClockTick] = useState(0)
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 768)
   const [conferenteId, setConferenteId] = useState<string>('')
 
   const [codigoInterno, setCodigoInterno] = useState('')
@@ -109,6 +110,12 @@ export default function ContagemEstoque() {
   useEffect(() => {
     const id = setInterval(() => setClockTick((v) => v + 1), 1000)
     return () => clearInterval(id)
+  }, [])
+
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth <= 768)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
   }, [])
 
   const dataHoraContagem = useMemo(() => {
@@ -476,11 +483,11 @@ export default function ContagemEstoque() {
   }
 
   return (
-    <div style={{ padding: 16, maxWidth: 1200, margin: '0 auto' }}>
+    <div style={{ padding: isMobile ? 10 : 16, maxWidth: 1200, margin: '0 auto' }}>
       <h2>Contagem de Estoque</h2>
 
       <form onSubmit={handleSubmit} style={{ display: 'grid', gap: 12, marginTop: 12 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(12, 1fr)', gap: 12 }}>
           <label style={labelStyle}>
             Data e hora do registro
             <input
@@ -497,7 +504,7 @@ export default function ContagemEstoque() {
             />
           </label>
 
-          <label style={{ ...labelStyle, gridColumn: 'span 6' }}>
+          <label style={{ ...labelStyle, gridColumn: isMobile ? 'auto' : 'span 6' }}>
             Conferente
             <select
               value={conferenteId}
@@ -514,7 +521,7 @@ export default function ContagemEstoque() {
             </select>
           </label>
 
-          <div style={{ gridColumn: 'span 6', display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div style={{ gridColumn: isMobile ? 'auto' : 'span 6', display: 'flex', flexDirection: 'column', gap: 6 }}>
             <button
               type="button"
               onClick={() => setShowAddConferente((v) => !v)}
@@ -525,7 +532,14 @@ export default function ContagemEstoque() {
             </button>
 
             {showAddConferente ? (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, alignItems: 'end' }}>
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: isMobile ? '1fr' : '1fr auto',
+                  gap: 8,
+                  alignItems: 'end',
+                }}
+              >
                 <div style={labelStyle}>
                   Nome do conferente
                   <input
@@ -605,8 +619,8 @@ export default function ContagemEstoque() {
           </select>
         </label>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 12 }}>
-          <div style={{ gridColumn: 'span 6' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(12, 1fr)', gap: 12 }}>
+          <div style={{ gridColumn: isMobile ? 'auto' : 'span 6' }}>
             <label style={labelStyle}>
               Descrição
               <select
@@ -642,7 +656,7 @@ export default function ContagemEstoque() {
             ) : null}
           </div>
 
-          <div style={{ gridColumn: 'span 3' }}>
+          <div style={{ gridColumn: isMobile ? 'auto' : 'span 3' }}>
             <label style={labelStyle}>
               Data de fabricação
               <input
@@ -654,7 +668,7 @@ export default function ContagemEstoque() {
             </label>
           </div>
 
-          <div style={{ gridColumn: 'span 3' }}>
+          <div style={{ gridColumn: isMobile ? 'auto' : 'span 3' }}>
             <label style={labelStyle}>
               Data de vencimento
               <input
@@ -667,15 +681,15 @@ export default function ContagemEstoque() {
           </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 12 }}>
-          <label style={{ ...labelStyle, gridColumn: 'span 6' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(12, 1fr)', gap: 12 }}>
+          <label style={{ ...labelStyle, gridColumn: isMobile ? 'auto' : 'span 6' }}>
             Lote
             <input value={lote} onChange={(e) => setLote(e.target.value)} style={inputStyle} />
           </label>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 12 }}>
-          <label style={{ ...labelStyle, gridColumn: 'span 4' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(12, 1fr)', gap: 12 }}>
+          <label style={{ ...labelStyle, gridColumn: isMobile ? 'auto' : 'span 4' }}>
             UP
             <input
               type="number"
@@ -687,7 +701,7 @@ export default function ContagemEstoque() {
             />
           </label>
 
-          <label style={{ ...labelStyle, gridColumn: 'span 8' }}>
+          <label style={{ ...labelStyle, gridColumn: isMobile ? 'auto' : 'span 8' }}>
             Observação
             <input value={observacao} onChange={(e) => setObservacao(e.target.value)} style={inputStyle} />
           </label>
@@ -734,6 +748,8 @@ const inputStyle: React.CSSProperties = {
   padding: '10px 10px',
   border: '1px solid #ccc',
   borderRadius: 8,
+  width: '100%',
+  boxSizing: 'border-box',
 }
 
 const buttonStyle: React.CSSProperties = {
