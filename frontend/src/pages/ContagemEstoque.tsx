@@ -13,10 +13,10 @@ type Produto = {
   codigo_interno: string
   descricao: string
   unidade_medida: string | null
-  data_fabricacao: string | null
-  data_validade: string | null
-  ean: string | null
-  dun: string | null
+  data_fabricacao?: string | null
+  data_validade?: string | null
+  ean?: string | null
+  dun?: string | null
 }
 
 type ContagemPreviewRow = {
@@ -25,6 +25,13 @@ type ContagemPreviewRow = {
   codigo_interno: string
   descricao: string
   quantidade_up: string | number
+}
+
+function toLocalDateKey(isoLike: string) {
+  const dt = new Date(isoLike)
+  if (Number.isNaN(dt.getTime())) return 'invalid-date'
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`
 }
 
 function formatDateKey(dateKey: string) {
@@ -37,6 +44,9 @@ function formatDateKey(dateKey: string) {
 export default function ContagemEstoque() {
   const [conferentes, setConferentes] = useState<Conferente[]>([])
   const [conferentesLoading, setConferentesLoading] = useState(true)
+  const [showAddConferente, setShowAddConferente] = useState(false)
+  const [newConferenteNome, setNewConferenteNome] = useState('')
+  const [addingConferente, setAddingConferente] = useState(false)
 
   const [dataHoraContagem, setDataHoraContagem] = useState(() => toDatetimeLocalValue(new Date()))
   const [conferenteId, setConferenteId] = useState<string>('')
@@ -84,40 +94,39 @@ export default function ContagemEstoque() {
 
     const handle = setTimeout(async () => {
       setProdutoLoading(true)
-      // Aceita qualquer um: `codigo_interno`, `ean` ou `dun`.
-      const baseSelect =
-        'id,codigo_interno,descricao,unidade_medida,data_fabricacao,data_validade,ean,dun'
+      // Se a tabela ainda não tiver todos os campos extras,
+      // buscamos primeiro o mínimo para permitir a contagem funcionar.
+      const baseSelect = 'id,codigo_interno,descricao,unidade_medida'
 
-      // 1) Tenta por código interno
-      const r1 = await supabase
-        .from('produtos')
-        .select(baseSelect)
-        .eq('codigo_interno', codigo)
-        .maybeSingle()
+      const candidatos: string[] = ['codigo_interno', 'codigo', 'ean', 'dun']
+      let found: Produto | null = null
+      let lastError: any = null
 
-      // 2) Se não achar, tenta por EAN
-      const r2 =
-        !r1.data
-          ? await supabase.from('produtos').select(baseSelect).eq('ean', codigo).maybeSingle()
-          : { data: null as any, error: null as any }
+      for (const col of candidatos) {
+        // Se a coluna não existir, o PostgREST retorna erro; ignoramos e tentamos a próxima.
+        const resp = await supabase.from('produtos').select(baseSelect).eq(col, codigo).maybeSingle()
+        lastError = resp.error
+        if (resp.data) {
+          found = resp.data as Produto
+          break
+        }
+      }
 
-      // 3) Se não achar, tenta por DUN
-      const r3 =
-        !r1.data && !r2.data
-          ? await supabase.from('produtos').select(baseSelect).eq('dun', codigo).maybeSingle()
-          : { data: null as any, error: null as any }
-
-      const erro = r1.error ?? r2.error ?? r3.error
-      const data = (r1.data ?? r2.data ?? r3.data) as Produto | null
-
-      if (erro) {
+      if (lastError && !found) {
+        // Mantém mensagem útil em vez de genérica
         setProduto(null)
-        setProdutoError('Erro ao buscar o produto.')
-      } else if (!data) {
+        setProdutoError(`Erro ao buscar o produto: ${lastError.message ?? 'verifique o cadastro'}`)
+      } else if (!found) {
         setProduto(null)
         setProdutoError('Código não encontrado no cadastro de produtos.')
       } else {
-        setProduto(data)
+        setProduto({
+          ...found,
+          data_fabricacao: found.data_fabricacao ?? null,
+          data_validade: found.data_validade ?? null,
+          ean: found.ean ?? null,
+          dun: found.dun ?? null,
+        })
       }
 
       setProdutoLoading(false)
@@ -189,7 +198,7 @@ export default function ContagemEstoque() {
     setPreviewLoading(true)
     const { data, error } = await supabase
       .from('contagens_estoque')
-      .select('data_contagem,codigo_interno,descricao,quantidade_up')
+      .select('data_hora_contagem,codigo_interno,descricao,quantidade_up')
       .order('data_hora_contagem', { ascending: false })
       .limit(800)
 
@@ -197,7 +206,7 @@ export default function ContagemEstoque() {
       setSaveError(`Erro ao carregar prévia: ${error.message}`)
     } else {
       const mapped = (data ?? []).map((r: any) => ({
-        data_key: String(r.data_contagem ?? 'invalid-date'),
+        data_key: toLocalDateKey(String(r.data_hora_contagem ?? '')),
         codigo_interno: String(r.codigo_interno ?? ''),
         descricao: String(r.descricao ?? ''),
         quantidade_up: r.quantidade_up,
@@ -315,6 +324,63 @@ export default function ContagemEstoque() {
               ))}
             </select>
           </label>
+
+          <div style={{ gridColumn: 'span 6', display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <button
+              type="button"
+              onClick={() => setShowAddConferente((v) => !v)}
+              disabled={addingConferente}
+              style={buttonStyle}
+            >
+              {showAddConferente ? 'Cancelar' : 'Cadastrar conferente'}
+            </button>
+
+            {showAddConferente ? (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, alignItems: 'end' }}>
+                <div style={labelStyle}>
+                  Nome do conferente
+                  <input
+                    value={newConferenteNome}
+                    onChange={(e) => setNewConferenteNome(e.target.value)}
+                    style={inputStyle}
+                    placeholder="Ex: João Silva"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const nome = newConferenteNome.trim()
+                    if (!nome) return
+                    setAddingConferente(true)
+                    setSaveError('')
+
+                    const { data, error } = await supabase
+                      .from('conferentes')
+                      .insert({ nome })
+                      .select('id,nome')
+                      .maybeSingle()
+
+                    if (error) {
+                      setSaveError(`Erro ao cadastrar conferente: ${error.message}`)
+                    } else if (data?.id) {
+                      setConferenteId(data.id)
+                      setNewConferenteNome('')
+                      setShowAddConferente(false)
+                      // recarrega lista para consistência visual
+                      const { data: list } = await supabase.from('conferentes').select('id,nome').order('nome')
+                      setConferentes(list ?? [])
+                    }
+
+                    setAddingConferente(false)
+                  }}
+                  disabled={addingConferente}
+                  style={buttonStyle}
+                >
+                  {addingConferente ? 'Salvando...' : 'Salvar'}
+                </button>
+              </div>
+            ) : null}
+          </div>
         </div>
 
         <label style={labelStyle}>
@@ -351,16 +417,14 @@ export default function ContagemEstoque() {
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 12 }}>
           <label style={{ ...labelStyle, gridColumn: 'span 4' }}>
-            Quantidade (up)
+            UP
             <input
               type="number"
               step="0.001"
               value={quantidadeUp}
               onChange={(e) => setQuantidadeUp(e.target.value)}
               style={inputStyle}
-              disabled={!produto}
               placeholder="0"
-              required={Boolean(produto)}
             />
           </label>
 
