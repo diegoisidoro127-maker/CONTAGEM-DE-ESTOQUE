@@ -205,6 +205,12 @@ export default function ContagemEstoque() {
     return map
   }, [productOptions])
 
+  const productByDescricao = useMemo(() => {
+    const map = new Map<string, ProductOption>()
+    for (const p of productOptions) map.set(p.descricao.trim().toLowerCase(), p)
+    return map
+  }, [productOptions])
+
   function applyProductByCode(codigo: string) {
     const p = productByCode.get(codigo)
     if (!p) return false
@@ -628,59 +634,68 @@ export default function ContagemEstoque() {
 
         <label style={labelStyle}>
           Código do produto
-          <select
+          <input
             value={codigoInterno}
             onChange={(e) => {
               const v = e.target.value
               setCodigoInterno(v)
-              const matched = applyProductByCode(v)
+              const matched = applyProductByCode(v.trim())
               if (!matched && produto && produto.codigo_interno !== v) {
                 setProduto(null)
-                setDescricaoInput('')
               }
             }}
+            onBlur={() => {
+              // ao sair do campo, tenta casar com um código da lista
+              const code = codigoInterno.trim()
+              const matched = applyProductByCode(code)
+              if (!matched && !descricaoInput.trim()) {
+                setProduto(null)
+              }
+            }}
+            list="codigo-produto-sugestoes"
             style={inputStyle}
             disabled={productOptionsLoading}
-          >
-            <option value="">
-              {productOptionsLoading ? 'Carregando códigos...' : 'Selecione o código...'}
-            </option>
+            placeholder={productOptionsLoading ? 'Carregando códigos...' : 'Digite o código...'}
+          />
+          <datalist id="codigo-produto-sugestoes">
             {productOptions.map((p) => (
-              <option key={p.codigo} value={p.codigo}>
-                {p.codigo}
-              </option>
+              <option key={p.codigo} value={p.codigo} />
             ))}
-          </select>
+          </datalist>
         </label>
 
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(12, 1fr)', gap: 12 }}>
           <div style={{ gridColumn: isMobile ? 'auto' : 'span 4' }}>
             <label style={labelStyle}>
               Descrição
-              <select
-                value={produto?.codigo_interno || ''}
+              <input
+                value={descricaoInput}
                 onChange={(e) => {
-                  const code = e.target.value
-                  setCodigoInterno(code)
-                  if (code) {
-                    applyProductByCode(code)
-                  } else {
-                    setDescricaoInput('')
-                    setProduto(null)
+                  const v = e.target.value
+                  setDescricaoInput(v)
+                  const match = productByDescricao.get(v.trim().toLowerCase())
+                  if (match) {
+                    setCodigoInterno(match.codigo)
+                    applyProductByCode(match.codigo)
                   }
                 }}
+                onBlur={() => {
+                  const match = productByDescricao.get(descricaoInput.trim().toLowerCase())
+                  if (match) {
+                    setCodigoInterno(match.codigo)
+                    applyProductByCode(match.codigo)
+                  }
+                }}
+                list="descricao-produto-sugestoes"
                 style={inputStyle}
                 disabled={productOptionsLoading}
-              >
-                <option value="">
-                  {productOptionsLoading ? 'Carregando descrições...' : 'Selecione a descrição...'}
-                </option>
+                placeholder={productOptionsLoading ? 'Carregando descrições...' : 'Digite a descrição...'}
+              />
+              <datalist id="descricao-produto-sugestoes">
                 {productOptions.map((p) => (
-                  <option key={`desc-${p.codigo}`} value={p.codigo}>
-                    {p.descricao}
-                  </option>
+                  <option key={`desc-${p.codigo}`} value={p.descricao} />
                 ))}
-              </select>
+              </datalist>
             </label>
             {produtoError ? (
               <div style={{ color: '#b00020', fontSize: 13, marginTop: 6 }}>{produtoError}</div>
