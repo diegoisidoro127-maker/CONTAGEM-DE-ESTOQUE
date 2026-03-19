@@ -121,12 +121,9 @@ export default function ContagemEstoque() {
       let lastLoadError: string | null = null
 
       for (const tabela of tabelas) {
-        // prioridade: carregar exatamente os campos da base "Todos os Produtos"
-        // (codigo_interno + descricao)
-        const { data, error } = await supabase
-          .from(tabela)
-          .select('id,codigo_interno,descricao,unidade,unidade_medida,ean,dun,data_fabricacao,data_validade')
-          .limit(10000)
+        // Carrega a linha inteira para não quebrar caso a tabela não tenha "id"
+        // (na base "Todos os Produtos" normalmente temos row_index/codigo_interno/descricao).
+        const { data, error } = await supabase.from(tabela).select('*').limit(10000)
 
         if (error) {
           const code = String(error.code ?? '')
@@ -143,7 +140,7 @@ export default function ContagemEstoque() {
               const descricao = pickFirstString(row, ['descricao', 'DESCRIÇÃO', 'descrição', 'desc_produto'])
               if (!codigo) return null
               return {
-                id: String(row.id ?? codigo),
+                id: String(row.id ?? row.row_index ?? row.dataset_id ?? codigo),
                 codigo,
                 descricao: descricao || 'Produto sem descrição',
                 unidade_medida:
