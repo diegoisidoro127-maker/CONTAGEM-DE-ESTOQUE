@@ -97,7 +97,8 @@ export default function ContagemEstoque() {
   const [lote, setLote] = useState('')
   const [dataFabricacao, setDataFabricacao] = useState('')
   const [dataVencimento, setDataVencimento] = useState('')
-  const [quantidadeUp, setQuantidadeUp] = useState<string>('') // string p/ permitir vazio no input
+  const [quantidadeContada, setQuantidadeContada] = useState<string>('') // quantidade principal da contagem
+  const [quantidadeUp, setQuantidadeUp] = useState<string>('') // campo UP adicional
   const [observacao, setObservacao] = useState('')
 
   const [saving, setSaving] = useState(false)
@@ -330,7 +331,7 @@ export default function ContagemEstoque() {
       return
     }
 
-    const qtd = quantidadeUp.trim() === '' ? 0 : Number(quantidadeUp.replace(',', '.'))
+    const qtd = quantidadeContada.trim() === '' ? 0 : Number(quantidadeContada.replace(',', '.'))
     if (!Number.isFinite(qtd) || qtd < 0) {
       setSaveError('Quantidade contada inválida.')
       return
@@ -354,12 +355,14 @@ export default function ContagemEstoque() {
 
     if (dataFabricacao) payload.data_fabricacao = dataFabricacao
     if (dataVencimento) payload.data_validade = dataVencimento
+    if (quantidadeUp.trim() !== '') payload.up = Number(quantidadeUp.replace(',', '.'))
 
     let { error } = await supabase.from('contagens_estoque').insert(payload)
     // Se o banco ainda não tiver as colunas, tenta salvar sem elas.
     if (error && String(error.code ?? '') === '42703') {
       delete payload.data_fabricacao
       delete payload.data_validade
+      delete payload.up
       const retry = await supabase.from('contagens_estoque').insert(payload)
       error = retry.error
     }
@@ -375,6 +378,7 @@ export default function ContagemEstoque() {
       setDataFabricacao('')
       setDataVencimento('')
       setObservacao('')
+      setQuantidadeContada('')
       setQuantidadeUp('') // opcional: volta pra vazio; ao enviar, vira 0
       setCodigoInterno('')
       setDescricaoInput('')
@@ -620,7 +624,7 @@ export default function ContagemEstoque() {
         </label>
 
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(12, 1fr)', gap: 12 }}>
-          <div style={{ gridColumn: isMobile ? 'auto' : 'span 6' }}>
+          <div style={{ gridColumn: isMobile ? 'auto' : 'span 4' }}>
             <label style={labelStyle}>
               Descrição
               <select
@@ -656,6 +660,18 @@ export default function ContagemEstoque() {
             ) : null}
           </div>
 
+          <label style={{ ...labelStyle, gridColumn: isMobile ? 'auto' : 'span 2' }}>
+            Quantidade contada
+            <input
+              type="number"
+              step="0.001"
+              value={quantidadeContada}
+              onChange={(e) => setQuantidadeContada(e.target.value)}
+              style={inputStyle}
+              placeholder="Digite a quantidade"
+            />
+          </label>
+
           <div style={{ gridColumn: isMobile ? 'auto' : 'span 3' }}>
             <label style={labelStyle}>
               Data de fabricação
@@ -690,7 +706,7 @@ export default function ContagemEstoque() {
               value={quantidadeUp}
               onChange={(e) => setQuantidadeUp(e.target.value)}
               style={inputStyle}
-              placeholder="Digite a quantidade"
+              placeholder="Digite o UP"
             />
           </label>
 
