@@ -60,6 +60,13 @@ function pickFirstString(row: Record<string, any>, keys: string[]) {
   return ''
 }
 
+function toDateInputValue(v?: string | null) {
+  if (!v) return ''
+  const str = String(v)
+  const m = str.match(/^\d{4}-\d{2}-\d{2}/)
+  return m ? m[0] : ''
+}
+
 export default function ContagemEstoque() {
   const [conferentes, setConferentes] = useState<Conferente[]>([])
   const [conferentesLoading, setConferentesLoading] = useState(true)
@@ -79,6 +86,8 @@ export default function ContagemEstoque() {
   const [productOptionsLoading, setProductOptionsLoading] = useState(false)
 
   const [lote, setLote] = useState('')
+  const [dataFabricacao, setDataFabricacao] = useState('')
+  const [dataVencimento, setDataVencimento] = useState('')
   const [quantidadeUp, setQuantidadeUp] = useState<string>('') // string p/ permitir vazio no input
   const [observacao, setObservacao] = useState('')
 
@@ -181,6 +190,8 @@ export default function ContagemEstoque() {
       dun: p.dun ?? null,
     })
     setDescricaoInput(p.descricao)
+    setDataFabricacao(toDateInputValue(p.data_fabricacao))
+    setDataVencimento(toDateInputValue(p.data_validade))
     setProdutoError('')
     return true
   }
@@ -227,7 +238,8 @@ export default function ContagemEstoque() {
           // Ignora "coluna não existe" e "tabela não existe", tenta próxima opção.
           if (resp.error) {
             const code = String(resp.error.code ?? '')
-            if (code !== '42703' && code !== '42P01') {
+            const msg = String(resp.error.message ?? '').toLowerCase()
+            if (code !== '42703' && code !== '42P01' && code !== 'PGRST205' && !msg.includes('schema cache')) {
               lastMeaningfulError = resp.error
             }
             continue
@@ -310,7 +322,7 @@ export default function ContagemEstoque() {
     const observacaoValue = observacao.trim() === '' ? null : observacao.trim()
 
     setSaving(true)
-    const { error } = await supabase.from('contagens_estoque').insert({
+    const payload: Record<string, any> = {
       data_hora_contagem: toISOStringFromDatetimeLocal(dataHoraContagem),
       conferente_id: conferenteId,
       produto_id: produto?.id ?? null,
@@ -320,7 +332,19 @@ export default function ContagemEstoque() {
       quantidade_up: qtd,
       lote: loteValue,
       observacao: observacaoValue,
-    })
+    }
+
+    if (dataFabricacao) payload.data_fabricacao = dataFabricacao
+    if (dataVencimento) payload.data_validade = dataVencimento
+
+    let { error } = await supabase.from('contagens_estoque').insert(payload)
+    // Se o banco ainda não tiver as colunas, tenta salvar sem elas.
+    if (error && String(error.code ?? '') === '42703') {
+      delete payload.data_fabricacao
+      delete payload.data_validade
+      const retry = await supabase.from('contagens_estoque').insert(payload)
+      error = retry.error
+    }
 
     if (error) {
       setSaveError(`Erro ao salvar contagem: ${error.message}`)
@@ -330,6 +354,8 @@ export default function ContagemEstoque() {
       setSaveError('')
       // Mantém código para facilitar batidas em sequência no mesmo produto.
       setLote('')
+      setDataFabricacao('')
+      setDataVencimento('')
       setObservacao('')
       setQuantidadeUp('') // opcional: volta pra vazio; ao enviar, vira 0
       setCodigoInterno('')
@@ -564,7 +590,7 @@ export default function ContagemEstoque() {
         </label>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 12 }}>
-          <div style={{ gridColumn: 'span 7' }}>
+          <div style={{ gridColumn: 'span 6' }}>
             <label style={labelStyle}>
               Descrição
               <input
@@ -599,12 +625,36 @@ export default function ContagemEstoque() {
             ) : null}
           </div>
 
-          <div style={{ gridColumn: 'span 5' }}>
+          <div style={{ gridColumn: 'span 3' }}>
             <label style={labelStyle}>
-              Lote
-              <input value={lote} onChange={(e) => setLote(e.target.value)} style={inputStyle} />
+              Data de fabricação
+              <input
+                type="date"
+                value={dataFabricacao}
+                onChange={(e) => setDataFabricacao(e.target.value)}
+                style={inputStyle}
+              />
             </label>
           </div>
+
+          <div style={{ gridColumn: 'span 3' }}>
+            <label style={labelStyle}>
+              Data de vencimento
+              <input
+                type="date"
+                value={dataVencimento}
+                onChange={(e) => setDataVencimento(e.target.value)}
+                style={inputStyle}
+              />
+            </label>
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 12 }}>
+          <label style={{ ...labelStyle, gridColumn: 'span 6' }}>
+            Lote
+            <input value={lote} onChange={(e) => setLote(e.target.value)} style={inputStyle} />
+          </label>
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 12 }}>
