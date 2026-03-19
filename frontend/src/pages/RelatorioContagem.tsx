@@ -115,7 +115,7 @@ export default function RelatorioContagem() {
 
   return (
     <div style={{ padding: 16, maxWidth: 1400, margin: '0 auto' }}>
-      <h2>Relatório completo</h2>
+      <h2>Relatório completo por data de contagem</h2>
 
       <div style={{ display: 'grid', gap: 12, marginTop: 12 }}>
         <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'flex-end' }}>
