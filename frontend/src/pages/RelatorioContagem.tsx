@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabaseClient'
 
 type ContagemRow = {
   id: string
-  data_contagem: string
+  data_contagem?: string
   data_hora_contagem: string
   conferente_id: string
   conferentes?: { nome: string } | Array<{ nome: string }> | null
@@ -43,6 +43,13 @@ function formatDateTimeBR(iso: string) {
   return `${pad(dt.getDate())}/${pad(dt.getMonth() + 1)}/${dt.getFullYear()} ${pad(dt.getHours())}:${pad(dt.getMinutes())}`
 }
 
+function dateKeyFromIso(iso: string) {
+  const dt = new Date(iso)
+  if (Number.isNaN(dt.getTime())) return ''
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`
+}
+
 export default function RelatorioContagem() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string>('')
@@ -65,7 +72,6 @@ export default function RelatorioContagem() {
     try {
       const select = `
         id,
-        data_contagem,
         data_hora_contagem,
         conferente_id,
         conferentes(nome),
@@ -90,7 +96,10 @@ export default function RelatorioContagem() {
         .order('data_hora_contagem', { ascending: false })
 
       if (!allTime) {
-        q = q.gte('data_contagem', startDate).lte('data_contagem', endDate)
+        // filtro por DIA de contagem (00:00 até 23:59)
+        const startIso = `${startDate}T00:00:00`
+        const endIso = `${endDate}T23:59:59`
+        q = q.gte('data_hora_contagem', startIso).lte('data_hora_contagem', endIso)
       }
 
       const { data, error: qError } = await q.limit(20000)
@@ -180,7 +189,7 @@ export default function RelatorioContagem() {
               <tbody>
                 {rows.map((r) => (
                   <tr key={r.id}>
-                    <td style={tdStyle}>{formatDateBR(r.data_contagem)}</td>
+                    <td style={tdStyle}>{formatDateBR(dateKeyFromIso(r.data_hora_contagem))}</td>
                     <td style={tdStyle}>{formatDateTimeBR(r.data_hora_contagem)}</td>
                     <td style={tdStyle}>
                       {(() => {
