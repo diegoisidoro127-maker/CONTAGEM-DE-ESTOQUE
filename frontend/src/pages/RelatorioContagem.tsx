@@ -53,6 +53,10 @@ function dateKeyFromIso(iso: string) {
 export default function RelatorioContagem() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string>('')
+  const [success, setSuccess] = useState<string>('')
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editingQuantidade, setEditingQuantidade] = useState<string>('')
+  const [rowActionLoading, setRowActionLoading] = useState(false)
 
   const [startDate, setStartDate] = useState(() => toISODateLocal(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)))
   const [endDate, setEndDate] = useState(() => toISODateLocal(new Date()))
@@ -67,6 +71,7 @@ export default function RelatorioContagem() {
   async function load() {
     setLoading(true)
     setError('')
+    setSuccess('')
     setRows([])
 
     try {
@@ -111,6 +116,49 @@ export default function RelatorioContagem() {
     } finally {
       setLoading(false)
     }
+  }
+
+  async function handleDeleteRow(id: string) {
+    if (!confirm('Deseja realmente excluir esta contagem?')) return
+    setRowActionLoading(true)
+    setError('')
+    setSuccess('')
+
+    const { error: delError } = await supabase.from('contagens_estoque').delete().eq('id', id)
+    if (delError) {
+      setError(`Erro ao excluir: ${delError.message}`)
+    } else {
+      setRows((prev) => prev.filter((r) => r.id !== id))
+      setSuccess('Contagem excluída com sucesso.')
+    }
+    setRowActionLoading(false)
+  }
+
+  async function handleSaveQuantidade(id: string) {
+    const qtd = Number(editingQuantidade.replace(',', '.'))
+    if (!Number.isFinite(qtd) || qtd < 0) {
+      setError('Quantidade inválida para atualização.')
+      return
+    }
+
+    setRowActionLoading(true)
+    setError('')
+    setSuccess('')
+
+    const { error: updError } = await supabase
+      .from('contagens_estoque')
+      .update({ quantidade_up: qtd })
+      .eq('id', id)
+
+    if (updError) {
+      setError(`Erro ao atualizar quantidade: ${updError.message}`)
+    } else {
+      setRows((prev) => prev.map((r) => (r.id === id ? { ...r, quantidade_up: qtd } : r)))
+      setEditingId(null)
+      setEditingQuantidade('')
+      setSuccess('Quantidade atualizada com sucesso.')
+    }
+    setRowActionLoading(false)
   }
 
   return (
@@ -165,6 +213,7 @@ export default function RelatorioContagem() {
         </div>
 
         {error ? <div style={{ color: '#b00020' }}>{error}</div> : null}
+        {success ? <div style={{ color: '#0f7a0f' }}>{success}</div> : null}
 
         {rows.length ? (
           <div style={{ overflowX: 'auto' }}>
@@ -184,6 +233,7 @@ export default function RelatorioContagem() {
                   <th style={thStyle}>Validade</th>
                   <th style={thStyle}>EAN</th>
                   <th style={thStyle}>DUN</th>
+                  <th style={thStyle}>Ações</th>
                 </tr>
               </thead>
               <tbody>
@@ -201,13 +251,72 @@ export default function RelatorioContagem() {
                     <td style={tdStyle}>{r.codigo_interno}</td>
                     <td style={tdStyle}>{r.descricao}</td>
                     <td style={tdStyle}>{r.unidade_medida ?? ''}</td>
-                    <td style={tdStyle}>{r.quantidade_up}</td>
+                    <td style={tdStyle}>
+                      {editingId === r.id ? (
+                        <input
+                          type="number"
+                          step="0.001"
+                          value={editingQuantidade}
+                          onChange={(e) => setEditingQuantidade(e.target.value)}
+                          style={{ ...inputInlineStyle }}
+                        />
+                      ) : (
+                        r.quantidade_up
+                      )}
+                    </td>
                     <td style={tdStyle}>{r.lote ?? ''}</td>
                     <td style={tdStyle}>{r.observacao ?? ''}</td>
                     <td style={tdStyle}>{r.data_fabricacao ? formatDateBR(r.data_fabricacao) : ''}</td>
                     <td style={tdStyle}>{r.data_validade ? formatDateBR(r.data_validade) : ''}</td>
                     <td style={tdStyle}>{r.ean ?? ''}</td>
                     <td style={tdStyle}>{r.dun ?? ''}</td>
+                    <td style={tdStyle}>
+                      {editingId === r.id ? (
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          <button
+                            type="button"
+                            onClick={() => handleSaveQuantidade(r.id)}
+                            disabled={rowActionLoading}
+                            style={miniBtnStyle}
+                          >
+                            Salvar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingId(null)
+                              setEditingQuantidade('')
+                            }}
+                            disabled={rowActionLoading}
+                            style={miniBtnStyle}
+                          >
+                            Cancelar
+                          </button>
+                        </div>
+                      ) : (
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingId(r.id)
+                              setEditingQuantidade(String(r.quantidade_up))
+                            }}
+                            disabled={rowActionLoading}
+                            style={miniBtnStyle}
+                          >
+                            Editar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteRow(r.id)}
+                            disabled={rowActionLoading}
+                            style={miniBtnStyle}
+                          >
+                            Excluir
+                          </button>
+                        </div>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -236,5 +345,22 @@ const tdStyle: React.CSSProperties = {
   padding: 8,
   fontSize: 13,
   whiteSpace: 'nowrap',
+}
+
+const miniBtnStyle: React.CSSProperties = {
+  padding: '6px 10px',
+  borderRadius: 6,
+  border: '1px solid #222',
+  background: '#111',
+  color: 'white',
+  cursor: 'pointer',
+  fontSize: 12,
+}
+
+const inputInlineStyle: React.CSSProperties = {
+  width: 110,
+  padding: '6px 8px',
+  border: '1px solid #ccc',
+  borderRadius: 6,
 }
 
