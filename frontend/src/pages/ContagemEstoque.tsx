@@ -67,6 +67,11 @@ function toDateInputValue(v?: string | null) {
   return m ? m[0] : ''
 }
 
+function isUuid(value: string | null | undefined) {
+  if (!value) return false
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+}
+
 export default function ContagemEstoque() {
   const [conferentes, setConferentes] = useState<Conferente[]>([])
   const [conferentesLoading, setConferentesLoading] = useState(true)
@@ -331,7 +336,7 @@ export default function ContagemEstoque() {
     const payload: Record<string, any> = {
       data_hora_contagem: toISOStringFromDatetimeLocal(dataHoraContagem),
       conferente_id: conferenteId,
-      produto_id: produto?.id ?? null,
+      produto_id: isUuid(produto?.id) ? produto?.id : null,
       codigo_interno: codigoInterno.trim(),
       descricao: descricaoFinal,
       unidade_medida: produto?.unidade_medida ?? null,
