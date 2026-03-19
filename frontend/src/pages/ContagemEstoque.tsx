@@ -332,7 +332,7 @@ export default function ContagemEstoque() {
 
     const qtd = quantidadeUp.trim() === '' ? 0 : Number(quantidadeUp.replace(',', '.'))
     if (!Number.isFinite(qtd) || qtd < 0) {
-      setSaveError('Quantidade (up) inválida.')
+      setSaveError('Quantidade contada inválida.')
       return
     }
 
@@ -657,14 +657,14 @@ export default function ContagemEstoque() {
           </div>
 
           <label style={{ ...labelStyle, gridColumn: isMobile ? 'auto' : 'span 2' }}>
-            UP
+            Quantidade contada
             <input
               type="number"
               step="0.001"
               value={quantidadeUp}
               onChange={(e) => setQuantidadeUp(e.target.value)}
               style={inputStyle}
-              placeholder="0"
+              placeholder="Digite a quantidade"
             />
           </label>
 
