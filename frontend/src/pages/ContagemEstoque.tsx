@@ -74,7 +74,10 @@ export default function ContagemEstoque() {
   const [newConferenteNome, setNewConferenteNome] = useState('')
   const [addingConferente, setAddingConferente] = useState(false)
 
-  const [dataHoraContagem, setDataHoraContagem] = useState(() => toDatetimeLocalValue(new Date()))
+  // Relógio de contagem: usuário informa o início e o campo segue atualizando automaticamente.
+  const [clockBaseMs, setClockBaseMs] = useState(() => Date.now())
+  const [clockRealStartMs, setClockRealStartMs] = useState(() => Date.now())
+  const [clockTick, setClockTick] = useState(0)
   const [conferenteId, setConferenteId] = useState<string>('')
 
   const [codigoInterno, setCodigoInterno] = useState('')
@@ -97,6 +100,16 @@ export default function ContagemEstoque() {
 
   const [previewLoading, setPreviewLoading] = useState(false)
   const [previewRows, setPreviewRows] = useState<ContagemPreviewRow[]>([])
+
+  useEffect(() => {
+    const id = setInterval(() => setClockTick((v) => v + 1), 1000)
+    return () => clearInterval(id)
+  }, [])
+
+  const dataHoraContagem = useMemo(() => {
+    const elapsed = Date.now() - clockRealStartMs
+    return toDatetimeLocalValue(new Date(clockBaseMs + elapsed))
+  }, [clockBaseMs, clockRealStartMs, clockTick])
 
   useEffect(() => {
     ;(async () => {
@@ -468,7 +481,13 @@ export default function ContagemEstoque() {
             <input
               type="datetime-local"
               value={dataHoraContagem}
-              onChange={(e) => setDataHoraContagem(e.target.value)}
+              onChange={(e) => {
+                const dt = new Date(e.target.value)
+                if (!Number.isNaN(dt.getTime())) {
+                  setClockBaseMs(dt.getTime())
+                  setClockRealStartMs(Date.now())
+                }
+              }}
               style={inputStyle}
             />
           </label>
