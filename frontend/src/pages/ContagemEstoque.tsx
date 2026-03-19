@@ -620,7 +620,7 @@ export default function ContagemEstoque() {
         </label>
 
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(12, 1fr)', gap: 12 }}>
-          <div style={{ gridColumn: isMobile ? 'auto' : 'span 6' }}>
+          <div style={{ gridColumn: isMobile ? 'auto' : 'span 5' }}>
             <label style={labelStyle}>
               Descrição
               <select
@@ -656,7 +656,19 @@ export default function ContagemEstoque() {
             ) : null}
           </div>
 
-          <div style={{ gridColumn: isMobile ? 'auto' : 'span 3' }}>
+          <label style={{ ...labelStyle, gridColumn: isMobile ? 'auto' : 'span 2' }}>
+            UP
+            <input
+              type="number"
+              step="0.001"
+              value={quantidadeUp}
+              onChange={(e) => setQuantidadeUp(e.target.value)}
+              style={inputStyle}
+              placeholder="0"
+            />
+          </label>
+
+          <div style={{ gridColumn: isMobile ? 'auto' : 'span 2' }}>
             <label style={labelStyle}>
               Data de fabricação
               <input
@@ -689,18 +701,6 @@ export default function ContagemEstoque() {
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(12, 1fr)', gap: 12 }}>
-          <label style={{ ...labelStyle, gridColumn: isMobile ? 'auto' : 'span 4' }}>
-            UP
-            <input
-              type="number"
-              step="0.001"
-              value={quantidadeUp}
-              onChange={(e) => setQuantidadeUp(e.target.value)}
-              style={inputStyle}
-              placeholder="0"
-            />
-          </label>
-
           <label style={{ ...labelStyle, gridColumn: isMobile ? 'auto' : 'span 8' }}>
             Observação
             <input value={observacao} onChange={(e) => setObservacao(e.target.value)} style={inputStyle} />
