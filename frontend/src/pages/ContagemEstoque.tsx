@@ -116,9 +116,9 @@ export default function ContagemEstoque() {
   useEffect(() => {
     ;(async () => {
       setProductOptionsLoading(true)
-
-      const tabelas = ['Todos os Produtos', 'produtos', 'todos_os_produtos', 'todos_produtos']
+      const tabelas = ['Todos os Produtos', 'todos_os_produtos', 'todos_produtos', 'produtos']
       let loaded: ProductOption[] = []
+      let lastLoadError: string | null = null
 
       for (const tabela of tabelas) {
         // prioridade: carregar exatamente os campos da base "Todos os Produtos"
@@ -131,7 +131,8 @@ export default function ContagemEstoque() {
         if (error) {
           const code = String(error.code ?? '')
           // ignora tabela ausente / não cacheada no PostgREST e tenta próxima
-          if (code === '42P01' || code === 'PGRST205') continue
+          if (code === '42P01' || code === 'PGRST205' || code === '42703') continue
+          lastLoadError = error.message ?? 'erro ao carregar produtos'
           continue
         }
 
@@ -165,7 +166,11 @@ export default function ContagemEstoque() {
       for (const p of loaded) {
         if (!byCode.has(p.codigo)) byCode.set(p.codigo, p)
       }
-      setProductOptions(Array.from(byCode.values()))
+      const normalized = Array.from(byCode.values())
+      setProductOptions(normalized)
+      if (!normalized.length && lastLoadError) {
+        setProdutoError(`Erro ao carregar produtos da base: ${lastLoadError}`)
+      }
       setProductOptionsLoading(false)
     })()
   }, [])
@@ -194,15 +199,6 @@ export default function ContagemEstoque() {
     setDataVencimento(toDateInputValue(p.data_validade))
     setProdutoError('')
     return true
-  }
-
-  function applyProductByDescricao(descricao: string) {
-    const normalized = descricao.trim().toLowerCase()
-    if (!normalized) return false
-    const p = productOptions.find((x) => x.descricao.trim().toLowerCase() === normalized)
-    if (!p) return false
-    setCodigoInterno(p.codigo)
-    return applyProductByCode(p.codigo)
   }
 
   // Busca automática do produto pelo `codigo_interno`
@@ -563,7 +559,7 @@ export default function ContagemEstoque() {
 
         <label style={labelStyle}>
           Código do produto
-          <input
+          <select
             value={codigoInterno}
             onChange={(e) => {
               const v = e.target.value
@@ -571,51 +567,51 @@ export default function ContagemEstoque() {
               const matched = applyProductByCode(v)
               if (!matched && produto && produto.codigo_interno !== v) {
                 setProduto(null)
+                setDescricaoInput('')
               }
             }}
-            onBlur={() => {
-              // ao sair do campo, tenta casar com a lista e auto preencher
-              applyProductByCode(codigoInterno.trim())
-            }}
-            list="codigos-produto"
             style={inputStyle}
             disabled={productOptionsLoading}
-            placeholder={productOptionsLoading ? 'Carregando códigos...' : 'Digite ou selecione o código...'}
-          />
-          <datalist id="codigos-produto">
+          >
+            <option value="">
+              {productOptionsLoading ? 'Carregando códigos...' : 'Selecione o código...'}
+            </option>
             {productOptions.map((p) => (
-              <option key={p.codigo} value={p.codigo} />
+              <option key={p.codigo} value={p.codigo}>
+                {p.codigo}
+              </option>
             ))}
-          </datalist>
+          </select>
         </label>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 12 }}>
           <div style={{ gridColumn: 'span 6' }}>
             <label style={labelStyle}>
               Descrição
-              <input
-                value={descricaoInput}
+              <select
+                value={produto?.codigo_interno || ''}
                 onChange={(e) => {
-                  const v = e.target.value
-                  setDescricaoInput(v)
-                  // Se descrição digitada bater com cadastro, preenche código
-                  applyProductByDescricao(v)
+                  const code = e.target.value
+                  setCodigoInterno(code)
+                  if (code) {
+                    applyProductByCode(code)
+                  } else {
+                    setDescricaoInput('')
+                    setProduto(null)
+                  }
                 }}
-                onBlur={() => {
-                  applyProductByDescricao(descricaoInput)
-                }}
-                list="descricoes-produto"
                 style={inputStyle}
                 disabled={productOptionsLoading}
-                placeholder={
-                  productOptionsLoading ? 'Carregando descrições...' : 'Digite ou selecione a descrição...'
-                }
-              />
-              <datalist id="descricoes-produto">
+              >
+                <option value="">
+                  {productOptionsLoading ? 'Carregando descrições...' : 'Selecione a descrição...'}
+                </option>
                 {productOptions.map((p) => (
-                  <option key={`desc-${p.codigo}`} value={p.descricao} />
+                  <option key={`desc-${p.codigo}`} value={p.codigo}>
+                    {p.descricao}
+                  </option>
                 ))}
-              </datalist>
+              </select>
             </label>
             {produtoError ? (
               <div style={{ color: '#b00020', fontSize: 13, marginTop: 6 }}>{produtoError}</div>
