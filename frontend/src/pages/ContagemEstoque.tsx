@@ -27,6 +27,17 @@ type ContagemPreviewRow = {
   quantidade_up: string | number
 }
 
+type ProductOption = {
+  id: string
+  codigo: string
+  descricao: string
+  unidade_medida: string | null
+  data_fabricacao?: string | null
+  data_validade?: string | null
+  ean?: string | null
+  dun?: string | null
+}
+
 function toLocalDateKey(isoLike: string) {
   const dt = new Date(isoLike)
   if (Number.isNaN(dt.getTime())) return 'invalid-date'
@@ -63,6 +74,8 @@ export default function ContagemEstoque() {
   const [produto, setProduto] = useState<Produto | null>(null)
   const [produtoLoading, setProdutoLoading] = useState(false)
   const [produtoError, setProdutoError] = useState<string>('')
+  const [productOptions, setProductOptions] = useState<ProductOption[]>([])
+  const [productOptionsLoading, setProductOptionsLoading] = useState(false)
 
   const [lote, setLote] = useState('')
   const [quantidadeUp, setQuantidadeUp] = useState<string>('') // string p/ permitir vazio no input
@@ -90,6 +103,81 @@ export default function ContagemEstoque() {
     })()
   }, [])
 
+  useEffect(() => {
+    ;(async () => {
+      setProductOptionsLoading(true)
+
+      const tabelas = ['Todos os Produtos', 'produtos', 'todos_os_produtos', 'todos_produtos']
+      let loaded: ProductOption[] = []
+
+      for (const tabela of tabelas) {
+        const { data, error } = await supabase.from(tabela).select('*').limit(10000)
+
+        if (error) {
+          const code = String(error.code ?? '')
+          // ignora tabela ausente / não cacheada no PostgREST e tenta próxima
+          if (code === '42P01' || code === 'PGRST205') continue
+          continue
+        }
+
+        if (data?.length) {
+          const mapped = (data as Array<Record<string, any>>)
+            .map((row) => {
+              const codigo = pickFirstString(row, ['codigo_interno', 'codigo', 'CÓDIGO', 'cod_produto'])
+              const descricao = pickFirstString(row, ['descricao', 'DESCRIÇÃO', 'descrição', 'desc_produto'])
+              if (!codigo) return null
+              return {
+                id: String(row.id ?? codigo),
+                codigo,
+                descricao: descricao || 'Produto sem descrição',
+                unidade_medida:
+                  pickFirstString(row, ['unidade_medida', 'UNIDADE', 'unidade', 'und']) || null,
+                data_fabricacao: row.data_fabricacao ?? null,
+                data_validade: row.data_validade ?? null,
+                ean: row.ean ?? null,
+                dun: row.dun ?? null,
+              } as ProductOption
+            })
+            .filter(Boolean) as ProductOption[]
+
+          loaded = mapped
+          break
+        }
+      }
+
+      // remove duplicados por código
+      const byCode = new Map<string, ProductOption>()
+      for (const p of loaded) {
+        if (!byCode.has(p.codigo)) byCode.set(p.codigo, p)
+      }
+      setProductOptions(Array.from(byCode.values()))
+      setProductOptionsLoading(false)
+    })()
+  }, [])
+
+  const productByCode = useMemo(() => {
+    const map = new Map<string, ProductOption>()
+    for (const p of productOptions) map.set(p.codigo, p)
+    return map
+  }, [productOptions])
+
+  function applyProductByCode(codigo: string) {
+    const p = productByCode.get(codigo)
+    if (!p) return false
+    setProduto({
+      id: p.id,
+      codigo_interno: p.codigo,
+      descricao: p.descricao,
+      unidade_medida: p.unidade_medida,
+      data_fabricacao: p.data_fabricacao ?? null,
+      data_validade: p.data_validade ?? null,
+      ean: p.ean ?? null,
+      dun: p.dun ?? null,
+    })
+    setProdutoError('')
+    return true
+  }
+
   // Busca automática do produto pelo `codigo_interno`
   useEffect(() => {
     const codigo = codigoInterno.trim()
@@ -102,6 +190,13 @@ export default function ContagemEstoque() {
 
     const handle = setTimeout(async () => {
       setProdutoLoading(true)
+
+      // Primeiro tenta no cache local da tabela de produtos carregada
+      if (applyProductByCode(codigo)) {
+        setProdutoLoading(false)
+        return
+      }
+
       // Busca em múltiplas tabelas para suportar a base importada ("Todos os Produtos")
       const tabelas = ['produtos', 'Todos os Produtos', 'todos_os_produtos', 'todos_produtos']
       const colunasBusca = ['codigo_interno', 'codigo', 'CÓDIGO', 'cod_produto', 'ean', 'dun']
@@ -159,7 +254,7 @@ export default function ContagemEstoque() {
     }, 500)
 
     return () => clearTimeout(handle)
-  }, [codigoInterno])
+  }, [codigoInterno, productByCode])
 
   const canSubmit = useMemo(() => {
     return Boolean(conferenteId) && Boolean(produto) && codigoInterno.trim().length > 0 && !saving
@@ -413,19 +508,44 @@ export default function ContagemEstoque() {
 
         <label style={labelStyle}>
           Código do produto
-          <input
+          <select
             value={codigoInterno}
             onChange={(e) => setCodigoInterno(e.target.value)}
-            placeholder="Ex: 12345"
             style={inputStyle}
-          />
+            disabled={productOptionsLoading}
+          >
+            <option value="">{productOptionsLoading ? 'Carregando códigos...' : 'Selecione o código...'}</option>
+            {productOptions.map((p) => (
+              <option key={p.codigo} value={p.codigo}>
+                {p.codigo}
+              </option>
+            ))}
+          </select>
         </label>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 12 }}>
           <div style={{ gridColumn: 'span 7' }}>
             <label style={labelStyle}>
               Descrição
-              <input value={produto?.descricao ?? ''} disabled={true} style={inputStyle} />
+              <select
+                value={produto?.codigo_interno ?? ''}
+                onChange={(e) => {
+                  const code = e.target.value
+                  setCodigoInterno(code)
+                  applyProductByCode(code)
+                }}
+                style={inputStyle}
+                disabled={productOptionsLoading}
+              >
+                <option value="">
+                  {productOptionsLoading ? 'Carregando descrições...' : 'Selecione a descrição...'}
+                </option>
+                {productOptions.map((p) => (
+                  <option key={`desc-${p.codigo}`} value={p.codigo}>
+                    {p.descricao}
+                  </option>
+                ))}
+              </select>
             </label>
             {produtoError ? (
               <div style={{ color: '#b00020', fontSize: 13, marginTop: 6 }}>{produtoError}</div>
