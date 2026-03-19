@@ -105,7 +105,9 @@ export default function ContagemEstoque() {
       for (const col of candidatos) {
         // Se a coluna não existir, o PostgREST retorna erro; ignoramos e tentamos a próxima.
         const resp = await supabase.from('produtos').select(baseSelect).eq(col, codigo).maybeSingle()
-        lastError = resp.error
+        if (resp.error && resp.error.code !== '42703') {
+          lastError = resp.error
+        }
         if (resp.data) {
           found = resp.data as Produto
           break
@@ -170,10 +172,6 @@ export default function ContagemEstoque() {
       codigo_interno: codigoInterno.trim(),
       descricao: produto.descricao,
       unidade_medida: produto.unidade_medida,
-      data_fabricacao: produto.data_fabricacao,
-      data_validade: produto.data_validade,
-      ean: produto.ean,
-      dun: produto.dun,
       quantidade_up: qtd,
       lote: loteValue,
       observacao: observacaoValue,
@@ -361,7 +359,13 @@ export default function ContagemEstoque() {
                       .maybeSingle()
 
                     if (error) {
-                      setSaveError(`Erro ao cadastrar conferente: ${error.message}`)
+                      if (error.code === '42501' || String(error.message).toLowerCase().includes('row-level security')) {
+                        setSaveError(
+                          'Sem permissão para cadastrar conferente no banco. Rode o SQL de policy (RLS) no Supabase para liberar insert em conferentes.'
+                        )
+                      } else {
+                        setSaveError(`Erro ao cadastrar conferente: ${error.message}`)
+                      }
                     } else if (data?.id) {
                       setConferenteId(data.id)
                       setNewConferenteNome('')
