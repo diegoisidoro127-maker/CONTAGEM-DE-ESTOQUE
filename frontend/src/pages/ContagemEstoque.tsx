@@ -71,6 +71,7 @@ export default function ContagemEstoque() {
   const [conferenteId, setConferenteId] = useState<string>('')
 
   const [codigoInterno, setCodigoInterno] = useState('')
+  const [descricaoInput, setDescricaoInput] = useState('')
   const [produto, setProduto] = useState<Produto | null>(null)
   const [produtoLoading, setProdutoLoading] = useState(false)
   const [produtoError, setProdutoError] = useState<string>('')
@@ -174,8 +175,18 @@ export default function ContagemEstoque() {
       ean: p.ean ?? null,
       dun: p.dun ?? null,
     })
+    setDescricaoInput(p.descricao)
     setProdutoError('')
     return true
+  }
+
+  function applyProductByDescricao(descricao: string) {
+    const normalized = descricao.trim().toLowerCase()
+    if (!normalized) return false
+    const p = productOptions.find((x) => x.descricao.trim().toLowerCase() === normalized)
+    if (!p) return false
+    setCodigoInterno(p.codigo)
+    return applyProductByCode(p.codigo)
   }
 
   // Busca automática do produto pelo `codigo_interno`
@@ -257,20 +268,30 @@ export default function ContagemEstoque() {
   }, [codigoInterno, productByCode])
 
   const canSubmit = useMemo(() => {
-    return Boolean(conferenteId) && Boolean(produto) && codigoInterno.trim().length > 0 && !saving
-  }, [conferenteId, produto, codigoInterno, saving])
+    return (
+      Boolean(conferenteId) &&
+      codigoInterno.trim().length > 0 &&
+      (descricaoInput.trim().length > 0 || Boolean(produto?.descricao)) &&
+      !saving
+    )
+  }, [conferenteId, codigoInterno, descricaoInput, produto?.descricao, saving])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setSaveError('')
     setSaveSuccess('')
 
-    if (!produto) {
-      setSaveError('Informe um código de produto válido (precisa existir na tabela `produtos`).')
-      return
-    }
     if (!conferenteId) {
       setSaveError('Selecione um conferente.')
+      return
+    }
+    if (!codigoInterno.trim()) {
+      setSaveError('Informe o código do produto.')
+      return
+    }
+    const descricaoFinal = (descricaoInput.trim() || produto?.descricao || '').trim()
+    if (!descricaoFinal) {
+      setSaveError('Informe a descrição do produto.')
       return
     }
 
@@ -287,10 +308,10 @@ export default function ContagemEstoque() {
     const { error } = await supabase.from('contagens_estoque').insert({
       data_hora_contagem: toISOStringFromDatetimeLocal(dataHoraContagem),
       conferente_id: conferenteId,
-      produto_id: produto.id,
+      produto_id: produto?.id ?? null,
       codigo_interno: codigoInterno.trim(),
-      descricao: produto.descricao,
-      unidade_medida: produto.unidade_medida,
+      descricao: descricaoFinal,
+      unidade_medida: produto?.unidade_medida ?? null,
       quantidade_up: qtd,
       lote: loteValue,
       observacao: observacaoValue,
@@ -306,6 +327,9 @@ export default function ContagemEstoque() {
       setLote('')
       setObservacao('')
       setQuantidadeUp('') // opcional: volta pra vazio; ao enviar, vira 0
+      setCodigoInterno('')
+      setDescricaoInput('')
+      setProduto(null)
       await loadPreview()
     }
     setSaving(false)
@@ -508,44 +532,59 @@ export default function ContagemEstoque() {
 
         <label style={labelStyle}>
           Código do produto
-          <select
+          <input
             value={codigoInterno}
-            onChange={(e) => setCodigoInterno(e.target.value)}
+            onChange={(e) => {
+              const v = e.target.value
+              setCodigoInterno(v)
+              const matched = applyProductByCode(v)
+              if (!matched && produto && produto.codigo_interno !== v) {
+                setProduto(null)
+              }
+            }}
+            onBlur={() => {
+              // ao sair do campo, tenta casar com a lista e auto preencher
+              applyProductByCode(codigoInterno.trim())
+            }}
+            list="codigos-produto"
             style={inputStyle}
             disabled={productOptionsLoading}
-          >
-            <option value="">{productOptionsLoading ? 'Carregando códigos...' : 'Selecione o código...'}</option>
+            placeholder={productOptionsLoading ? 'Carregando códigos...' : 'Digite ou selecione o código...'}
+          />
+          <datalist id="codigos-produto">
             {productOptions.map((p) => (
-              <option key={p.codigo} value={p.codigo}>
-                {p.codigo}
-              </option>
+              <option key={p.codigo} value={p.codigo} />
             ))}
-          </select>
+          </datalist>
         </label>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 12 }}>
           <div style={{ gridColumn: 'span 7' }}>
             <label style={labelStyle}>
               Descrição
-              <select
-                value={produto?.codigo_interno ?? ''}
+              <input
+                value={descricaoInput}
                 onChange={(e) => {
-                  const code = e.target.value
-                  setCodigoInterno(code)
-                  applyProductByCode(code)
+                  const v = e.target.value
+                  setDescricaoInput(v)
+                  // Se descrição digitada bater com cadastro, preenche código
+                  applyProductByDescricao(v)
                 }}
+                onBlur={() => {
+                  applyProductByDescricao(descricaoInput)
+                }}
+                list="descricoes-produto"
                 style={inputStyle}
                 disabled={productOptionsLoading}
-              >
-                <option value="">
-                  {productOptionsLoading ? 'Carregando descrições...' : 'Selecione a descrição...'}
-                </option>
+                placeholder={
+                  productOptionsLoading ? 'Carregando descrições...' : 'Digite ou selecione a descrição...'
+                }
+              />
+              <datalist id="descricoes-produto">
                 {productOptions.map((p) => (
-                  <option key={`desc-${p.codigo}`} value={p.codigo}>
-                    {p.descricao}
-                  </option>
+                  <option key={`desc-${p.codigo}`} value={p.descricao} />
                 ))}
-              </select>
+              </datalist>
             </label>
             {produtoError ? (
               <div style={{ color: '#b00020', fontSize: 13, marginTop: 6 }}>{produtoError}</div>
