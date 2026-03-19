@@ -73,6 +73,7 @@ function isUuid(value: string | null | undefined) {
 }
 
 export default function ContagemEstoque() {
+  const sheetWebhookUrl = import.meta.env.VITE_SHEET_WEBHOOK_URL as string | undefined
   const [conferentes, setConferentes] = useState<Conferente[]>([])
   const [conferentesLoading, setConferentesLoading] = useState(true)
   const [showAddConferente, setShowAddConferente] = useState(false)
@@ -371,6 +372,35 @@ export default function ContagemEstoque() {
       setSaveError(`Erro ao salvar contagem: ${error.message}`)
       setSaveSuccess('')
     } else {
+      // Envio opcional para Google Sheets (aba CONTAGEM DE ESTOQUE FISICA)
+      // Não bloqueia o fluxo principal se o webhook estiver indisponível.
+      if (sheetWebhookUrl) {
+        try {
+          const conferenteNome =
+            conferentes.find((c) => c.id === conferenteId)?.nome ??
+            conferenteId
+
+          await fetch(sheetWebhookUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              data_hora_contagem: payload.data_hora_contagem,
+              data_contagem: String(payload.data_hora_contagem).slice(0, 10),
+              codigo_interno: payload.codigo_interno,
+              descricao: payload.descricao,
+              quantidade_contada: payload.quantidade_up,
+              up: payload.up ?? null,
+              lote: payload.lote ?? null,
+              observacao: payload.observacao ?? null,
+              conferente: conferenteNome,
+              aba: 'CONTAGEM DE ESTOQUE FISICA',
+            }),
+          })
+        } catch {
+          // Sem throw para não impedir o salvamento no Supabase
+        }
+      }
+
       setSaveSuccess('Linha salva com sucesso.')
       setSaveError('')
       // Mantém código para facilitar batidas em sequência no mesmo produto.
