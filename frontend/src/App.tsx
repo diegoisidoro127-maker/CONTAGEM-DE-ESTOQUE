@@ -1,17 +1,34 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type React from 'react'
 import './App.css'
 import ContagemEstoque from './pages/ContagemEstoque'
 import RelatorioContagem from './pages/RelatorioContagem'
+import logoUltrapao from './assets/logo-ultrapao.png'
 
 type View = 'contagem' | 'relatorio'
+type Theme = 'dark' | 'light'
 
 export default function App() {
   const [view, setView] = useState<View>('contagem')
+  const [theme, setTheme] = useState<Theme>(() => {
+    const saved = localStorage.getItem('ui-theme')
+    if (saved === 'light' || saved === 'dark') return saved
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+  })
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme)
+    localStorage.setItem('ui-theme', theme)
+  }, [theme])
 
   return (
     <div>
       <div style={{ padding: '14px 16px', textAlign: 'center' }}>
+        <img
+          src={logoUltrapao}
+          alt="Ultra Pão"
+          style={{ width: 82, height: 'auto', borderRadius: 8, marginBottom: 8 }}
+        />
         <h1 style={{ margin: '8px 0 4px', fontSize: 26 }}>Painel de Contagem de Estoque</h1>
         <div style={{ color: 'var(--text)', fontSize: 13 }}>
           Selecione a opção acima para cadastrar as contagens ou visualizar o relatório completo.
@@ -41,6 +58,13 @@ export default function App() {
           style={viewBtnStyle(view === 'relatorio')}
         >
           Relatório completo
+        </button>
+        <button
+          type="button"
+          onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
+          style={viewBtnStyle(false)}
+        >
+          {theme === 'dark' ? 'Tema claro' : 'Tema escuro'}
         </button>
       </header>
 
