@@ -23,40 +23,53 @@ function doPost(e) {
 
   const tipo = String(data.tipo || 'upsert') // upsert | edit_qty | clear_qty
 
+  const tz = ss.getSpreadsheetTimeZone ? ss.getSpreadsheetTimeZone() : Session.getScriptTimeZone()
+
   // Colunas (ordem usada no appendRow antigo):
   // A: data/hora, B: data_contagem (YYYY-MM-DD), C: codigo_interno, D: descricao,
   // E: quantidade_contada, F: up, G: lote, H: observacao, I: conferente.
   const values = sheet.getDataRange().getValues()
   const incomingDataContagem = String(data.data_contagem || '').trim()
-  const incomingDataHoraContagemRaw = data.data_hora_contagem ? String(data.data_hora_contagem).trim() : ''
   const incomingCodigo = String(data.codigo_interno || '').trim().toLowerCase()
   const incomingDescricao = String(data.descricao || '').trim().toLowerCase()
   const incomingQtd = Number(data.quantidade_contada ?? 0)
 
-  function normalizeIso(s) {
-    const d = new Date(s)
-    if (Number.isNaN(d.getTime())) return ''
-    return d.toISOString()
+  // Normaliza qualquer formato de data vindo do Sheet para YYYY-MM-DD.
+  function normalizeToYMD(cellValue) {
+    if (!cellValue) return ''
+    // Se vier como Date (muito comum no Sheets), formata conforme timezone do próprio spreadsheet.
+    if (cellValue instanceof Date) {
+      return Utilities.formatDate(cellValue, tz, 'yyyy-MM-dd')
+    }
+    const str = String(cellValue).trim()
+    // Se for YYYY-MM-DD
+    if (/^\d{4}-\d{2}-\d{2}/.test(str)) return str.slice(0, 10)
+    // Se for dd/mm/aaaa
+    const m = str.match(/^(\d{2})\/(\d{2})\/(\d{4})/)
+    if (m) {
+      return `${m[3]}-${m[2]}-${m[1]}`
+    }
+    // fallback: tenta parse
+    const d = new Date(str)
+    if (Number.isNaN(d.getTime())) return str
+    return Utilities.formatDate(d, tz, 'yyyy-MM-dd')
   }
 
-  const incomingDataHoraContagemIso = incomingDataHoraContagemRaw ? normalizeIso(incomingDataHoraContagemRaw) : ''
+  const incomingDataContagemYMD = normalizeToYMD(incomingDataContagem)
 
   const matches = []
   // começa em 1 para ignorar o cabeçalho (linha 1)
   for (let r = 1; r < values.length; r++) {
     const row = values[r]
-    const rowDataContagem = String(row[1] ?? '').trim()
-    const rowA = row[0]
-    const rowAIso = rowA instanceof Date ? rowA.toISOString() : normalizeIso(String(rowA ?? ''))
+    const rowDataContagemYMD = normalizeToYMD(row[1])
     const rowCodigo = String(row[2] ?? '').trim().toLowerCase()
     const rowDescricao = String(row[3] ?? '').trim().toLowerCase()
 
     const matchesBase =
-      rowDataContagem === incomingDataContagem && rowCodigo === incomingCodigo && rowDescricao === incomingDescricao
-    const matchesHora =
-      (tipo === 'edit_qty' || tipo === 'clear_qty') && incomingDataHoraContagemIso ? rowAIso === incomingDataHoraContagemIso : true
+      rowDataContagemYMD === incomingDataContagemYMD && rowCodigo === incomingCodigo && rowDescricao === incomingDescricao
 
-    if (matchesBase && matchesHora) {
+    // Para evitar “criar outra coluna”, para edit/clear vamos considerar apenas (dia + código + descrição).
+    if (matchesBase) {
       matches.push(r + 1) // numeração de linha 1-index
     }
   }
@@ -74,6 +87,7 @@ function doPost(e) {
       // upsert (padrão): atualiza a linha e remove duplicadas, mantendo uma única linha.
       const firstRow = matches[0]
       sheet.getRange(firstRow, 1).setValue(data.data_hora_contagem || '')
+      sheet.getRange(firstRow, 2).setValue(incomingDataContagemYMD) // data_contagem (YYYY-MM-DD)
       sheet.getRange(firstRow, 5).setValue(incomingQtd) // quantidade_contada
       sheet.getRange(firstRow, 6).setValue(data.up ?? '')
       sheet.getRange(firstRow, 7).setValue(data.lote ?? '')
