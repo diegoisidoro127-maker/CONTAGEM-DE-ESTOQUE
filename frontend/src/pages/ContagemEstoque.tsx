@@ -343,13 +343,20 @@ export default function ContagemEstoque() {
   }, [codigoInterno, productByCode])
 
   const canSubmit = useMemo(() => {
+    const datasOk = (() => {
+      if (!dataFabricacao || !dataVencimento) return true
+      // Formato do input é YYYY-MM-DD, então comparação lexicográfica funciona como data.
+      return dataVencimento >= dataFabricacao
+    })()
+
     return (
       Boolean(conferenteId) &&
       codigoInterno.trim().length > 0 &&
       (descricaoInput.trim().length > 0 || Boolean(produto?.descricao)) &&
+      datasOk &&
       !saving
     )
-  }, [conferenteId, codigoInterno, descricaoInput, produto?.descricao, saving])
+  }, [conferenteId, codigoInterno, descricaoInput, produto?.descricao, saving, dataFabricacao, dataVencimento])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -378,6 +385,11 @@ export default function ContagemEstoque() {
 
     const loteValue = lote.trim() === '' ? null : lote.trim()
     const observacaoValue = observacao.trim() === '' ? null : observacao.trim()
+
+    if (dataFabricacao && dataVencimento && dataVencimento < dataFabricacao) {
+      setSaveError('Data de vencimento não pode ser menor que a data de fabricação.')
+      return
+    }
 
     setSaving(true)
     const payload: Record<string, any> = {
