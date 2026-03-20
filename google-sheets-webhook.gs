@@ -28,37 +28,48 @@ function doPost(e) {
   // E: quantidade_contada, F: up, G: lote, H: observacao, I: conferente.
   const values = sheet.getDataRange().getValues()
   const incomingDataContagem = String(data.data_contagem || '').trim()
+  const incomingDataHoraContagemRaw = data.data_hora_contagem ? String(data.data_hora_contagem).trim() : ''
   const incomingCodigo = String(data.codigo_interno || '').trim().toLowerCase()
   const incomingDescricao = String(data.descricao || '').trim().toLowerCase()
   const incomingQtd = Number(data.quantidade_contada ?? 0)
+
+  function normalizeIso(s) {
+    const d = new Date(s)
+    if (Number.isNaN(d.getTime())) return ''
+    return d.toISOString()
+  }
+
+  const incomingDataHoraContagemIso = incomingDataHoraContagemRaw ? normalizeIso(incomingDataHoraContagemRaw) : ''
 
   const matches = []
   // começa em 1 para ignorar o cabeçalho (linha 1)
   for (let r = 1; r < values.length; r++) {
     const row = values[r]
     const rowDataContagem = String(row[1] ?? '').trim()
+    const rowA = row[0]
+    const rowAIso = rowA instanceof Date ? rowA.toISOString() : normalizeIso(String(rowA ?? ''))
     const rowCodigo = String(row[2] ?? '').trim().toLowerCase()
     const rowDescricao = String(row[3] ?? '').trim().toLowerCase()
 
-    if (rowDataContagem === incomingDataContagem && rowCodigo === incomingCodigo && rowDescricao === incomingDescricao) {
+    const matchesBase =
+      rowDataContagem === incomingDataContagem && rowCodigo === incomingCodigo && rowDescricao === incomingDescricao
+    const matchesHora =
+      (tipo === 'edit_qty' || tipo === 'clear_qty') && incomingDataHoraContagemIso ? rowAIso === incomingDataHoraContagemIso : true
+
+    if (matchesBase && matchesHora) {
       matches.push(r + 1) // numeração de linha 1-index
     }
   }
 
   if (matches.length > 0) {
     if (tipo === 'clear_qty') {
-      // Limpa apenas a quantidade na planilha (E), sem remover a linha.
-      matches.forEach((rowNum) => sheet.getRange(rowNum, 5).setValue(''))
+      // Limpa apenas a quantidade na planilha (E) para a linha encontrada.
+      const targetRow = matches[0]
+      sheet.getRange(targetRow, 5).setValue('')
     } else if (tipo === 'edit_qty') {
       // Atualiza somente a quantidade (E) na linha existente.
       const firstRow = matches[0]
       sheet.getRange(firstRow, 5).setValue(incomingQtd)
-
-      // Se houver duplicadas, remove só as duplicadas (para não inflar).
-      matches
-        .slice(1)
-        .sort((a, b) => b - a)
-        .forEach((rowNum) => sheet.deleteRow(rowNum))
     } else {
       // upsert (padrão): atualiza a linha e remove duplicadas, mantendo uma única linha.
       const firstRow = matches[0]
