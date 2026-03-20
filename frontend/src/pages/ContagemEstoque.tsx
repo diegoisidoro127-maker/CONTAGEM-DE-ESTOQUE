@@ -396,18 +396,62 @@ export default function ContagemEstoque() {
     if (dataVencimento) payload.data_validade = dataVencimento
     if (quantidadeUp.trim() !== '') payload.up = Number(quantidadeUp.replace(',', '.'))
 
-    let { error } = await supabase.from('contagens_estoque').insert(payload)
-    // Se o banco ainda não tiver as colunas, tenta salvar sem elas.
-    if (error && String(error.code ?? '') === '42703') {
-      delete payload.data_fabricacao
-      delete payload.data_validade
-      delete payload.up
-      const retry = await supabase.from('contagens_estoque').insert(payload)
-      error = retry.error
+    const dataContagemKey = String(payload.data_hora_contagem).slice(0, 10) // YYYY-MM-DD
+
+    // Regra: ao salvar no mesmo dia com mesmo codigo_interno + descricao, somar quantidade e manter uma única linha.
+    // (Assim a prévia e o Sheet ficam agregados.)
+    let saveError: any = null
+    const { data: existentes, error: existentesError } = await supabase
+      .from('contagens_estoque')
+      .select('id,quantidade_up,lote,observacao')
+      .eq('data_contagem', dataContagemKey)
+      .eq('codigo_interno', payload.codigo_interno)
+      .eq('descricao', payload.descricao)
+
+    if (existentesError) {
+      saveError = existentesError
+    } else if (existentes && existentes.length > 0) {
+      const qtdExistente = existentes.reduce((acc: number, r: any) => acc + Number(r.quantidade_up ?? 0), 0)
+      const totalQtd = qtdExistente + qtd
+
+      const updateFields: Record<string, any> = { quantidade_up: totalQtd }
+      if (loteValue !== null) updateFields.lote = loteValue
+      if (observacaoValue !== null) updateFields.observacao = observacaoValue
+
+      // Para a planilha, mantém lote/obs anteriores se o usuário não preencheu na nova entrada.
+      if (loteValue === null) payload.lote = existentes[0].lote ?? null
+      if (observacaoValue === null) payload.observacao = existentes[0].observacao ?? null
+
+      const firstId = existentes[0].id
+
+      const { error: updError } = await supabase.from('contagens_estoque').update(updateFields).eq('id', firstId)
+      if (updError) saveError = updError
+      else {
+        const otherIds = existentes.slice(1).map((r: any) => r.id)
+        if (otherIds.length) {
+          const { error: delError } = await supabase.from('contagens_estoque').delete().in('id', otherIds)
+          if (delError) saveError = delError
+        }
+      }
+
+      if (!saveError) {
+        payload.quantidade_up = totalQtd
+      }
+    } else {
+      let { error } = await supabase.from('contagens_estoque').insert(payload)
+      // Se o banco ainda não tiver as colunas, tenta salvar sem elas.
+      if (error && String(error.code ?? '') === '42703') {
+        delete payload.data_fabricacao
+        delete payload.data_validade
+        delete payload.up
+        const retry = await supabase.from('contagens_estoque').insert(payload)
+        error = retry.error
+      }
+      if (error) saveError = error
     }
 
-    if (error) {
-      setSaveError(`Erro ao salvar contagem: ${error.message}`)
+    if (saveError) {
+      setSaveError(`Erro ao salvar contagem: ${saveError.message ?? String(saveError)}`)
       setSaveSuccess('')
     } else {
       setSaveSuccess(
