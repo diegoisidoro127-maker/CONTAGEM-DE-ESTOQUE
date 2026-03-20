@@ -404,6 +404,8 @@ export default function ContagemEstoque() {
     if (quantidadeUp.trim() !== '') payload.up = Number(quantidadeUp.replace(',', '.'))
 
     const dataContagemKey = String(payload.data_hora_contagem).slice(0, 10) // YYYY-MM-DD
+    const startIso = `${dataContagemKey}T00:00:00`
+    const endIso = `${dataContagemKey}T23:59:59`
 
     // Regra: ao salvar no mesmo dia com mesmo codigo_interno + descricao, somar quantidade e manter uma única linha.
     // (Assim a prévia e o Sheet ficam agregados.)
@@ -411,7 +413,8 @@ export default function ContagemEstoque() {
     const { data: existentes, error: existentesError } = await supabase
       .from('contagens_estoque')
       .select('id,quantidade_up,lote,observacao')
-      .eq('data_contagem', dataContagemKey)
+      .gte('data_hora_contagem', startIso)
+      .lte('data_hora_contagem', endIso)
       .eq('codigo_interno', payload.codigo_interno)
       .eq('descricao', payload.descricao)
 
