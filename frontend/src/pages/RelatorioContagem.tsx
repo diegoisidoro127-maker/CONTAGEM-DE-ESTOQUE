@@ -61,12 +61,15 @@ export default function RelatorioContagem() {
   const [startDate, setStartDate] = useState(() => toISODateLocal(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)))
   const [endDate, setEndDate] = useState(() => toISODateLocal(new Date()))
   const [allTime, setAllTime] = useState(false)
+  const [useSingleDay, setUseSingleDay] = useState(false)
+  const [singleDay, setSingleDay] = useState(() => toISODateLocal(new Date()))
   const [rows, setRows] = useState<ContagemRow[]>([])
 
   const dateRangeText = useMemo(() => {
     if (allTime) return 'Todas as datas'
+    if (useSingleDay) return `Dia: ${formatDateBR(singleDay)}`
     return `${formatDateBR(startDate)} a ${formatDateBR(endDate)}`
-  }, [allTime, startDate, endDate])
+  }, [allTime, useSingleDay, singleDay, startDate, endDate])
 
   async function load() {
     setLoading(true)
@@ -101,10 +104,17 @@ export default function RelatorioContagem() {
         .order('data_hora_contagem', { ascending: false })
 
       if (!allTime) {
-        // filtro por DIA de contagem (00:00 até 23:59)
-        const startIso = `${startDate}T00:00:00`
-        const endIso = `${endDate}T23:59:59`
-        q = q.gte('data_hora_contagem', startIso).lte('data_hora_contagem', endIso)
+        if (useSingleDay) {
+          // filtro por DIA único de contagem (00:00 até 23:59)
+          const startIso = `${singleDay}T00:00:00`
+          const endIso = `${singleDay}T23:59:59`
+          q = q.gte('data_hora_contagem', startIso).lte('data_hora_contagem', endIso)
+        } else {
+          // filtro por INTERVALO (00:00 até 23:59)
+          const startIso = `${startDate}T00:00:00`
+          const endIso = `${endDate}T23:59:59`
+          q = q.gte('data_hora_contagem', startIso).lte('data_hora_contagem', endIso)
+        }
       }
 
       const { data, error: qError } = await q.limit(20000)
@@ -173,7 +183,7 @@ export default function RelatorioContagem() {
               type="date"
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
-              disabled={allTime}
+              disabled={allTime || useSingleDay}
               style={{ padding: '10px 10px', border: '1px solid #ccc', borderRadius: 8 }}
             />
           </label>
@@ -184,15 +194,46 @@ export default function RelatorioContagem() {
               type="date"
               value={endDate}
               onChange={(e) => setEndDate(e.target.value)}
-              disabled={allTime}
+              disabled={allTime || useSingleDay}
               style={{ padding: '10px 10px', border: '1px solid #ccc', borderRadius: 8 }}
             />
           </label>
 
           <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13 }}>
-            <input type="checkbox" checked={allTime} onChange={(e) => setAllTime(e.target.checked)} />
+            <input
+              type="checkbox"
+              checked={allTime}
+              disabled={useSingleDay}
+              onChange={(e) => {
+                const v = e.target.checked
+                setAllTime(v)
+                if (v) setUseSingleDay(false)
+              }}
+            />
             Carregar todas as datas
           </label>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13 }}>
+              <input
+                type="checkbox"
+                checked={useSingleDay}
+                onChange={(e) => {
+                  const v = e.target.checked
+                  setUseSingleDay(v)
+                  if (v) setAllTime(false)
+                }}
+              />
+              Filtrar por dia
+            </div>
+            <input
+              type="date"
+              value={singleDay}
+              onChange={(e) => setSingleDay(e.target.value)}
+              disabled={!useSingleDay}
+              style={{ padding: '10px 10px', border: '1px solid #ccc', borderRadius: 8 }}
+            />
+          </div>
 
           <button
             type="button"

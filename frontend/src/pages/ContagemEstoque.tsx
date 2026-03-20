@@ -20,11 +20,13 @@ type Produto = {
 }
 
 type ContagemPreviewRow = {
-  // Data apenas (formato YYYY-MM-DD) para virar colunas tipo planilha
-  data_key: string
+  id: string
+  data_hora_contagem: string
   codigo_interno: string
   descricao: string
-  quantidade_up: string | number
+  quantidade_up: number
+  lote: string | null
+  observacao: string | null
 }
 
 type ProductOption = {
@@ -36,20 +38,6 @@ type ProductOption = {
   data_validade?: string | null
   ean?: string | null
   dun?: string | null
-}
-
-function toLocalDateKey(isoLike: string) {
-  const dt = new Date(isoLike)
-  if (Number.isNaN(dt.getTime())) return 'invalid-date'
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`
-}
-
-function formatDateKey(dateKey: string) {
-  // YYYY-MM-DD -> DD/MM/YYYY
-  const [y, m, d] = dateKey.split('-')
-  if (!y || !m || !d) return dateKey
-  return `${d}/${m}/${y}`
 }
 
 function pickFirstString(row: Record<string, any>, keys: string[]) {
@@ -466,20 +454,31 @@ export default function ContagemEstoque() {
 
   async function loadPreview() {
     setPreviewLoading(true)
+    const pad = (n: number) => String(n).padStart(2, '0')
+    const now = new Date()
+    const dayKey = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
+    const startIso = `${dayKey}T00:00:00`
+    const endIso = `${dayKey}T23:59:59`
+
     const { data, error } = await supabase
       .from('contagens_estoque')
-      .select('data_hora_contagem,codigo_interno,descricao,quantidade_up')
+      .select('id,data_hora_contagem,codigo_interno,descricao,quantidade_up,lote,observacao')
+      .gte('data_hora_contagem', startIso)
+      .lte('data_hora_contagem', endIso)
       .order('data_hora_contagem', { ascending: false })
-      .limit(800)
+      .limit(2000)
 
     if (error) {
       setSaveError(`Erro ao carregar prévia: ${error.message}`)
     } else {
       const mapped = (data ?? []).map((r: any) => ({
-        data_key: toLocalDateKey(String(r.data_hora_contagem ?? '')),
+        id: String(r.id),
+        data_hora_contagem: String(r.data_hora_contagem ?? ''),
         codigo_interno: String(r.codigo_interno ?? ''),
         descricao: String(r.descricao ?? ''),
-        quantidade_up: r.quantidade_up,
+        quantidade_up: Number(r.quantidade_up ?? 0),
+        lote: r.lote ?? null,
+        observacao: r.observacao ?? null,
       })) as ContagemPreviewRow[]
 
       setPreviewRows(mapped)
@@ -493,32 +492,48 @@ export default function ContagemEstoque() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const previewColumns = useMemo(() => {
-    const seen = new Set<string>()
-    const cols: string[] = []
-    for (const r of previewRows) {
-      if (!seen.has(r.data_key)) {
-        seen.add(r.data_key)
-        cols.push(r.data_key)
-      }
-      if (cols.length >= 6) break // mantém a tabela legível
-    }
-    return cols
-  }, [previewRows])
+  const [editingPreviewId, setEditingPreviewId] = useState<string | null>(null)
+  const [editingPreviewQuantidade, setEditingPreviewQuantidade] = useState<string>('')
+  const [previewRowActionLoading, setPreviewRowActionLoading] = useState(false)
+  const [previewRowError, setPreviewRowError] = useState('')
 
-  const previewRowMap = useMemo(() => {
-    const map = new Map<string, { descricao: string; values: Record<string, number> }>()
-    for (const r of previewRows) {
-      const key = r.codigo_interno
-      if (!map.has(key)) map.set(key, { descricao: r.descricao, values: {} })
-
-      const v = typeof r.quantidade_up === 'number' ? r.quantidade_up : Number(String(r.quantidade_up))
-      const add = Number.isFinite(v) ? v : 0
-      const prev = map.get(key)!.values[r.data_key] ?? 0
-      map.get(key)!.values[r.data_key] = prev + add
+  async function handlePreviewDelete(id: string) {
+    if (!confirm('Deseja realmente excluir esta contagem?')) return
+    setPreviewRowError('')
+    setPreviewRowActionLoading(true)
+    try {
+      const { error } = await supabase.from('contagens_estoque').delete().eq('id', id)
+      if (error) throw error
+      setEditingPreviewId(null)
+      setEditingPreviewQuantidade('')
+      await loadPreview()
+    } catch (e: any) {
+      setPreviewRowError(`Erro ao excluir: ${e?.message ? String(e.message) : 'verifique'}`)
+    } finally {
+      setPreviewRowActionLoading(false)
     }
-    return map
-  }, [previewRows])
+  }
+
+  async function handlePreviewSave(id: string) {
+    const qtd = Number(editingPreviewQuantidade.replace(',', '.'))
+    if (!Number.isFinite(qtd) || qtd < 0) {
+      setPreviewRowError('Quantidade inválida para atualização.')
+      return
+    }
+    setPreviewRowError('')
+    setPreviewRowActionLoading(true)
+    try {
+      const { error } = await supabase.from('contagens_estoque').update({ quantidade_up: qtd }).eq('id', id)
+      if (error) throw error
+      setEditingPreviewId(null)
+      setEditingPreviewQuantidade('')
+      await loadPreview()
+    } catch (e: any) {
+      setPreviewRowError(`Erro ao atualizar quantidade: ${e?.message ? String(e.message) : 'verifique'}`)
+    } finally {
+      setPreviewRowActionLoading(false)
+    }
+  }
 
   async function sendToSheetInBackground(webhookUrl: string, body: Record<string, any>): Promise<boolean> {
     const json = JSON.stringify(body)
@@ -560,38 +575,94 @@ export default function ContagemEstoque() {
   }
 
   function renderPreviewTable() {
-    const rows: Array<{ key: string; codigo: string; desc: string }> = []
-    for (const [codigo, meta] of previewRowMap.entries()) {
-      rows.push({ key: codigo, codigo, desc: meta.descricao })
-    }
-    rows.sort((a, b) => a.codigo.localeCompare(b.codigo))
-
     return (
       <div style={{ overflowX: 'auto', marginTop: 16 }}>
-        <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 900 }}>
+        {previewRowError ? <div style={{ color: '#b00020', marginBottom: 8 }}>{previewRowError}</div> : null}
+        <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 1100 }}>
           <thead>
             <tr>
               <th style={thStyle}>Código</th>
               <th style={thStyle}>Descrição</th>
-              {previewColumns.map((col) => (
-                <th key={col} style={thStyle}>
-                  {formatDateKey(col)}
-                </th>
-              ))}
+              <th style={thStyle}>Data/hora</th>
+              <th style={thStyle}>Qtd (up)</th>
+              <th style={thStyle}>Lote</th>
+              <th style={thStyle}>Obs</th>
+              <th style={thStyle}>Ações</th>
             </tr>
           </thead>
           <tbody>
-            {rows.map((row) => {
-              const meta = previewRowMap.get(row.key)!
+            {previewRows.map((r) => {
               return (
-                <tr key={row.key}>
-                  <td style={tdStyle}>{row.codigo}</td>
-                  <td style={tdStyle}>{row.desc}</td>
-                  {previewColumns.map((col) => (
-                    <td key={col} style={tdStyle}>
-                      {meta.values[col] ?? 0}
-                    </td>
-                  ))}
+                <tr key={r.id}>
+                  <td style={tdStyle}>{r.codigo_interno}</td>
+                  <td style={tdStyle}>{r.descricao}</td>
+                  <td style={tdStyle}>{String(r.data_hora_contagem).replace('T', ' ').slice(0, 16)}</td>
+                  <td style={tdStyle}>
+                    {editingPreviewId === r.id ? (
+                      <input
+                        type="number"
+                        step="0.001"
+                        value={editingPreviewQuantidade}
+                        onChange={(e) => setEditingPreviewQuantidade(e.target.value)}
+                        style={{ padding: '8px 10px', border: '1px solid #ccc', borderRadius: 8, width: 120 }}
+                      />
+                    ) : (
+                      r.quantidade_up
+                    )}
+                  </td>
+                  <td style={tdStyle}>{r.lote ?? ''}</td>
+                  <td style={tdStyle}>{r.observacao ?? ''}</td>
+                  <td style={tdStyle}>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      {editingPreviewId === r.id ? (
+                        <>
+                          <button
+                            type="button"
+                            style={buttonStyle}
+                            onClick={() => handlePreviewSave(r.id)}
+                            disabled={previewRowActionLoading}
+                          >
+                            Salvar
+                          </button>
+                          <button
+                            type="button"
+                            style={{ ...buttonStyle, background: '#444' }}
+                            onClick={() => {
+                              setEditingPreviewId(null)
+                              setEditingPreviewQuantidade('')
+                              setPreviewRowError('')
+                            }}
+                            disabled={previewRowActionLoading}
+                          >
+                            Cancelar
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            style={buttonStyle}
+                            onClick={() => {
+                              setEditingPreviewId(r.id)
+                              setEditingPreviewQuantidade(String(r.quantidade_up))
+                              setPreviewRowError('')
+                            }}
+                            disabled={previewRowActionLoading}
+                          >
+                            Editar
+                          </button>
+                          <button
+                            type="button"
+                            style={{ ...buttonStyle, background: '#8a0000' }}
+                            onClick={() => handlePreviewDelete(r.id)}
+                            disabled={previewRowActionLoading}
+                          >
+                            Excluir
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </td>
                 </tr>
               )
             })}
