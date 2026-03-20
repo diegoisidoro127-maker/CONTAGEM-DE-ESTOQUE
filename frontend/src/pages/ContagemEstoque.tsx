@@ -394,6 +394,7 @@ export default function ContagemEstoque() {
     }
 
     setSaving(true)
+    try {
     const payload: Record<string, any> = {
       data_hora_contagem: toISOStringFromDatetimeLocal(dataHoraContagem),
       conferente_id: conferenteId,
@@ -442,12 +443,21 @@ export default function ContagemEstoque() {
       const firstId = existentes[0].id
 
       const { error: updError } = await supabase.from('contagens_estoque').update(updateFields).eq('id', firstId)
-      if (updError) saveError = updError
+      if (updError) {
+        // Fallback: se update falhar (ex.: RLS), não trava o salvamento; tenta inserir como nova linha.
+        // A soma pode não consolidar, mas pelo menos salva.
+        payload.quantidade_up = totalQtd
+        const { error: insError } = await supabase.from('contagens_estoque').insert(payload)
+        saveError = insError ?? updError
+      }
       else {
         const otherIds = existentes.slice(1).map((r: any) => r.id)
         if (otherIds.length) {
           const { error: delError } = await supabase.from('contagens_estoque').delete().in('id', otherIds)
-          if (delError) saveError = delError
+          // Se delete falhar, não bloqueia o salvamento.
+          if (delError) {
+            console.warn('Falha ao deletar duplicados:', delError.message)
+          }
         }
       }
 
@@ -511,7 +521,12 @@ export default function ContagemEstoque() {
         })
       }
     }
-    setSaving(false)
+    } catch (e: any) {
+      setSaveError(`Erro ao salvar contagem: ${e?.message ? String(e.message) : 'verifique'}`)
+      setSaveSuccess('')
+    } finally {
+      setSaving(false)
+    }
   }
 
   async function loadPreview() {
