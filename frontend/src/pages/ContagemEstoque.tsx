@@ -685,8 +685,8 @@ export default function ContagemEstoque() {
         <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 1100 }}>
           <thead>
             <tr>
-              <th style={{ ...thStyle, whiteSpace: 'normal' }}>
-                Código
+              <th style={{ ...thStyle, whiteSpace: 'normal', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <span>Código</span>
                 <input
                   value={previewFilterCodigo}
                   onChange={(e) => setPreviewFilterCodigo(e.target.value)}
@@ -694,8 +694,8 @@ export default function ContagemEstoque() {
                   style={{ padding: '6px 8px', border: '1px solid #ccc', borderRadius: 6, width: '100%' }}
                 />
               </th>
-              <th style={{ ...thStyle, whiteSpace: 'normal' }}>
-                Descrição
+              <th style={{ ...thStyle, whiteSpace: 'normal', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <span>Descrição</span>
                 <input
                   value={previewFilterDescricao}
                   onChange={(e) => setPreviewFilterDescricao(e.target.value)}
@@ -703,8 +703,8 @@ export default function ContagemEstoque() {
                   style={{ padding: '6px 8px', border: '1px solid #ccc', borderRadius: 6, width: '100%' }}
                 />
               </th>
-              <th style={{ ...thStyle, whiteSpace: 'normal' }}>
-                Data (dd/mm/aaaa)
+              <th style={{ ...thStyle, whiteSpace: 'normal', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <span>Data (dd/mm/aaaa)</span>
                 <input
                   type="date"
                   value={previewFilterData}
@@ -713,8 +713,8 @@ export default function ContagemEstoque() {
                 />
               </th>
               <th style={thStyle}>Qtd (up)</th>
-              <th style={{ ...thStyle, whiteSpace: 'normal' }}>
-                Lote
+              <th style={{ ...thStyle, whiteSpace: 'normal', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <span>Lote</span>
                 <input
                   value={previewFilterLote}
                   onChange={(e) => setPreviewFilterLote(e.target.value)}
@@ -722,8 +722,8 @@ export default function ContagemEstoque() {
                   style={{ padding: '6px 8px', border: '1px solid #ccc', borderRadius: 6, width: '100%' }}
                 />
               </th>
-              <th style={{ ...thStyle, whiteSpace: 'normal' }}>
-                Obs
+              <th style={{ ...thStyle, whiteSpace: 'normal', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <span>Obs</span>
                 <input
                   value={previewFilterObs}
                   onChange={(e) => setPreviewFilterObs(e.target.value)}
