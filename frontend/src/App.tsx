@@ -5,7 +5,7 @@ import ContagemEstoque from './pages/ContagemEstoque'
 import RelatorioContagem from './pages/RelatorioContagem'
 import logoUltrapao from './assets/logo-ultrapao.png'
 
-type View = 'contagem' | 'relatorio'
+type View = 'contagem' | 'relatorio' | 'todas'
 type Theme = 'dark' | 'light'
 
 export default function App() {
@@ -57,6 +57,13 @@ export default function App() {
           onClick={() => setView('relatorio')}
           style={viewBtnStyle(view === 'relatorio')}
         >
+          Relatório completo
+        </button>
+        <button
+          type="button"
+          onClick={() => setView('todas')}
+          style={viewBtnStyle(view === 'todas')}
+        >
           Todas as contagens
         </button>
         <button
@@ -68,7 +75,13 @@ export default function App() {
         </button>
       </header>
 
-      {view === 'contagem' ? <ContagemEstoque /> : <RelatorioContagem />}
+      {view === 'contagem' ? (
+        <ContagemEstoque />
+      ) : view === 'relatorio' ? (
+        <RelatorioContagem mode="periodo" />
+      ) : (
+        <RelatorioContagem mode="dia" />
+      )}
     </div>
   )
 }

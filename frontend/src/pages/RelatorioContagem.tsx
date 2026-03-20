@@ -50,7 +50,11 @@ function dateKeyFromIso(iso: string) {
   return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`
 }
 
-export default function RelatorioContagem() {
+type RelatorioContagemProps = {
+  mode?: 'periodo' | 'dia'
+}
+
+export default function RelatorioContagem({ mode = 'periodo' }: RelatorioContagemProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string>('')
   const [success, setSuccess] = useState<string>('')
@@ -58,10 +62,14 @@ export default function RelatorioContagem() {
   const [editingQuantidade, setEditingQuantidade] = useState<string>('')
   const [rowActionLoading, setRowActionLoading] = useState(false)
 
-  const [startDate, setStartDate] = useState(() => toISODateLocal(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)))
+  const isDiaMode = mode === 'dia'
+
+  const [startDate, setStartDate] = useState(() =>
+    toISODateLocal(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)),
+  )
   const [endDate, setEndDate] = useState(() => toISODateLocal(new Date()))
   const [allTime, setAllTime] = useState(false)
-  const [useSingleDay, setUseSingleDay] = useState(false)
+  const [useSingleDay, setUseSingleDay] = useState(() => isDiaMode)
   const [singleDay, setSingleDay] = useState(() => toISODateLocal(new Date()))
   const [rows, setRows] = useState<ContagemRow[]>([])
 
@@ -173,67 +181,84 @@ export default function RelatorioContagem() {
 
   return (
     <div style={{ padding: 16, maxWidth: 1400, margin: '0 auto' }}>
-      <h2>Todas as contagens (filtro por dia)</h2>
+      <h2>{isDiaMode ? 'Todas as contagens (filtro por dia)' : 'Relatório completo por data de contagem'}</h2>
 
       <div style={{ display: 'grid', gap: 12, marginTop: 12 }}>
         <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-          <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13 }}>
-            Início
-            <input
-              type="date"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              disabled={allTime || useSingleDay}
-              style={{ padding: '10px 10px', border: '1px solid #ccc', borderRadius: 8 }}
-            />
-          </label>
+          {!isDiaMode ? (
+            <>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13 }}>
+                Início
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  disabled={allTime || useSingleDay}
+                  style={{ padding: '10px 10px', border: '1px solid #ccc', borderRadius: 8 }}
+                />
+              </label>
 
-          <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13 }}>
-            Fim
-            <input
-              type="date"
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-              disabled={allTime || useSingleDay}
-              style={{ padding: '10px 10px', border: '1px solid #ccc', borderRadius: 8 }}
-            />
-          </label>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13 }}>
+                Fim
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  disabled={allTime || useSingleDay}
+                  style={{ padding: '10px 10px', border: '1px solid #ccc', borderRadius: 8 }}
+                />
+              </label>
 
-          <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13 }}>
-            <input
-              type="checkbox"
-              checked={allTime}
-              disabled={useSingleDay}
-              onChange={(e) => {
-                const v = e.target.checked
-                setAllTime(v)
-                if (v) setUseSingleDay(false)
-              }}
-            />
-            Carregar todas as datas
-          </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13 }}>
+                <input
+                  type="checkbox"
+                  checked={allTime}
+                  disabled={useSingleDay}
+                  onChange={(e) => {
+                    const v = e.target.checked
+                    setAllTime(v)
+                    if (v) setUseSingleDay(false)
+                  }}
+                />
+                Carregar todas as datas
+              </label>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13 }}>
+                  <input
+                    type="checkbox"
+                    checked={useSingleDay}
+                    onChange={(e) => {
+                      const v = e.target.checked
+                      setUseSingleDay(v)
+                      if (v) setAllTime(false)
+                    }}
+                  />
+                  Filtrar por dia
+                </div>
+                <input
+                  type="date"
+                  value={singleDay}
+                  onChange={(e) => setSingleDay(e.target.value)}
+                  disabled={!useSingleDay}
+                  style={{ padding: '10px 10px', border: '1px solid #ccc', borderRadius: 8 }}
+                />
+              </div>
+            </>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13 }}>
+                <input type="checkbox" checked={true} disabled={true} />
+                Dia
+              </div>
               <input
-                type="checkbox"
-                checked={useSingleDay}
-                onChange={(e) => {
-                  const v = e.target.checked
-                  setUseSingleDay(v)
-                  if (v) setAllTime(false)
-                }}
+                type="date"
+                value={singleDay}
+                onChange={(e) => setSingleDay(e.target.value)}
+                style={{ padding: '10px 10px', border: '1px solid #ccc', borderRadius: 8 }}
               />
-              Filtrar por dia
             </div>
-            <input
-              type="date"
-              value={singleDay}
-              onChange={(e) => setSingleDay(e.target.value)}
-              disabled={!useSingleDay}
-              style={{ padding: '10px 10px', border: '1px solid #ccc', borderRadius: 8 }}
-            />
-          </div>
+          )}
 
           <button
             type="button"

@@ -202,6 +202,25 @@ for insert
 to authenticated
 with check (true);
 
+-- contagens_estoque: update/delete
+drop policy if exists "contagens_authenticated_update" on public.contagens_estoque;
+drop policy if exists "contagens_authenticated_delete" on public.contagens_estoque;
+drop policy if exists "contagens_anon_update" on public.contagens_estoque;
+drop policy if exists "contagens_anon_delete" on public.contagens_estoque;
+
+create policy "contagens_authenticated_update"
+on public.contagens_estoque
+for update
+to authenticated
+using (true)
+with check (true);
+
+create policy "contagens_authenticated_delete"
+on public.contagens_estoque
+for delete
+to authenticated
+using (true);
+
 create policy "contagens_anon_select"
 on public.contagens_estoque
 for select
@@ -213,4 +232,17 @@ on public.contagens_estoque
 for insert
 to anon
 with check (true);
+
+create policy "contagens_anon_update"
+on public.contagens_estoque
+for update
+to anon
+using (true)
+with check (true);
+
+create policy "contagens_anon_delete"
+on public.contagens_estoque
+for delete
+to anon
+using (true);
 
