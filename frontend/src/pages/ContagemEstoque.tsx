@@ -555,6 +555,7 @@ export default function ContagemEstoque() {
         const dataContagem = String(row.data_hora_contagem).slice(0, 10)
         void sendToSheetInBackground(sheetWebhookUrl, {
           tipo: 'clear_qty',
+          data_hora_contagem: row.data_hora_contagem,
           data_contagem: dataContagem,
           codigo_interno: row.codigo_interno,
           descricao: row.descricao,
@@ -592,6 +593,7 @@ export default function ContagemEstoque() {
         const dataContagem = String(row.data_hora_contagem).slice(0, 10)
         void sendToSheetInBackground(sheetWebhookUrl, {
           tipo: 'edit_qty',
+          data_hora_contagem: row.data_hora_contagem,
           data_contagem: dataContagem,
           codigo_interno: row.codigo_interno,
           descricao: row.descricao,

@@ -27,16 +27,20 @@ function doPost(e) {
   // A: data/hora, B: data_contagem (YYYY-MM-DD), C: codigo_interno, D: descricao,
   // E: quantidade_contada, F: up, G: lote, H: observacao, I: conferente.
   const values = sheet.getDataRange().getValues()
-  const incomingDataContagem = String(data.data_contagem || '')
-  const incomingCodigo = String(data.codigo_interno || '')
-  const incomingDescricao = String(data.descricao || '')
+  const incomingDataContagem = String(data.data_contagem || '').trim()
+  const incomingCodigo = String(data.codigo_interno || '').trim().toLowerCase()
+  const incomingDescricao = String(data.descricao || '').trim().toLowerCase()
   const incomingQtd = Number(data.quantidade_contada ?? 0)
 
   const matches = []
   // começa em 1 para ignorar o cabeçalho (linha 1)
   for (let r = 1; r < values.length; r++) {
     const row = values[r]
-    if (String(row[1] ?? '') === incomingDataContagem && String(row[2] ?? '') === incomingCodigo && String(row[3] ?? '') === incomingDescricao) {
+    const rowDataContagem = String(row[1] ?? '').trim()
+    const rowCodigo = String(row[2] ?? '').trim().toLowerCase()
+    const rowDescricao = String(row[3] ?? '').trim().toLowerCase()
+
+    if (rowDataContagem === incomingDataContagem && rowCodigo === incomingCodigo && rowDescricao === incomingDescricao) {
       matches.push(r + 1) // numeração de linha 1-index
     }
   }
@@ -71,8 +75,9 @@ function doPost(e) {
         .forEach((rowNum) => sheet.deleteRow(rowNum))
     }
   } else {
-    // Para clear_qty não existe linha, então não faz nada.
-    if (tipo !== 'clear_qty') {
+    // Para edit_qty/clear_qty não vamos criar linha nova.
+    // Isso evita “criar outra coluna”/duplicar quando a linha já existe, mas não achamos por detalhe.
+    if (tipo === 'upsert') {
       sheet.appendRow([
         data.data_hora_contagem || '',
         data.data_contagem || '',
@@ -84,7 +89,12 @@ function doPost(e) {
         data.observacao ?? '',
         data.conferente ?? '',
       ])
+    } else if (tipo === 'edit_qty') {
+      return ContentService.createTextOutput(
+        JSON.stringify({ ok: false, error: 'Linha não encontrada para edit_qty' }),
+      ).setMimeType(ContentService.MimeType.JSON)
     }
+    // clear_qty: não faz nada
   }
 
   return ContentService.createTextOutput(JSON.stringify({ ok: true })).setMimeType(
