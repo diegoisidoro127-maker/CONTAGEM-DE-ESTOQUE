@@ -685,8 +685,16 @@ export default function ContagemEstoque() {
         <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 1100 }}>
           <thead>
             <tr>
-              <th style={{ ...thStyle, whiteSpace: 'normal', display: 'flex', flexDirection: 'column', gap: 4 }}>
-                <span>Código</span>
+              <th style={thStyle}>Código</th>
+              <th style={thStyle}>Descrição</th>
+              <th style={thStyle}>Data (dd/mm/aaaa)</th>
+              <th style={thStyle}>Qtd (up)</th>
+              <th style={thStyle}>Lote</th>
+              <th style={thStyle}>Obs</th>
+              <th style={thStyle}>Ações</th>
+            </tr>
+            <tr>
+              <th style={{ ...thStyle, fontWeight: 400, fontSize: 12, background: '#f3f4f6' }}>
                 <input
                   value={previewFilterCodigo}
                   onChange={(e) => setPreviewFilterCodigo(e.target.value)}
@@ -694,8 +702,7 @@ export default function ContagemEstoque() {
                   style={{ padding: '6px 8px', border: '1px solid #ccc', borderRadius: 6, width: '100%' }}
                 />
               </th>
-              <th style={{ ...thStyle, whiteSpace: 'normal', display: 'flex', flexDirection: 'column', gap: 4 }}>
-                <span>Descrição</span>
+              <th style={{ ...thStyle, fontWeight: 400, fontSize: 12, background: '#f3f4f6' }}>
                 <input
                   value={previewFilterDescricao}
                   onChange={(e) => setPreviewFilterDescricao(e.target.value)}
@@ -703,8 +710,7 @@ export default function ContagemEstoque() {
                   style={{ padding: '6px 8px', border: '1px solid #ccc', borderRadius: 6, width: '100%' }}
                 />
               </th>
-              <th style={{ ...thStyle, whiteSpace: 'normal', display: 'flex', flexDirection: 'column', gap: 4 }}>
-                <span>Data (dd/mm/aaaa)</span>
+              <th style={{ ...thStyle, fontWeight: 400, fontSize: 12, background: '#f3f4f6' }}>
                 <input
                   type="date"
                   value={previewFilterData}
@@ -712,9 +718,10 @@ export default function ContagemEstoque() {
                   style={{ padding: '6px 8px', border: '1px solid #ccc', borderRadius: 6, width: '100%' }}
                 />
               </th>
-              <th style={thStyle}>Qtd (up)</th>
-              <th style={{ ...thStyle, whiteSpace: 'normal', display: 'flex', flexDirection: 'column', gap: 4 }}>
-                <span>Lote</span>
+              <th style={{ ...thStyle, fontWeight: 400, fontSize: 12, background: '#f3f4f6' }}>
+                {/* Excel tem filtro por coluna; aqui fica em branco por ser campo numérico editado em célula */}
+              </th>
+              <th style={{ ...thStyle, fontWeight: 400, fontSize: 12, background: '#f3f4f6' }}>
                 <input
                   value={previewFilterLote}
                   onChange={(e) => setPreviewFilterLote(e.target.value)}
@@ -722,8 +729,7 @@ export default function ContagemEstoque() {
                   style={{ padding: '6px 8px', border: '1px solid #ccc', borderRadius: 6, width: '100%' }}
                 />
               </th>
-              <th style={{ ...thStyle, whiteSpace: 'normal', display: 'flex', flexDirection: 'column', gap: 4 }}>
-                <span>Obs</span>
+              <th style={{ ...thStyle, fontWeight: 400, fontSize: 12, background: '#f3f4f6' }}>
                 <input
                   value={previewFilterObs}
                   onChange={(e) => setPreviewFilterObs(e.target.value)}
@@ -731,7 +737,7 @@ export default function ContagemEstoque() {
                   style={{ padding: '6px 8px', border: '1px solid #ccc', borderRadius: 6, width: '100%' }}
                 />
               </th>
-              <th style={thStyle}>Ações</th>
+              <th style={{ ...thStyle, fontWeight: 400, fontSize: 12, background: '#f3f4f6' }} />
             </tr>
           </thead>
           <tbody>
