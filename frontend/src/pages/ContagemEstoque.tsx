@@ -55,6 +55,13 @@ function toDateInputValue(v?: string | null) {
   return m ? m[0] : ''
 }
 
+function formatDateBRFromIso(isoLike: string) {
+  const dt = new Date(isoLike)
+  if (Number.isNaN(dt.getTime())) return isoLike
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${pad(dt.getDate())}/${pad(dt.getMonth() + 1)}/${dt.getFullYear()}`
+}
+
 function isUuid(value: string | null | undefined) {
   if (!value) return false
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
@@ -540,6 +547,11 @@ export default function ContagemEstoque() {
   const [editingPreviewQuantidade, setEditingPreviewQuantidade] = useState<string>('')
   const [previewRowActionLoading, setPreviewRowActionLoading] = useState(false)
   const [previewRowError, setPreviewRowError] = useState('')
+  const [previewFilterCodigo, setPreviewFilterCodigo] = useState('')
+  const [previewFilterDescricao, setPreviewFilterDescricao] = useState('')
+  const [previewFilterData, setPreviewFilterData] = useState('')
+  const [previewFilterLote, setPreviewFilterLote] = useState('')
+  const [previewFilterObs, setPreviewFilterObs] = useState('')
 
   async function handlePreviewDelete(id: string) {
     if (!confirm('Deseja realmente excluir esta contagem?')) return
@@ -650,28 +662,82 @@ export default function ContagemEstoque() {
   }
 
   function renderPreviewTable() {
+    const filteredRows = previewRows.filter((r) => {
+      const codigoOk =
+        !previewFilterCodigo.trim() || r.codigo_interno.toLowerCase().includes(previewFilterCodigo.trim().toLowerCase())
+      const descricaoOk =
+        !previewFilterDescricao.trim() ||
+        r.descricao.toLowerCase().includes(previewFilterDescricao.trim().toLowerCase())
+      const dataOk = !previewFilterData || String(r.data_hora_contagem).slice(0, 10) === previewFilterData
+      const loteOk =
+        !previewFilterLote.trim() || String(r.lote ?? '').toLowerCase().includes(previewFilterLote.trim().toLowerCase())
+      const obsOk =
+        !previewFilterObs.trim() || String(r.observacao ?? '').toLowerCase().includes(previewFilterObs.trim().toLowerCase())
+      return codigoOk && descricaoOk && dataOk && loteOk && obsOk
+    })
+
     return (
       <div style={{ overflowX: 'auto', marginTop: 16 }}>
         {previewRowError ? <div style={{ color: '#b00020', marginBottom: 8 }}>{previewRowError}</div> : null}
         <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 1100 }}>
           <thead>
             <tr>
-              <th style={thStyle}>Código</th>
-              <th style={thStyle}>Descrição</th>
-              <th style={thStyle}>Data/hora</th>
+              <th style={{ ...thStyle, whiteSpace: 'normal' }}>
+                Código
+                <input
+                  value={previewFilterCodigo}
+                  onChange={(e) => setPreviewFilterCodigo(e.target.value)}
+                  placeholder="filtrar"
+                  style={{ padding: '6px 8px', border: '1px solid #ccc', borderRadius: 6, width: '100%' }}
+                />
+              </th>
+              <th style={{ ...thStyle, whiteSpace: 'normal' }}>
+                Descrição
+                <input
+                  value={previewFilterDescricao}
+                  onChange={(e) => setPreviewFilterDescricao(e.target.value)}
+                  placeholder="filtrar"
+                  style={{ padding: '6px 8px', border: '1px solid #ccc', borderRadius: 6, width: '100%' }}
+                />
+              </th>
+              <th style={{ ...thStyle, whiteSpace: 'normal' }}>
+                Data (dd/mm/aaaa)
+                <input
+                  type="date"
+                  value={previewFilterData}
+                  onChange={(e) => setPreviewFilterData(e.target.value)}
+                  style={{ padding: '6px 8px', border: '1px solid #ccc', borderRadius: 6, width: '100%' }}
+                />
+              </th>
               <th style={thStyle}>Qtd (up)</th>
-              <th style={thStyle}>Lote</th>
-              <th style={thStyle}>Obs</th>
+              <th style={{ ...thStyle, whiteSpace: 'normal' }}>
+                Lote
+                <input
+                  value={previewFilterLote}
+                  onChange={(e) => setPreviewFilterLote(e.target.value)}
+                  placeholder="filtrar"
+                  style={{ padding: '6px 8px', border: '1px solid #ccc', borderRadius: 6, width: '100%' }}
+                />
+              </th>
+              <th style={{ ...thStyle, whiteSpace: 'normal' }}>
+                Obs
+                <input
+                  value={previewFilterObs}
+                  onChange={(e) => setPreviewFilterObs(e.target.value)}
+                  placeholder="filtrar"
+                  style={{ padding: '6px 8px', border: '1px solid #ccc', borderRadius: 6, width: '100%' }}
+                />
+              </th>
               <th style={thStyle}>Ações</th>
             </tr>
           </thead>
           <tbody>
-            {previewRows.map((r) => {
+            {filteredRows.map((r) => {
               return (
                 <tr key={r.id}>
                   <td style={tdStyle}>{r.codigo_interno}</td>
                   <td style={tdStyle}>{r.descricao}</td>
-                  <td style={tdStyle}>{String(r.data_hora_contagem).replace('T', ' ').slice(0, 16)}</td>
+                  <td style={tdStyle}>{formatDateBRFromIso(r.data_hora_contagem)}</td>
                   <td style={tdStyle}>
                     {editingPreviewId === r.id ? (
                       <input
