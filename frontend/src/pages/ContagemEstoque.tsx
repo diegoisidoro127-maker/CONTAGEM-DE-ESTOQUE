@@ -62,6 +62,13 @@ function formatDateBRFromIso(isoLike: string) {
   return `${pad(dt.getDate())}/${pad(dt.getMonth() + 1)}/${dt.getFullYear()}`
 }
 
+function toLocalYYYYMMDDFromIso(isoLike: string) {
+  const dt = new Date(isoLike)
+  if (Number.isNaN(dt.getTime())) return ''
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`
+}
+
 function isUuid(value: string | null | undefined) {
   if (!value) return false
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
@@ -487,7 +494,8 @@ export default function ContagemEstoque() {
         const conferenteNome = conferentes.find((c) => c.id === conferenteId)?.nome ?? conferenteId
         sendToSheetInBackground(sheetWebhookUrl, {
           data_hora_contagem: payload.data_hora_contagem,
-          data_contagem: String(payload.data_hora_contagem).slice(0, 10),
+          // Use o dia do datetime-local (horário local) para não criar coluna “errada” por fuso.
+          data_contagem: dataHoraContagem.slice(0, 10),
           codigo_interno: payload.codigo_interno,
           descricao: payload.descricao,
           quantidade_contada: payload.quantidade_up,
@@ -567,7 +575,7 @@ export default function ContagemEstoque() {
 
       // Planilha: ao excluir, limpar apenas a quantidade (não remover a linha).
       if (sheetWebhookUrl && row) {
-        const dataContagem = String(row.data_hora_contagem).slice(0, 10)
+        const dataContagem = toLocalYYYYMMDDFromIso(row.data_hora_contagem)
         void sendToSheetInBackground(sheetWebhookUrl, {
           tipo: 'clear_qty',
           data_hora_contagem: row.data_hora_contagem,
@@ -605,7 +613,7 @@ export default function ContagemEstoque() {
 
       // Planilha: ao editar, atualizar a quantidade na linha já existente.
       if (sheetWebhookUrl && row) {
-        const dataContagem = String(row.data_hora_contagem).slice(0, 10)
+        const dataContagem = toLocalYYYYMMDDFromIso(row.data_hora_contagem)
         void sendToSheetInBackground(sheetWebhookUrl, {
           tipo: 'edit_qty',
           data_hora_contagem: row.data_hora_contagem,
