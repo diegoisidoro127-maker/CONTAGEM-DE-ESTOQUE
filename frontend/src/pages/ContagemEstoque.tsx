@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type React from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { toDatetimeLocalValue, toISOStringFromDatetimeLocal } from '../lib/datetime'
@@ -94,6 +94,11 @@ export default function ContagemEstoque() {
   const [produtoError, setProdutoError] = useState<string>('')
   const [productOptions, setProductOptions] = useState<ProductOption[]>([])
   const [productOptionsLoading, setProductOptionsLoading] = useState(false)
+  /** datalist HTML não abre a lista ao clicar na seta; usamos lista própria */
+  const [codigoListOpen, setCodigoListOpen] = useState(false)
+  const [descricaoListOpen, setDescricaoListOpen] = useState(false)
+  const codigoWrapRef = useRef<HTMLDivElement>(null)
+  const descricaoWrapRef = useRef<HTMLDivElement>(null)
 
   const [lote, setLote] = useState('')
   const [dataFabricacao, setDataFabricacao] = useState('')
@@ -210,6 +215,33 @@ export default function ContagemEstoque() {
     for (const p of productOptions) map.set(p.descricao.trim().toLowerCase(), p)
     return map
   }, [productOptions])
+
+  const SUGGEST_LIMIT = 400
+  const codigoSuggestions = useMemo(() => {
+    const q = codigoInterno.trim().toLowerCase()
+    const list = q
+      ? productOptions.filter((p) => p.codigo.toLowerCase().includes(q))
+      : productOptions
+    return list.slice(0, SUGGEST_LIMIT)
+  }, [productOptions, codigoInterno])
+
+  const descricaoSuggestions = useMemo(() => {
+    const q = descricaoInput.trim().toLowerCase()
+    const list = q
+      ? productOptions.filter((p) => p.descricao.toLowerCase().includes(q))
+      : productOptions
+    return list.slice(0, SUGGEST_LIMIT)
+  }, [productOptions, descricaoInput])
+
+  useEffect(() => {
+    function onDocDown(ev: MouseEvent) {
+      const t = ev.target as Node
+      if (codigoWrapRef.current && !codigoWrapRef.current.contains(t)) setCodigoListOpen(false)
+      if (descricaoWrapRef.current && !descricaoWrapRef.current.contains(t)) setDescricaoListOpen(false)
+    }
+    document.addEventListener('mousedown', onDocDown)
+    return () => document.removeEventListener('mousedown', onDocDown)
+  }, [])
 
   function applyProductByCode(codigo: string) {
     const p = productByCode.get(codigo)
@@ -378,36 +410,11 @@ export default function ContagemEstoque() {
       setSaveError(`Erro ao salvar contagem: ${error.message}`)
       setSaveSuccess('')
     } else {
-      // Envio opcional para Google Sheets (aba CONTAGEM DE ESTOQUE FISICA)
-      // Não bloqueia o fluxo principal se o webhook estiver indisponível.
-      if (sheetWebhookUrl) {
-        try {
-          const conferenteNome =
-            conferentes.find((c) => c.id === conferenteId)?.nome ??
-            conferenteId
-
-          await fetch(sheetWebhookUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              data_hora_contagem: payload.data_hora_contagem,
-              data_contagem: String(payload.data_hora_contagem).slice(0, 10),
-              codigo_interno: payload.codigo_interno,
-              descricao: payload.descricao,
-              quantidade_contada: payload.quantidade_up,
-              up: payload.up ?? null,
-              lote: payload.lote ?? null,
-              observacao: payload.observacao ?? null,
-              conferente: conferenteNome,
-              aba: 'CONTAGEM DE ESTOQUE FISICA',
-            }),
-          })
-        } catch {
-          // Sem throw para não impedir o salvamento no Supabase
-        }
-      }
-
-      setSaveSuccess('Linha salva com sucesso.')
+      setSaveSuccess(
+        sheetWebhookUrl
+          ? 'Linha salva com sucesso. Enviando para a planilha…'
+          : 'Linha salva com sucesso. (Para Google Sheets: defina VITE_SHEET_WEBHOOK_URL no Render e faça um novo deploy.)',
+      )
       setSaveError('')
       // Mantém código para facilitar batidas em sequência no mesmo produto.
       setLote('')
@@ -420,6 +427,27 @@ export default function ContagemEstoque() {
       setDescricaoInput('')
       setProduto(null)
       await loadPreview()
+
+      // Envio opcional para Google Sheets (não bloqueia a ação principal).
+      if (sheetWebhookUrl) {
+        const conferenteNome = conferentes.find((c) => c.id === conferenteId)?.nome ?? conferenteId
+        sendToSheetInBackground(sheetWebhookUrl, {
+          data_hora_contagem: payload.data_hora_contagem,
+          data_contagem: String(payload.data_hora_contagem).slice(0, 10),
+          codigo_interno: payload.codigo_interno,
+          descricao: payload.descricao,
+          quantidade_contada: payload.quantidade_up,
+          up: payload.up ?? null,
+          lote: payload.lote ?? null,
+          observacao: payload.observacao ?? null,
+          conferente: conferenteNome,
+          aba: 'CONTAGEM DE ESTOQUE FISICA',
+        }).then((ok) => {
+          if (!ok) {
+            setSaveError('Salvei no banco, mas falhou o envio para o Sheet (webhook). Verifique a URL /exec e o Apps Script.')
+          }
+        })
+      }
     }
     setSaving(false)
   }
@@ -479,6 +507,45 @@ export default function ContagemEstoque() {
     }
     return map
   }, [previewRows])
+
+  async function sendToSheetInBackground(webhookUrl: string, body: Record<string, any>): Promise<boolean> {
+    const json = JSON.stringify(body)
+    // Google Apps Script Web App: application/json dispara preflight CORS que costuma falhar
+    // (o navegador cancela o POST antes de chegar ao doPost). text/plain evita o preflight.
+    const plainHeaders = { 'Content-Type': 'text/plain;charset=utf-8' }
+
+    try {
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), 20000)
+      const res = await fetch(webhookUrl.trim(), {
+        method: 'POST',
+        headers: plainHeaders,
+        body: json,
+        signal: controller.signal,
+        credentials: 'omit',
+      })
+      clearTimeout(timeout)
+      // Ajuda a diagnosticar no DevTools (aba Network); resposta pode ser opaca em alguns casos.
+      if (import.meta.env.DEV && !res.ok) {
+        console.warn('[Sheets webhook]', res.status, res.statusText)
+      }
+      return !!res.ok
+    } catch (err) {
+      if (import.meta.env.DEV) console.warn('[Sheets webhook] fetch falhou, tentando no-cors:', err)
+      try {
+        await fetch(webhookUrl.trim(), {
+          method: 'POST',
+          mode: 'no-cors',
+          body: json,
+          credentials: 'omit',
+        })
+        return true
+      } catch {
+        // silencioso: planilha é opcional
+        return false
+      }
+    }
+  }
 
   function renderPreviewTable() {
     const rows: Array<{ key: string; codigo: string; desc: string }> = []
@@ -634,68 +701,248 @@ export default function ContagemEstoque() {
 
         <label style={labelStyle}>
           Código do produto
-          <input
-            value={codigoInterno}
-            onChange={(e) => {
-              const v = e.target.value
-              setCodigoInterno(v)
-              const matched = applyProductByCode(v.trim())
-              if (!matched && produto && produto.codigo_interno !== v) {
-                setProduto(null)
-              }
-            }}
-            onBlur={() => {
-              // ao sair do campo, tenta casar com um código da lista
-              const code = codigoInterno.trim()
-              const matched = applyProductByCode(code)
-              if (!matched && !descricaoInput.trim()) {
-                setProduto(null)
-              }
-            }}
-            list="codigo-produto-sugestoes"
-            style={inputStyle}
-            disabled={productOptionsLoading}
-            placeholder={productOptionsLoading ? 'Carregando códigos...' : 'Digite o código...'}
-          />
-          <datalist id="codigo-produto-sugestoes">
-            {productOptions.map((p) => (
-              <option key={p.codigo} value={p.codigo} />
-            ))}
-          </datalist>
+          <div ref={codigoWrapRef} style={{ position: 'relative' }}>
+            <div style={{ display: 'flex', alignItems: 'stretch', width: '100%' }}>
+              <input
+                value={codigoInterno}
+                onChange={(e) => {
+                  const v = e.target.value
+                  setCodigoInterno(v)
+                  const matched = applyProductByCode(v.trim())
+                  if (!matched && produto && produto.codigo_interno !== v) {
+                    setProduto(null)
+                  }
+                }}
+                onBlur={() => {
+                  const code = codigoInterno.trim()
+                  const matched = applyProductByCode(code)
+                  if (!matched && !descricaoInput.trim()) {
+                    setProduto(null)
+                  }
+                }}
+                onFocus={() => setCodigoListOpen(true)}
+                style={{
+                  ...inputStyle,
+                  flex: 1,
+                  borderTopRightRadius: 0,
+                  borderBottomRightRadius: 0,
+                  borderRight: 'none',
+                }}
+                disabled={productOptionsLoading}
+                placeholder={productOptionsLoading ? 'Carregando códigos...' : 'Digite o código...'}
+              />
+              <button
+                type="button"
+                aria-label="Abrir lista de códigos"
+                aria-expanded={codigoListOpen}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => setCodigoListOpen((o) => !o)}
+                disabled={productOptionsLoading}
+                style={{
+                  padding: '0 12px',
+                  border: '1px solid var(--border, #ccc)',
+                  borderTopLeftRadius: 0,
+                  borderBottomLeftRadius: 0,
+                  borderTopRightRadius: 8,
+                  borderBottomRightRadius: 8,
+                  background: 'var(--code-bg, #f4f3ec)',
+                  color: 'var(--text-h, #111)',
+                  cursor: productOptionsLoading ? 'not-allowed' : 'pointer',
+                  fontSize: 11,
+                  lineHeight: 1,
+                  flexShrink: 0,
+                }}
+              >
+                ▼
+              </button>
+            </div>
+            {codigoListOpen ? (
+              <ul
+                style={{
+                  position: 'absolute',
+                  left: 0,
+                  right: 0,
+                  top: 'calc(100% + 4px)',
+                  margin: 0,
+                  width: '100%',
+                  padding: 4,
+                  listStyle: 'none',
+                  maxHeight: 260,
+                  overflowY: 'auto',
+                  background: 'var(--code-bg, #fff)',
+                  border: '1px solid var(--border, #ccc)',
+                  borderRadius: 8,
+                  boxShadow: 'var(--shadow, 0 4px 12px rgba(0,0,0,.12))',
+                  zIndex: 9999,
+                }}
+              >
+                {productOptionsLoading ? (
+                  <li style={{ padding: 8, color: 'var(--text, #666)', fontSize: 14 }}>Carregando...</li>
+                ) : codigoSuggestions.length === 0 ? (
+                  <li style={{ padding: 8, color: 'var(--text, #666)', fontSize: 14 }}>
+                    {productOptions.length === 0
+                      ? 'Nenhum produto carregado (confira a tabela e RLS no Supabase).'
+                      : 'Nenhum código encontrado para o que você digitou.'}
+                  </li>
+                ) : (
+                  codigoSuggestions.map((p) => (
+                    <li
+                      key={p.codigo}
+                      onMouseDown={(e) => {
+                        e.preventDefault()
+                        setCodigoInterno(p.codigo)
+                        applyProductByCode(p.codigo)
+                        setCodigoListOpen(false)
+                      }}
+                      style={{
+                        padding: '8px 10px',
+                        borderRadius: 6,
+                        cursor: 'pointer',
+                        color: 'var(--text-h, #111)',
+                        fontSize: 14,
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = 'var(--accent-bg, rgba(170,59,255,.1))'
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = 'transparent'
+                      }}
+                    >
+                      <strong>{p.codigo}</strong>
+                      <span style={{ color: 'var(--text, #666)', marginLeft: 8, fontWeight: 400 }}>
+                        {p.descricao}
+                      </span>
+                    </li>
+                  ))
+                )}
+              </ul>
+            ) : null}
+          </div>
         </label>
 
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(12, 1fr)', gap: 12 }}>
           <div style={{ gridColumn: isMobile ? 'auto' : 'span 4' }}>
             <label style={labelStyle}>
               Descrição
-              <input
-                value={descricaoInput}
-                onChange={(e) => {
-                  const v = e.target.value
-                  setDescricaoInput(v)
-                  const match = productByDescricao.get(v.trim().toLowerCase())
-                  if (match) {
-                    setCodigoInterno(match.codigo)
-                    applyProductByCode(match.codigo)
-                  }
-                }}
-                onBlur={() => {
-                  const match = productByDescricao.get(descricaoInput.trim().toLowerCase())
-                  if (match) {
-                    setCodigoInterno(match.codigo)
-                    applyProductByCode(match.codigo)
-                  }
-                }}
-                list="descricao-produto-sugestoes"
-                style={inputStyle}
-                disabled={productOptionsLoading}
-                placeholder={productOptionsLoading ? 'Carregando descrições...' : 'Digite a descrição...'}
-              />
-              <datalist id="descricao-produto-sugestoes">
-                {productOptions.map((p) => (
-                  <option key={`desc-${p.codigo}`} value={p.descricao} />
-                ))}
-              </datalist>
+              <div ref={descricaoWrapRef} style={{ position: 'relative' }}>
+                <div style={{ display: 'flex', alignItems: 'stretch', width: '100%' }}>
+                  <input
+                    value={descricaoInput}
+                    onChange={(e) => {
+                      const v = e.target.value
+                      setDescricaoInput(v)
+                      const match = productByDescricao.get(v.trim().toLowerCase())
+                      if (match) {
+                        setCodigoInterno(match.codigo)
+                        applyProductByCode(match.codigo)
+                      }
+                    }}
+                    onBlur={() => {
+                      const match = productByDescricao.get(descricaoInput.trim().toLowerCase())
+                      if (match) {
+                        setCodigoInterno(match.codigo)
+                        applyProductByCode(match.codigo)
+                      }
+                    }}
+                    onFocus={() => setDescricaoListOpen(true)}
+                    style={{
+                      ...inputStyle,
+                      flex: 1,
+                      borderTopRightRadius: 0,
+                      borderBottomRightRadius: 0,
+                      borderRight: 'none',
+                    }}
+                    disabled={productOptionsLoading}
+                    placeholder={productOptionsLoading ? 'Carregando descrições...' : 'Digite a descrição...'}
+                  />
+                  <button
+                    type="button"
+                    aria-label="Abrir lista de descrições"
+                    aria-expanded={descricaoListOpen}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => setDescricaoListOpen((o) => !o)}
+                    disabled={productOptionsLoading}
+                    style={{
+                      padding: '0 12px',
+                      border: '1px solid var(--border, #ccc)',
+                      borderTopLeftRadius: 0,
+                      borderBottomLeftRadius: 0,
+                      borderTopRightRadius: 8,
+                      borderBottomRightRadius: 8,
+                      background: 'var(--code-bg, #f4f3ec)',
+                      color: 'var(--text-h, #111)',
+                      cursor: productOptionsLoading ? 'not-allowed' : 'pointer',
+                      fontSize: 11,
+                      lineHeight: 1,
+                      flexShrink: 0,
+                    }}
+                  >
+                    ▼
+                  </button>
+                </div>
+                {descricaoListOpen ? (
+                  <ul
+                    style={{
+                      position: 'absolute',
+                      left: 0,
+                      right: 0,
+                      top: 'calc(100% + 4px)',
+                      margin: 0,
+                      width: '100%',
+                      padding: 4,
+                      listStyle: 'none',
+                      maxHeight: 260,
+                      overflowY: 'auto',
+                      background: 'var(--code-bg, #fff)',
+                      border: '1px solid var(--border, #ccc)',
+                      borderRadius: 8,
+                      boxShadow: 'var(--shadow, 0 4px 12px rgba(0,0,0,.12))',
+                      zIndex: 9999,
+                    }}
+                  >
+                    {productOptionsLoading ? (
+                      <li style={{ padding: 8, color: 'var(--text, #666)', fontSize: 14 }}>Carregando...</li>
+                    ) : descricaoSuggestions.length === 0 ? (
+                      <li style={{ padding: 8, color: 'var(--text, #666)', fontSize: 14 }}>
+                        {productOptions.length === 0
+                          ? 'Nenhum produto carregado (confira a tabela e RLS no Supabase).'
+                          : 'Nenhuma descrição encontrada para o que você digitou.'}
+                      </li>
+                    ) : (
+                      descricaoSuggestions.map((p) => (
+                        <li
+                          key={`sug-desc-${p.codigo}`}
+                          onMouseDown={(e) => {
+                            e.preventDefault()
+                            setDescricaoInput(p.descricao)
+                            setCodigoInterno(p.codigo)
+                            applyProductByCode(p.codigo)
+                            setDescricaoListOpen(false)
+                          }}
+                          style={{
+                            padding: '8px 10px',
+                            borderRadius: 6,
+                            cursor: 'pointer',
+                            color: 'var(--text-h, #111)',
+                            fontSize: 14,
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.background = 'var(--accent-bg, rgba(170,59,255,.1))'
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.background = 'transparent'
+                          }}
+                        >
+                          <span style={{ color: 'var(--text, #666)', marginRight: 8, fontWeight: 600 }}>
+                            {p.codigo}
+                          </span>
+                          {p.descricao}
+                        </li>
+                      ))
+                    )}
+                  </ul>
+                ) : null}
+              </div>
             </label>
             {produtoError ? (
               <div style={{ color: '#b00020', fontSize: 13, marginTop: 6 }}>{produtoError}</div>
