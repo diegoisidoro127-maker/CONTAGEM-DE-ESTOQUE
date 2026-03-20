@@ -18,10 +18,10 @@ type ContagemRow = {
   observacao: string | null
 
   produto_id: string | null
-  data_fabricacao: string | null
-  data_validade: string | null
-  ean: string | null
-  dun: string | null
+  data_fabricacao?: string | null
+  data_validade?: string | null
+  ean?: string | null
+  dun?: string | null
 }
 
 function toISODateLocal(d: Date) {
@@ -86,49 +86,86 @@ export default function RelatorioContagem({ mode = 'periodo' }: RelatorioContage
     setRows([])
 
     try {
-      const select = `
-        id,
-        data_hora_contagem,
-        conferente_id,
-        conferentes(nome),
-        produto_id,
-        codigo_interno,
-        descricao,
-        unidade_medida,
-        quantidade_up,
-        lote,
-        observacao,
-        data_fabricacao,
-        data_validade,
-        ean,
-        dun
-      `
-      // Mantemos tudo numa linha (menos chance de parse estranho no PostgREST)
-      const selectCompact = select.replace(/\s+/g, '')
-
-      let q = supabase
-        .from('contagens_estoque')
-        .select(selectCompact)
-        .order('data_hora_contagem', { ascending: false })
-
-      if (!allTime) {
-        if (useSingleDay) {
-          // filtro por DIA único de contagem (00:00 até 23:59)
-          const startIso = `${singleDay}T00:00:00`
-          const endIso = `${singleDay}T23:59:59`
-          q = q.gte('data_hora_contagem', startIso).lte('data_hora_contagem', endIso)
-        } else {
-          // filtro por INTERVALO (00:00 até 23:59)
-          const startIso = `${startDate}T00:00:00`
-          const endIso = `${endDate}T23:59:59`
-          q = q.gte('data_hora_contagem', startIso).lte('data_hora_contagem', endIso)
-        }
+      // Alguns bancos podem não ter colunas extras (ex.: data_fabricacao).
+      // Tentamos carregar com tudo; se falhar com 42703, recarregamos sem as colunas que não existem.
+      const optional = {
+        data_fabricacao: true,
+        data_validade: true,
+        ean: true,
+        dun: true,
       }
 
-      const { data, error: qError } = await q.limit(20000)
-      if (qError) throw qError
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const fields: string[] = [
+          'id',
+          'data_hora_contagem',
+          'conferente_id',
+          'conferentes(nome)',
+          'produto_id',
+          'codigo_interno',
+          'descricao',
+          'unidade_medida',
+          'quantidade_up',
+          'lote',
+          'observacao',
+        ]
 
-      setRows((data ?? []) as unknown as ContagemRow[])
+        if (optional.data_fabricacao) fields.push('data_fabricacao')
+        if (optional.data_validade) fields.push('data_validade')
+        if (optional.ean) fields.push('ean')
+        if (optional.dun) fields.push('dun')
+
+        // Supabase select syntax já funciona sem espaços quando usamos join(',')
+        const selectCompact = fields.join(',')
+
+        let q = supabase
+          .from('contagens_estoque')
+          .select(selectCompact)
+          .order('data_hora_contagem', { ascending: false })
+
+        if (!allTime) {
+          if (useSingleDay) {
+            const startIso = `${singleDay}T00:00:00`
+            const endIso = `${singleDay}T23:59:59`
+            q = q.gte('data_hora_contagem', startIso).lte('data_hora_contagem', endIso)
+          } else {
+            const startIso = `${startDate}T00:00:00`
+            const endIso = `${endDate}T23:59:59`
+            q = q.gte('data_hora_contagem', startIso).lte('data_hora_contagem', endIso)
+          }
+        }
+
+        const { data, error: qError } = await q.limit(20000)
+        if (!qError) {
+          setRows((data ?? []) as unknown as ContagemRow[])
+          return
+        }
+
+        const code = String(qError.code ?? '')
+        const msg = String(qError.message ?? '').toLowerCase()
+        if (code === '42703' && attempt === 0) {
+          let changed = false
+          if (msg.includes('data_fabricacao')) {
+            optional.data_fabricacao = false
+            changed = true
+          }
+          if (msg.includes('data_validade')) {
+            optional.data_validade = false
+            changed = true
+          }
+          if (msg.includes(' ean') || msg.includes('ean')) {
+            optional.ean = false
+            changed = true
+          }
+          if (msg.includes('dun')) {
+            optional.dun = false
+            changed = true
+          }
+          if (changed) continue
+        }
+
+        throw qError
+      }
     } catch (e: any) {
       setError(e?.message ? String(e.message) : 'Erro ao carregar relatório.')
     } finally {
