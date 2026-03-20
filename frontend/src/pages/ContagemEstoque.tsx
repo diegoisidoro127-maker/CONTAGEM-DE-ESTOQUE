@@ -546,8 +546,22 @@ export default function ContagemEstoque() {
     setPreviewRowError('')
     setPreviewRowActionLoading(true)
     try {
+      const row = previewRows.find((r) => r.id === id)
       const { error } = await supabase.from('contagens_estoque').delete().eq('id', id)
       if (error) throw error
+
+      // Planilha: ao excluir, limpar apenas a quantidade (não remover a linha).
+      if (sheetWebhookUrl && row) {
+        const dataContagem = String(row.data_hora_contagem).slice(0, 10)
+        void sendToSheetInBackground(sheetWebhookUrl, {
+          tipo: 'clear_qty',
+          data_contagem: dataContagem,
+          codigo_interno: row.codigo_interno,
+          descricao: row.descricao,
+          aba: 'CONTAGEM DE ESTOQUE FISICA',
+        })
+      }
+
       setEditingPreviewId(null)
       setEditingPreviewQuantidade('')
       await loadPreview()
@@ -567,10 +581,25 @@ export default function ContagemEstoque() {
     setPreviewRowError('')
     setPreviewRowActionLoading(true)
     try {
+      const row = previewRows.find((r) => r.id === id)
       const { error } = await supabase.from('contagens_estoque').update({ quantidade_up: qtd }).eq('id', id)
       if (error) throw error
       setEditingPreviewId(null)
       setEditingPreviewQuantidade('')
+
+      // Planilha: ao editar, atualizar a quantidade na linha já existente.
+      if (sheetWebhookUrl && row) {
+        const dataContagem = String(row.data_hora_contagem).slice(0, 10)
+        void sendToSheetInBackground(sheetWebhookUrl, {
+          tipo: 'edit_qty',
+          data_contagem: dataContagem,
+          codigo_interno: row.codigo_interno,
+          descricao: row.descricao,
+          quantidade_contada: qtd,
+          aba: 'CONTAGEM DE ESTOQUE FISICA',
+        })
+      }
+
       await loadPreview()
     } catch (e: any) {
       setPreviewRowError(`Erro ao atualizar quantidade: ${e?.message ? String(e.message) : 'verifique'}`)

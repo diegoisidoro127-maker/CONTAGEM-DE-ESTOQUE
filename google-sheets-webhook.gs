@@ -21,6 +21,8 @@ function doPost(e) {
   let sheet = ss.getSheetByName(nomeAba)
   if (!sheet) sheet = ss.insertSheet(nomeAba)
 
+  const tipo = String(data.tipo || 'upsert') // upsert | edit_qty | clear_qty
+
   // Colunas (ordem usada no appendRow antigo):
   // A: data/hora, B: data_contagem (YYYY-MM-DD), C: codigo_interno, D: descricao,
   // E: quantidade_contada, F: up, G: lote, H: observacao, I: conferente.
@@ -40,32 +42,49 @@ function doPost(e) {
   }
 
   if (matches.length > 0) {
-    // Mantém uma única linha: atualiza a primeira e remove duplicadas.
-    const firstRow = matches[0]
-    sheet.getRange(firstRow, 1).setValue(data.data_hora_contagem || '')
-    sheet.getRange(firstRow, 5).setValue(incomingQtd) // quantidade_contada
-    sheet.getRange(firstRow, 6).setValue(data.up ?? '')
-    sheet.getRange(firstRow, 7).setValue(data.lote ?? '')
-    sheet.getRange(firstRow, 8).setValue(data.observacao ?? '')
-    sheet.getRange(firstRow, 9).setValue(data.conferente ?? '')
+    if (tipo === 'clear_qty') {
+      // Limpa apenas a quantidade na planilha (E), sem remover a linha.
+      matches.forEach((rowNum) => sheet.getRange(rowNum, 5).setValue(''))
+    } else if (tipo === 'edit_qty') {
+      // Atualiza somente a quantidade (E) na linha existente.
+      const firstRow = matches[0]
+      sheet.getRange(firstRow, 5).setValue(incomingQtd)
 
-    // remove do fim para não deslocar índices
-    matches
-      .slice(1)
-      .sort((a, b) => b - a)
-      .forEach((rowNum) => sheet.deleteRow(rowNum))
+      // Se houver duplicadas, remove só as duplicadas (para não inflar).
+      matches
+        .slice(1)
+        .sort((a, b) => b - a)
+        .forEach((rowNum) => sheet.deleteRow(rowNum))
+    } else {
+      // upsert (padrão): atualiza a linha e remove duplicadas, mantendo uma única linha.
+      const firstRow = matches[0]
+      sheet.getRange(firstRow, 1).setValue(data.data_hora_contagem || '')
+      sheet.getRange(firstRow, 5).setValue(incomingQtd) // quantidade_contada
+      sheet.getRange(firstRow, 6).setValue(data.up ?? '')
+      sheet.getRange(firstRow, 7).setValue(data.lote ?? '')
+      sheet.getRange(firstRow, 8).setValue(data.observacao ?? '')
+      sheet.getRange(firstRow, 9).setValue(data.conferente ?? '')
+
+      matches
+        .slice(1)
+        .sort((a, b) => b - a)
+        .forEach((rowNum) => sheet.deleteRow(rowNum))
+    }
   } else {
-    sheet.appendRow([
-      data.data_hora_contagem || '',
-      data.data_contagem || '',
-      data.codigo_interno || '',
-      data.descricao || '',
-      incomingQtd,
-      data.up ?? '',
-      data.lote ?? '',
-      data.observacao ?? '',
-      data.conferente || '',
-    ])
+    // Para clear_qty não existe linha, então não faz nada.
+    if (tipo !== 'clear_qty') {
+      sheet.appendRow([
+        data.data_hora_contagem || '',
+        data.data_contagem || '',
+        data.codigo_interno || '',
+        data.descricao || '',
+        incomingQtd,
+        data.up ?? '',
+        data.lote ?? '',
+        data.observacao ?? '',
+        data.conferente ?? '',
+      ])
+    }
   }
 
   return ContentService.createTextOutput(JSON.stringify({ ok: true })).setMimeType(
