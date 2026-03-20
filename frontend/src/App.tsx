@@ -57,7 +57,7 @@ export default function App() {
           onClick={() => setView('relatorio')}
           style={viewBtnStyle(view === 'relatorio')}
         >
-          Relatório completo
+          Todas as contagens
         </button>
         <button
           type="button"
