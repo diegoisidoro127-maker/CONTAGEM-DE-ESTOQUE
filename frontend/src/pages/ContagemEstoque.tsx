@@ -84,9 +84,9 @@ function isUuid(value: string | null | undefined) {
 
 export default function ContagemEstoque() {
   const sheetWebhookUrl = import.meta.env.VITE_SHEET_WEBHOOK_URL as string | undefined
-  // Quando usamos a opção 2 (outbox no Supabase), não devemos mandar direto para o Apps Script.
-  // Defina `VITE_SHEETS_DIRECT_WEBHOOK=true` apenas para testes/fallback.
-  const enableDirectSheetsWebhook = (import.meta.env.VITE_SHEETS_DIRECT_WEBHOOK as string | undefined) === 'true'
+  // Modo definitivo: usar SOMENTE outbox (evita escrita paralela e coluna duplicada).
+  // Mantemos o envio direto desativado de forma fixa.
+  const enableDirectSheetsWebhook = false
   // Kick imediato do processador de outbox (opção 2).
   // Coloque VITE_OUTBOX_KICK=false para desabilitar.
   const enableOutboxKick = (import.meta.env.VITE_OUTBOX_KICK as string | undefined) !== 'false'

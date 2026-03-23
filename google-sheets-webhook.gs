@@ -1,5 +1,21 @@
 var WEBHOOK_VERSION = 'no-auto-create-v2'
 
+function onOpen() {
+  try {
+    SpreadsheetApp.getUi()
+      .createMenu('Contagem Estoque')
+      .addItem('Juntar colunas agora', 'executarConsolidacaoManual')
+      .addItem('Status consolidação auto', 'statusConsolidacaoAuto')
+      .addToUi()
+  } catch (e) {}
+}
+
+function executarConsolidacaoManual() {
+  var res = consolidarColunasDuplicadas()
+  Logger.log('executarConsolidacaoManual: ' + JSON.stringify(res))
+  return res
+}
+
 /**
  * Web App — A=CÓDIGO, B=DESCRIÇÃO, C+=datas
  *
@@ -756,6 +772,8 @@ function doPostLocked(data) {
     for (var k = 0; k < data.records.length; k++) {
       processOne(data.records[k] || {})
     }
+    // Garantia final no mesmo request: sai sempre consolidado.
+    consolidateAllDateColumnsCurrentSheet()
     return ContentService.createTextOutput(JSON.stringify({ ok: true, processed: data.records.length, version: WEBHOOK_VERSION })).setMimeType(
       ContentService.MimeType.JSON,
     )
@@ -763,6 +781,8 @@ function doPostLocked(data) {
 
   refreshDateIndexFromHeader()
   processOne(data)
+  // Garantia final no mesmo request: sai sempre consolidado.
+  consolidateAllDateColumnsCurrentSheet()
 
   return ContentService.createTextOutput(JSON.stringify({ ok: true, version: WEBHOOK_VERSION })).setMimeType(
     ContentService.MimeType.JSON,
