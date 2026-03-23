@@ -90,6 +90,9 @@ export default function ContagemEstoque() {
   // Kick imediato do processador de outbox (opção 2).
   // Coloque VITE_OUTBOX_KICK=false para desabilitar.
   const enableOutboxKick = (import.meta.env.VITE_OUTBOX_KICK as string | undefined) !== 'false'
+  // Slug da edge function pode variar por ambiente (ex.: dynamic-endpoint).
+  // Pode definir VITE_OUTBOX_FUNCTION_NAME no Render.
+  const outboxFunctionName = (import.meta.env.VITE_OUTBOX_FUNCTION_NAME as string | undefined)?.trim()
   const [conferentes, setConferentes] = useState<Conferente[]>([])
   const [conferentesLoading, setConferentesLoading] = useState(true)
   const [showAddConferente, setShowAddConferente] = useState(false)
@@ -592,7 +595,17 @@ export default function ContagemEstoque() {
       // Edge Function: processa `public.sheet_outbox` e grava no Google Sheets.
       // Usa a URL da função via supabase-js (não precisa Function URL no .env).
       if (typeof (supabase as any)?.functions?.invoke !== 'function') return
-      await (supabase as any).functions.invoke('sheet-outbox-sync', { body: {} })
+      const candidates = [outboxFunctionName, 'sheet-outbox-sync', 'dynamic-endpoint'].filter(
+        (v, i, arr): v is string => !!v && arr.indexOf(v) === i,
+      )
+
+      let lastErr: any = null
+      for (const fnName of candidates) {
+        const res = await (supabase as any).functions.invoke(fnName, { body: {} })
+        if (!res?.error) return
+        lastErr = res.error
+      }
+      if (lastErr && import.meta.env.DEV) console.warn('[outbox kick] todas tentativas falharam:', lastErr)
     } catch (err) {
       // Não bloqueia o fluxo de salvamento.
       if (import.meta.env.DEV) console.warn('[outbox kick] falhou:', err)

@@ -41,6 +41,93 @@ function doGet() {
 }
 
 /**
+ * Executar MANUALMENTE 1x no Apps Script para consolidar colunas de data duplicadas.
+ * Mantém a coluna mais à esquerda de cada dia e remove as demais.
+ * Se houver valores em duplicadas, soma na coluna "keeper".
+ */
+function consolidarColunasDuplicadas() {
+  var ss = SpreadsheetApp.openById('1EoT2x4MHtAu7bVkuwqxl2swdwqUI7n1Hg2EL9WBNeTk')
+  var sheet = ss.getSheetByName('CONTAGEM DE ESTOQUE FISICA')
+  if (!sheet) throw new Error('Aba CONTAGEM DE ESTOQUE FISICA não encontrada.')
+
+  var HEADER_ROW = 1
+  var FIRST_DATE_COL = 3
+  var NOTE_PREFIX = 'YMD:'
+  var tz = ss.getSpreadsheetTimeZone ? ss.getSpreadsheetTimeZone() : Session.getScriptTimeZone()
+  var lastCol = sheet.getLastColumn()
+  var lastRow = Math.max(sheet.getLastRow(), 2)
+
+  function normalizeToYMD(cellValue) {
+    if (cellValue === null || cellValue === undefined || cellValue === '') return ''
+    if (cellValue instanceof Date) return Utilities.formatDate(cellValue, tz, 'yyyy-MM-dd')
+    if (typeof cellValue === 'number' && cellValue > 20000 && cellValue < 600000) {
+      var serial = Math.floor(cellValue)
+      var ms = (serial - 25569) * 86400 * 1000
+      var d = new Date(ms)
+      if (!isNaN(d.getTime())) return Utilities.formatDate(d, tz, 'yyyy-MM-dd')
+    }
+    var str = String(cellValue).trim()
+    if (/^\d{4}-\d{2}-\d{2}/.test(str)) return str.slice(0, 10)
+    var m = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/)
+    if (m) {
+      var dd = String(m[1]).padStart(2, '0')
+      var mm = String(m[2]).padStart(2, '0')
+      return m[3] + '-' + mm + '-' + dd
+    }
+    var d2 = new Date(str)
+    if (isNaN(d2.getTime())) return ''
+    return Utilities.formatDate(d2, tz, 'yyyy-MM-dd')
+  }
+
+  function headerCellToYMD(col) {
+    var r = sheet.getRange(HEADER_ROW, col)
+    var note = String(r.getNote() || '')
+    if (note.indexOf(NOTE_PREFIX) >= 0) {
+      var n = note.replace(NOTE_PREFIX, '').trim()
+      if (/^\d{4}-\d{2}-\d{2}$/.test(n)) return n
+    }
+    var raw = r.getValue()
+    var y = normalizeToYMD(raw)
+    if (y) return y
+    return normalizeToYMD(r.getDisplayValue())
+  }
+
+  var firstByDay = {}
+  var duplicates = [] // { day, keeperCol, dupCol }
+
+  for (var c = FIRST_DATE_COL; c <= lastCol; c++) {
+    var ymd = headerCellToYMD(c)
+    if (!ymd) continue
+    if (!firstByDay[ymd]) {
+      firstByDay[ymd] = c
+      sheet.getRange(HEADER_ROW, c).setNote(NOTE_PREFIX + ymd)
+    } else {
+      duplicates.push({ day: ymd, keeperCol: firstByDay[ymd], dupCol: c })
+    }
+  }
+
+  // Soma os valores da duplicada na keeper e deleta colunas duplicadas da direita para a esquerda.
+  for (var i = duplicates.length - 1; i >= 0; i--) {
+    var d = duplicates[i]
+    var keeperRange = sheet.getRange(2, d.keeperCol, lastRow - 1, 1)
+    var dupRange = sheet.getRange(2, d.dupCol, lastRow - 1, 1)
+    var keeperVals = keeperRange.getValues()
+    var dupVals = dupRange.getValues()
+
+    for (var r = 0; r < keeperVals.length; r++) {
+      var a = Number(keeperVals[r][0] || 0)
+      var b = Number(dupVals[r][0] || 0)
+      var sum = a + b
+      keeperVals[r][0] = sum === 0 ? '' : sum
+    }
+    keeperRange.setValues(keeperVals)
+    sheet.deleteColumn(d.dupCol)
+  }
+
+  return { ok: true, removidas: duplicates.length, mapeadas: Object.keys(firstByDay).length }
+}
+
+/**
  * Dia civil yyyy-MM-dd no fuso da planilha (não confiar só na string data_contagem do cliente).
  */
 function instantIsoToYmdInTz(isoLike, timeZone) {
@@ -280,6 +367,66 @@ function doPostLocked(data) {
     return newCol
   }
 
+  /**
+   * Procura TODAS as colunas que representam esse dia (mesmo que existam duplicadas),
+   * mantém a mais à esquerda e remove as duplicadas somando valores na célula.
+   * Retorna a coluna "keeper" (mais à esquerda) ou null se não encontrar.
+   */
+  function consolidateColumnsForDay(ymd) {
+    var lastCol = getHeaderScanLastCol()
+    var lastRow = Math.max(sheet.getLastRow(), 2)
+    var note = NOTE_PREFIX + ymd
+
+    // Captura colunas duplicadas do dia (ordem crescente).
+    var matches = []
+    for (var c = FIRST_DATE_COL; c <= lastCol; c++) {
+      try {
+        var r = sheet.getRange(HEADER_ROW, c)
+        var n = String(r.getNote ? r.getNote() : '')
+        if (n.indexOf(note) >= 0) {
+          matches.push(c)
+          continue
+        }
+        var y = headerCellToYMD(c)
+        if (y && y === ymd) matches.push(c)
+      } catch (e) {
+        // ignora coluna com erro de leitura
+      }
+    }
+
+    // Remove duplicadas (da direita para esquerda).
+    if (matches.length <= 0) return null
+    matches.sort(function (a, b) {
+      return a - b
+    })
+    var keeperCol = matches[0]
+
+    // Soma valores para a coluna keeper antes de deletar colunas.
+    var keeperRange = sheet.getRange(2, keeperCol, lastRow - 1, 1)
+    var keeperVals = keeperRange.getValues()
+
+    // Soma e apaga duplicadas da direita para a esquerda.
+    // Apagar sempre da direita evita que os índices das colunas do "keeper" mudem.
+    for (var j = matches.length - 1; j >= 1; j--) {
+      var dupCol = matches[j]
+      var dupRange = sheet.getRange(2, dupCol, lastRow - 1, 1)
+      var dupVals = dupRange.getValues()
+
+      for (var r = 0; r < keeperVals.length; r++) {
+        var a = Number(keeperVals[r][0] || 0)
+        var b = Number(dupVals[r][0] || 0)
+        var sum = a + b
+        keeperVals[r][0] = sum === 0 ? '' : sum
+      }
+
+      sheet.deleteColumn(dupCol)
+    }
+
+    keeperRange.setValues(keeperVals)
+    setYmdNote(keeperCol, ymd)
+    return keeperCol
+  }
+
   function findProductRow() {
     var lastRow = sheet.getLastRow()
     for (var r = HEADER_ROW + 1; r <= lastRow; r++) {
@@ -290,7 +437,9 @@ function doPostLocked(data) {
     return null
   }
 
-  var dateCol = ensureDateColumn(targetYmd)
+  // Se já existirem colunas duplicadas do dia, consolida para não criar mais colunas.
+  var dateCol = consolidateColumnsForDay(targetYmd)
+  if (!dateCol) dateCol = ensureDateColumn(targetYmd)
   var productRow = findProductRow()
 
   if (tipo === 'clear_qty') {
