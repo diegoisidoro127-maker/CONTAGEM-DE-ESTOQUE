@@ -227,6 +227,41 @@ using (true)
 with check (true);
 
 -- =========================
+-- Edge Function (service_role) - garantir acesso completo
+-- =========================
+-- Em alguns projetos, o bypass do service_role pode não estar “se aplicando”
+-- como esperado. Para não depender disso, garantimos policies explícitas.
+drop policy if exists "sheet_outbox_service_role_select_all" on public.sheet_outbox;
+drop policy if exists "sheet_outbox_service_role_insert_all" on public.sheet_outbox;
+drop policy if exists "sheet_outbox_service_role_update_all" on public.sheet_outbox;
+drop policy if exists "sheet_outbox_service_role_delete_all" on public.sheet_outbox;
+
+create policy "sheet_outbox_service_role_select_all"
+on public.sheet_outbox
+for select
+to service_role
+using (true);
+
+create policy "sheet_outbox_service_role_insert_all"
+on public.sheet_outbox
+for insert
+to service_role
+with check (true);
+
+create policy "sheet_outbox_service_role_update_all"
+on public.sheet_outbox
+for update
+to service_role
+using (true)
+with check (true);
+
+create policy "sheet_outbox_service_role_delete_all"
+on public.sheet_outbox
+for delete
+to service_role
+using (true);
+
+-- =========================
 -- RLS / Policies
 -- =========================
 -- Objetivo: remover o "UNRESTRICTED" do Supabase Studio.

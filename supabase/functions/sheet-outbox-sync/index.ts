@@ -22,10 +22,10 @@ type OutboxRow = {
   last_error: string | null
 }
 
-// O Supabase (Edge Functions Secrets) não permite chaves com prefixo `SUPABASE_`.
-// Por isso usamos nomes neutros aqui.
-const supabaseUrl = Deno.env.get('DB_URL')!
-const serviceRoleKey = Deno.env.get('DB_SERVICE_ROLE_KEY')!
+// Suporte a nomes de secrets diferentes (alguns projetos usam DB_*, outros SUPABASE_*).
+// Isso evita ficar preso por mismatch entre código e secrets.
+const supabaseUrl = Deno.env.get('DB_URL') ?? Deno.env.get('SUPABASE_URL')!
+const serviceRoleKey = Deno.env.get('DB_SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 const webhookUrl = Deno.env.get('SHEET_WEBHOOK_URL')!
 
 const supabase = createClient(supabaseUrl, serviceRoleKey)
@@ -65,7 +65,7 @@ Deno.serve(async (req) => {
     const nowIso = new Date().toISOString()
     const attemptsNext = (row.attempts ?? 0) + 1
 
-    const { data: claimedRow } = await supabase
+    const { data: claimedRow, error: claimErr } = await supabase
       .from('sheet_outbox')
       .update({
         status: 'processing',
@@ -76,6 +76,19 @@ Deno.serve(async (req) => {
       .eq('status', 'pending')
       .select('*')
       .maybeSingle()
+
+    if (claimErr) {
+      // Se falhar por RLS / permissão, grava o erro pra você ver no banco.
+      await supabase
+        .from('sheet_outbox')
+        .update({
+          status: 'failed',
+          last_error: claimErr.message,
+          locked_at: null,
+        })
+        .eq('id', row.id)
+      continue
+    }
 
     if (!claimedRow) continue
     claimed++
@@ -104,7 +117,7 @@ Deno.serve(async (req) => {
       }
 
       okCount++
-      await supabase
+      const { error: doneErr } = await supabase
         .from('sheet_outbox')
         .update({
           status: 'done',
@@ -113,6 +126,8 @@ Deno.serve(async (req) => {
           locked_at: null,
         })
         .eq('id', claimedRow.id)
+
+      if (doneErr) throw doneErr
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
 
