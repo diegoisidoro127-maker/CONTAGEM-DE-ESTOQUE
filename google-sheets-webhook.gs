@@ -152,6 +152,7 @@ function doPostLocked(data) {
   var COL_DESC = 2
   var FIRST_DATE_COL = 3
   var NOTE_PREFIX = 'YMD:'
+  var INDEX_SHEET_NAME = '_IDX_DATAS'
 
   var incomingCodigo = String(data.codigo_interno || '').trim().toLowerCase()
   var incomingDescricao = String(data.descricao || '').trim().toLowerCase()
@@ -298,6 +299,64 @@ function doPostLocked(data) {
     sheet.getRange(HEADER_ROW, col).setNote(NOTE_PREFIX + ymd)
   }
 
+  function getOrCreateIndexSheet() {
+    var idx = ss.getSheetByName(INDEX_SHEET_NAME)
+    if (!idx) {
+      idx = ss.insertSheet(INDEX_SHEET_NAME)
+      idx.getRange(1, 1).setValue('ymd')
+      idx.getRange(1, 2).setValue('col')
+      idx.hideSheet()
+    }
+    return idx
+  }
+
+  function readMappedCol(ymd) {
+    try {
+      var idx = getOrCreateIndexSheet()
+      var last = idx.getLastRow()
+      if (last < 2) return null
+      var vals = idx.getRange(2, 1, last - 1, 2).getValues()
+      for (var i = 0; i < vals.length; i++) {
+        if (String(vals[i][0]) === ymd) {
+          var c = parseInt(String(vals[i][1] || ''), 10)
+          if (c >= FIRST_DATE_COL) return c
+        }
+      }
+    } catch (e) {}
+    return null
+  }
+
+  function writeMappedCol(ymd, col) {
+    try {
+      var idx = getOrCreateIndexSheet()
+      var last = idx.getLastRow()
+      if (last < 2) {
+        idx.getRange(2, 1).setValue(ymd)
+        idx.getRange(2, 2).setValue(col)
+        return
+      }
+      var vals = idx.getRange(2, 1, last - 1, 2).getValues()
+      for (var i = 0; i < vals.length; i++) {
+        if (String(vals[i][0]) === ymd) {
+          idx.getRange(2 + i, 2).setValue(col)
+          return
+        }
+      }
+      idx.getRange(last + 1, 1).setValue(ymd)
+      idx.getRange(last + 1, 2).setValue(col)
+    } catch (e) {}
+  }
+
+  function isColumnHeaderForDay(col, ymd) {
+    try {
+      if (!col || col < FIRST_DATE_COL) return false
+      var y = headerCellToYMD(col)
+      return !!y && y === ymd
+    } catch (e) {
+      return false
+    }
+  }
+
   function findDateColumn(ymd) {
     var lastCol = Math.max(getHeaderScanLastCol(), FIRST_DATE_COL)
     lastCol = Math.max(lastCol, 200)
@@ -333,12 +392,25 @@ function doPostLocked(data) {
   }
 
   function ensureDateColumn(ymd) {
+    // 0) Mapeamento estável no sheet de índice (evita depender do parsing do cabeçalho sempre)
+    var mapped = readMappedCol(ymd)
+    if (mapped && isColumnHeaderForDay(mapped, ymd)) {
+      setYmdNote(mapped, ymd)
+      setColumnCache(ymd, mapped)
+      return mapped
+    }
+
     var found = getColumnFromCache(ymd)
-    if (found) return found
+    if (found && isColumnHeaderForDay(found, ymd)) {
+      setYmdNote(found, ymd)
+      writeMappedCol(ymd, found)
+      return found
+    }
 
     found = findDateColumn(ymd)
     if (found) {
       setColumnCache(ymd, found)
+      writeMappedCol(ymd, found)
       return found
     }
 
@@ -346,6 +418,7 @@ function doPostLocked(data) {
     found = findDateColumn(ymd)
     if (found) {
       setColumnCache(ymd, found)
+      writeMappedCol(ymd, found)
       return found
     }
 
@@ -364,6 +437,7 @@ function doPostLocked(data) {
     cell.setNumberFormat('dd/mm/yyyy')
     setYmdNote(newCol, ymd)
     setColumnCache(ymd, newCol)
+    writeMappedCol(ymd, newCol)
     return newCol
   }
 
@@ -437,36 +511,60 @@ function doPostLocked(data) {
     return null
   }
 
-  // Se já existirem colunas duplicadas do dia, consolida para não criar mais colunas.
-  var dateCol = consolidateColumnsForDay(targetYmd)
-  if (!dateCol) dateCol = ensureDateColumn(targetYmd)
-  var productRow = findProductRow()
+  function processOne(rec) {
+    var thisTipo = String(rec.tipo || tipo || 'upsert')
+    var thisCodigo = String(rec.codigo_interno || incomingCodigo || '').trim().toLowerCase()
+    var thisDescricao = String(rec.descricao || incomingDescricao || '').trim().toLowerCase()
+    var thisQtd = Number(rec.quantidade_contada ?? incomingQtd ?? 0)
+    if (!thisCodigo || !thisDescricao) return
 
-  if (tipo === 'clear_qty') {
-    if (productRow) {
-      sheet.getRange(productRow, dateCol).setValue('')
+    incomingCodigo = thisCodigo
+    incomingDescricao = thisDescricao
+    incomingQtd = thisQtd
+
+    var thisYmd = targetYmd
+    if (rec.data_hora_contagem || rec.data_contagem) {
+      var thisIso = rec.data_hora_contagem ? instantIsoToYmdInTz(rec.data_hora_contagem, tz) : ''
+      var thisClient = incomingStringToYMD(String(rec.data_contagem || ''))
+      thisYmd = thisClient || thisIso || targetYmd
     }
-    return ContentService.createTextOutput(JSON.stringify({ ok: true })).setMimeType(ContentService.MimeType.JSON)
-  }
 
-  if (tipo === 'edit_qty') {
+    var dateCol = consolidateColumnsForDay(thisYmd)
+    if (!dateCol) dateCol = ensureDateColumn(thisYmd)
+    writeMappedCol(thisYmd, dateCol)
+
+    var productRow = findProductRow()
+
+    if (thisTipo === 'clear_qty') {
+      if (productRow) sheet.getRange(productRow, dateCol).setValue('')
+      return
+    }
+
+    if (thisTipo === 'edit_qty') {
+      if (productRow) sheet.getRange(productRow, dateCol).setValue(thisQtd)
+      return
+    }
+
     if (!productRow) {
-      return ContentService.createTextOutput(
-        JSON.stringify({ ok: false, error: 'Produto não encontrado na planilha para edit_qty' }),
-      ).setMimeType(ContentService.MimeType.JSON)
+      var newRow = Math.max(sheet.getLastRow(), HEADER_ROW) + 1
+      sheet.getRange(newRow, COL_CODIGO).setValue(rec.codigo_interno || thisCodigo)
+      sheet.getRange(newRow, COL_DESC).setValue(rec.descricao || thisDescricao)
+      sheet.getRange(newRow, dateCol).setValue(thisQtd)
+    } else {
+      sheet.getRange(productRow, dateCol).setValue(thisQtd)
     }
-    sheet.getRange(productRow, dateCol).setValue(incomingQtd)
-    return ContentService.createTextOutput(JSON.stringify({ ok: true })).setMimeType(ContentService.MimeType.JSON)
   }
 
-  if (!productRow) {
-    var newRow = Math.max(sheet.getLastRow(), HEADER_ROW) + 1
-    sheet.getRange(newRow, COL_CODIGO).setValue(data.codigo_interno || '')
-    sheet.getRange(newRow, COL_DESC).setValue(data.descricao || '')
-    sheet.getRange(newRow, dateCol).setValue(incomingQtd)
-  } else {
-    sheet.getRange(productRow, dateCol).setValue(incomingQtd)
+  if (Array.isArray(data.records) && data.records.length > 0) {
+    for (var k = 0; k < data.records.length; k++) {
+      processOne(data.records[k] || {})
+    }
+    return ContentService.createTextOutput(JSON.stringify({ ok: true, processed: data.records.length })).setMimeType(
+      ContentService.MimeType.JSON,
+    )
   }
+
+  processOne(data)
 
   return ContentService.createTextOutput(JSON.stringify({ ok: true })).setMimeType(ContentService.MimeType.JSON)
 }

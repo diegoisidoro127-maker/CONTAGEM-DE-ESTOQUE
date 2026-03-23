@@ -58,8 +58,9 @@ Deno.serve(async (req) => {
   let claimed = 0
   let okCount = 0
   let failedCount = 0
+  const claimedRows: OutboxRow[] = []
 
-  // 2) Processa um por vez (evita corrida e reduz chances de criar coluna duplicada)
+  // 2) Claim atômico dos pendentes
   for (const row of rows) {
     // 2.1) Tenta "claim" atômico: só processa se ainda estiver pending.
     const nowIso = new Date().toISOString()
@@ -92,17 +93,30 @@ Deno.serve(async (req) => {
 
     if (!claimedRow) continue
     claimed++
+    claimedRows.push(claimedRow as unknown as OutboxRow)
+  }
 
-    const body: Record<string, unknown> = {
-      tipo: claimedRow.event_type, // 'upsert' ou 'clear_qty'
-      aba: claimedRow.aba ?? 'CONTAGEM DE ESTOQUE FISICA',
-      data_contagem: claimedRow.data_contagem, // 'YYYY-MM-DD'
-      codigo_interno: claimedRow.codigo_interno,
-      descricao: claimedRow.descricao,
-    }
+  // 3) Envia em lote por (aba + data_contagem), reduzindo delay e risco de coluna duplicada
+  const groups = new Map<string, OutboxRow[]>()
+  for (const row of claimedRows) {
+    const key = `${row.aba ?? 'CONTAGEM DE ESTOQUE FISICA'}|${row.data_contagem}`
+    const arr = groups.get(key) ?? []
+    arr.push(row)
+    groups.set(key, arr)
+  }
 
-    if (claimedRow.event_type === 'upsert') {
-      body.quantidade_contada = claimedRow.quantidade_contada ?? 0
+  for (const [, groupRows] of groups) {
+    const one = groupRows[0]
+    const body = {
+      aba: one.aba ?? 'CONTAGEM DE ESTOQUE FISICA',
+      data_contagem: one.data_contagem,
+      records: groupRows.map((r) => ({
+        tipo: r.event_type,
+        data_contagem: r.data_contagem,
+        codigo_interno: r.codigo_interno,
+        descricao: r.descricao,
+        quantidade_contada: r.event_type === 'upsert' ? (r.quantidade_contada ?? 0) : undefined,
+      })),
     }
 
     try {
@@ -111,12 +125,10 @@ Deno.serve(async (req) => {
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify(body),
       })
+      if (!res.ok) throw new Error(`Webhook falhou: ${res.status} ${res.statusText}`)
 
-      if (!res.ok) {
-        throw new Error(`Webhook falhou: ${res.status} ${res.statusText}`)
-      }
-
-      okCount++
+      const ids = groupRows.map((r) => r.id)
+      okCount += ids.length
       const { error: doneErr } = await supabase
         .from('sheet_outbox')
         .update({
@@ -125,23 +137,25 @@ Deno.serve(async (req) => {
           last_error: null,
           locked_at: null,
         })
-        .eq('id', claimedRow.id)
+        .in('id', ids)
 
       if (doneErr) throw doneErr
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-
-      failedCount++
-      const finalStatus = attemptsNext >= maxAttempts ? 'failed' : 'pending'
-
-      await supabase
-        .from('sheet_outbox')
-        .update({
-          status: finalStatus,
-          last_error: msg,
-          locked_at: null,
-        })
-        .eq('id', claimedRow.id)
+      const ids = groupRows.map((r) => r.id)
+      failedCount += ids.length
+      // Usa attempts já incrementado no claim para decidir failed/pending por linha.
+      for (const r of groupRows) {
+        const finalStatus = (r.attempts ?? 0) + 1 >= maxAttempts ? 'failed' : 'pending'
+        await supabase
+          .from('sheet_outbox')
+          .update({
+            status: finalStatus,
+            last_error: msg,
+            locked_at: null,
+          })
+          .eq('id', r.id)
+      }
     }
   }
 
