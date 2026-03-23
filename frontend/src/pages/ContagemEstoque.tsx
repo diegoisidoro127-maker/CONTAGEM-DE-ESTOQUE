@@ -1367,7 +1367,7 @@ export default function ContagemEstoque() {
         </div>
 
         <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginTop: 4 }}>
-          <button type="submit" disabled={!canSubmit} style={buttonStyle}>
+          <button type="submit" disabled={saving} style={buttonStyle}>
             {saving ? 'Salvando...' : 'Salvar linha'}
           </button>
           {saveError ? <div style={{ color: '#b00020' }}>{saveError}</div> : null}
