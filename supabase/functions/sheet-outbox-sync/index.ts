@@ -129,17 +129,9 @@ Deno.serve(async (req) => {
 
       const ids = groupRows.map((r) => r.id)
       okCount += ids.length
-      const { error: doneErr } = await supabase
-        .from('sheet_outbox')
-        .update({
-          status: 'done',
-          processed_at: new Date().toISOString(),
-          last_error: null,
-          locked_at: null,
-        })
-        .in('id', ids)
-
-      if (doneErr) throw doneErr
+      // Após sucesso no Sheets, remove da outbox para não acumular "done".
+      const { error: deleteErr } = await supabase.from('sheet_outbox').delete().in('id', ids)
+      if (deleteErr) throw deleteErr
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       const ids = groupRows.map((r) => r.id)
