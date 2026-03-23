@@ -87,6 +87,9 @@ export default function ContagemEstoque() {
   // Quando usamos a opção 2 (outbox no Supabase), não devemos mandar direto para o Apps Script.
   // Defina `VITE_SHEETS_DIRECT_WEBHOOK=true` apenas para testes/fallback.
   const enableDirectSheetsWebhook = (import.meta.env.VITE_SHEETS_DIRECT_WEBHOOK as string | undefined) === 'true'
+  // Kick imediato do processador de outbox (opção 2).
+  // Coloque VITE_OUTBOX_KICK=false para desabilitar.
+  const enableOutboxKick = (import.meta.env.VITE_OUTBOX_KICK as string | undefined) !== 'false'
   const [conferentes, setConferentes] = useState<Conferente[]>([])
   const [conferentesLoading, setConferentesLoading] = useState(true)
   const [showAddConferente, setShowAddConferente] = useState(false)
@@ -515,6 +518,9 @@ export default function ContagemEstoque() {
       setProduto(null)
       await loadPreview()
 
+      // Opção 2: kick imediato para processar `public.sheet_outbox` agora.
+      void kickOutboxSync()
+
       // Envio opcional para Google Sheets (não bloqueia a ação principal).
       if (sheetWebhookUrl && enableDirectSheetsWebhook) {
         const conferenteNome = conferentes.find((c) => c.id === conferenteId)?.nome ?? conferenteId
@@ -580,6 +586,19 @@ export default function ContagemEstoque() {
     setPreviewLoading(false)
   }
 
+  async function kickOutboxSync() {
+    if (!enableOutboxKick) return
+    try {
+      // Edge Function: processa `public.sheet_outbox` e grava no Google Sheets.
+      // Usa a URL da função via supabase-js (não precisa Function URL no .env).
+      if (typeof (supabase as any)?.functions?.invoke !== 'function') return
+      await (supabase as any).functions.invoke('sheet-outbox-sync', { body: {} })
+    } catch (err) {
+      // Não bloqueia o fluxo de salvamento.
+      if (import.meta.env.DEV) console.warn('[outbox kick] falhou:', err)
+    }
+  }
+
   useEffect(() => {
     // carrega uma primeira prévia
     loadPreview()
@@ -621,6 +640,8 @@ export default function ContagemEstoque() {
       setEditingPreviewId(null)
       setEditingPreviewQuantidade('')
       await loadPreview()
+      // Opção 2: kick imediato após edição/exclusão na prévia.
+      void kickOutboxSync()
     } catch (e: any) {
       setPreviewRowError(`Erro ao excluir: ${e?.message ? String(e.message) : 'verifique'}`)
     } finally {
@@ -658,6 +679,8 @@ export default function ContagemEstoque() {
       }
 
       await loadPreview()
+      // Opção 2: kick imediato após atualizar quantidade na prévia.
+      void kickOutboxSync()
     } catch (e: any) {
       setPreviewRowError(`Erro ao atualizar quantidade: ${e?.message ? String(e.message) : 'verifique'}`)
     } finally {

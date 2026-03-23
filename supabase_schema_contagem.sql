@@ -148,24 +148,37 @@ drop policy if exists "sheet_outbox_anon_insert_none" on public.sheet_outbox;
 drop policy if exists "sheet_outbox_anon_update_none" on public.sheet_outbox;
 drop policy if exists "sheet_outbox_anon_delete_none" on public.sheet_outbox;
 
+-- Garante idempotência: remove também as políticas "allow" que criamos anteriormente
+drop policy if exists "sheet_outbox_auth_insert_allow" on public.sheet_outbox;
+drop policy if exists "sheet_outbox_auth_update_allow" on public.sheet_outbox;
+drop policy if exists "sheet_outbox_auth_delete_none" on public.sheet_outbox;
+drop policy if exists "sheet_outbox_anon_insert_allow" on public.sheet_outbox;
+drop policy if exists "sheet_outbox_anon_update_allow" on public.sheet_outbox;
+drop policy if exists "sheet_outbox_anon_delete_none" on public.sheet_outbox;
+drop policy if exists "sheet_outbox_public_insert_allow" on public.sheet_outbox;
+drop policy if exists "sheet_outbox_public_update_allow" on public.sheet_outbox;
+
 create policy "sheet_outbox_auth_select_none"
 on public.sheet_outbox
 for select
 to authenticated
 using (false);
 
-create policy "sheet_outbox_auth_insert_none"
+-- Frontend (authenticated/anon) precisa poder inserir/atualizar na outbox
+-- via triggers que rodam durante INSERT/UPDATE em `contagens_estoque`.
+-- A gente continua bloqueando SELECT para não expor a fila.
+create policy "sheet_outbox_auth_insert_allow"
 on public.sheet_outbox
 for insert
 to authenticated
-with check (false);
+with check (true);
 
-create policy "sheet_outbox_auth_update_none"
+create policy "sheet_outbox_auth_update_allow"
 on public.sheet_outbox
 for update
 to authenticated
-using (false)
-with check (false);
+using (true)
+with check (true);
 
 create policy "sheet_outbox_auth_delete_none"
 on public.sheet_outbox
@@ -179,24 +192,39 @@ for select
 to anon
 using (false);
 
-create policy "sheet_outbox_anon_insert_none"
+create policy "sheet_outbox_anon_insert_allow"
 on public.sheet_outbox
 for insert
 to anon
-with check (false);
+with check (true);
 
-create policy "sheet_outbox_anon_update_none"
+create policy "sheet_outbox_anon_update_allow"
 on public.sheet_outbox
 for update
 to anon
-using (false)
-with check (false);
+using (true)
+with check (true);
 
 create policy "sheet_outbox_anon_delete_none"
 on public.sheet_outbox
 for delete
 to anon
 using (false);
+
+-- Reforço: algumas setups podem executar triggers com role diferente (ex.: sem sessão).
+-- Para garantir que INSERT/UPDATE via trigger funcione sempre, permitimos também para `public`.
+create policy "sheet_outbox_public_insert_allow"
+on public.sheet_outbox
+for insert
+to public
+with check (true);
+
+create policy "sheet_outbox_public_update_allow"
+on public.sheet_outbox
+for update
+to public
+using (true)
+with check (true);
 
 -- =========================
 -- RLS / Policies
@@ -384,6 +412,8 @@ create index if not exists idx_sheet_outbox_pending
 create or replace function public.enqueue_sheet_outbox_from_contagem()
 returns trigger
 language plpgsql
+security definer
+set row_security = off
 as $$
 declare
   v_aba text := 'CONTAGEM DE ESTOQUE FISICA';
