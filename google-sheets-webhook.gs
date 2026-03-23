@@ -350,6 +350,13 @@ function doPostLocked(data) {
   function isColumnHeaderForDay(col, ymd) {
     try {
       if (!col || col < FIRST_DATE_COL) return false
+      var rr = sheet.getRange(HEADER_ROW, col)
+      var note = String(rr.getNote ? rr.getNote() : '')
+      if (note.indexOf(NOTE_PREFIX + ymd) >= 0) return true
+      // Se a célula existe e está preenchida, usamos como válida para evitar abrir
+      // nova coluna por falha de parsing visual do cabeçalho.
+      var hasAny = rr.getValue() !== '' || String(rr.getDisplayValue() || '').trim() !== ''
+      if (hasAny) return true
       var y = headerCellToYMD(col)
       return !!y && y === ymd
     } catch (e) {
