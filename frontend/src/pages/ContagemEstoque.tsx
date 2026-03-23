@@ -523,8 +523,8 @@ export default function ContagemEstoque() {
       setProduto(null)
       await loadPreview()
 
-      // Opção 2: kick imediato para processar `public.sheet_outbox` agora.
-      void kickOutboxSync()
+      // Opção 2: kick imediato + retries curtos.
+      kickOutboxSyncNowWithRetry()
 
       // Envio opcional para Google Sheets (não bloqueia a ação principal).
       if (sheetWebhookUrl && enableDirectSheetsWebhook) {
@@ -638,6 +638,19 @@ export default function ContagemEstoque() {
     }
   }
 
+  // Dispara o processador da outbox de forma agressiva:
+  // imediato + retries curtos para reduzir atraso percebido.
+  function kickOutboxSyncNowWithRetry() {
+    if (!enableOutboxKick) return
+    void kickOutboxSync()
+    setTimeout(() => {
+      void kickOutboxSync()
+    }, 1500)
+    setTimeout(() => {
+      void kickOutboxSync()
+    }, 5000)
+  }
+
   useEffect(() => {
     // carrega uma primeira prévia
     loadPreview()
@@ -679,8 +692,8 @@ export default function ContagemEstoque() {
       setEditingPreviewId(null)
       setEditingPreviewQuantidade('')
       await loadPreview()
-      // Opção 2: kick imediato após edição/exclusão na prévia.
-      void kickOutboxSync()
+      // Opção 2: kick imediato + retries curtos.
+      kickOutboxSyncNowWithRetry()
     } catch (e: any) {
       setPreviewRowError(`Erro ao excluir: ${e?.message ? String(e.message) : 'verifique'}`)
     } finally {
@@ -718,8 +731,8 @@ export default function ContagemEstoque() {
       }
 
       await loadPreview()
-      // Opção 2: kick imediato após atualizar quantidade na prévia.
-      void kickOutboxSync()
+      // Opção 2: kick imediato + retries curtos.
+      kickOutboxSyncNowWithRetry()
     } catch (e: any) {
       setPreviewRowError(`Erro ao atualizar quantidade: ${e?.message ? String(e.message) : 'verifique'}`)
     } finally {

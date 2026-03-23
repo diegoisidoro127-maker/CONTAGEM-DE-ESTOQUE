@@ -1,3 +1,5 @@
+var WEBHOOK_VERSION = 'no-auto-create-v2'
+
 /**
  * Web App — A=CÓDIGO, B=DESCRIÇÃO, C+=datas
  *
@@ -35,9 +37,14 @@ function doPost(e) {
 }
 
 function doGet() {
-  return ContentService.createTextOutput(JSON.stringify({ ok: true, message: 'Use POST com JSON (text/plain) para gravar.' })).setMimeType(
-    ContentService.MimeType.JSON,
-  )
+  return ContentService.createTextOutput(
+    JSON.stringify({
+      ok: true,
+      message: 'Use POST com JSON (text/plain) para gravar.',
+      version: WEBHOOK_VERSION,
+      mode: 'no_auto_column_create',
+    }),
+  ).setMimeType(ContentService.MimeType.JSON)
 }
 
 /**
@@ -138,6 +145,15 @@ function instantIsoToYmdInTz(isoLike, timeZone) {
 }
 
 function doPostLocked(data) {
+  // Modo "corrige na hora do input":
+  // antes de gravar, consolida colunas duplicadas existentes.
+  // Isso garante que cada dia fique em UMA coluna no momento do envio.
+  try {
+    consolidarColunasDuplicadas()
+  } catch (e0) {
+    // Não bloqueia a gravação principal se a consolidação falhar pontualmente.
+  }
+
   var ss = SpreadsheetApp.openById('1EoT2x4MHtAu7bVkuwqxl2swdwqUI7n1Hg2EL9WBNeTk')
   var nomeAba = data.aba || 'CONTAGEM DE ESTOQUE FISICA'
   var sheet = ss.getSheetByName(nomeAba)
@@ -230,6 +246,45 @@ function doPostLocked(data) {
       return x.length < 2 ? '0' + x : x
     }
     return pad2(dd) + '/' + pad2(mm) + '/' + p[0]
+  }
+
+  function canonicalDateKeyFromDisplay(str) {
+    var s = String(str || '')
+      .replace(/\u00A0/g, ' ')
+      .replace(/\u2007|\u202F/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+    if (!s) return ''
+
+    var m1 = s.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/)
+    if (m1) {
+      var dd = String(m1[1]).padStart(2, '0')
+      var mm = String(m1[2]).padStart(2, '0')
+      return m1[3] + '-' + mm + '-' + dd
+    }
+
+    var m2 = s.match(/(\d{4})-(\d{2})-(\d{2})/)
+    if (m2) return m2[1] + '-' + m2[2] + '-' + m2[3]
+
+    // Fallback extremo: remove tudo, tenta ddmmyyyy ou yyyymmdd.
+    var digits = s.replace(/\D/g, '')
+    if (digits.length >= 8) {
+      if (/^\d{8}$/.test(digits)) {
+        var p1 = digits.slice(0, 4)
+        var p2 = digits.slice(4, 6)
+        var p3 = digits.slice(6, 8)
+        if (Number(p1) > 1900 && Number(p2) >= 1 && Number(p2) <= 12 && Number(p3) >= 1 && Number(p3) <= 31) {
+          return p1 + '-' + p2 + '-' + p3
+        }
+        var d = digits.slice(0, 2)
+        var m = digits.slice(2, 4)
+        var y = digits.slice(4, 8)
+        if (Number(y) > 1900 && Number(m) >= 1 && Number(m) <= 12 && Number(d) >= 1 && Number(d) <= 31) {
+          return y + '-' + m + '-' + d
+        }
+      }
+    }
+    return ''
   }
 
   function headerCellToYMD(col) {
@@ -353,15 +408,46 @@ function doPostLocked(data) {
       var rr = sheet.getRange(HEADER_ROW, col)
       var note = String(rr.getNote ? rr.getNote() : '')
       if (note.indexOf(NOTE_PREFIX + ymd) >= 0) return true
-      // Se a célula existe e está preenchida, usamos como válida para evitar abrir
-      // nova coluna por falha de parsing visual do cabeçalho.
-      var hasAny = rr.getValue() !== '' || String(rr.getDisplayValue() || '').trim() !== ''
-      if (hasAny) return true
       var y = headerCellToYMD(col)
       return !!y && y === ymd
     } catch (e) {
       return false
     }
+  }
+
+  /**
+   * Reconstrói o índice de datas pelo cabeçalho atual.
+   * Evita mapeamentos quebrados quando colunas são deletadas/consolidadas.
+   */
+  function refreshDateIndexFromHeader() {
+    try {
+      var idx = getOrCreateIndexSheet()
+      var lastCol = getHeaderScanLastCol()
+      var map = {}
+
+      for (var c = FIRST_DATE_COL; c <= lastCol; c++) {
+        var y = headerCellToYMD(c)
+        if (!y) continue
+        if (!map[y]) map[y] = c
+      }
+
+      idx.clearContents()
+      idx.getRange(1, 1).setValue('ymd')
+      idx.getRange(1, 2).setValue('col')
+
+      var keys = Object.keys(map).sort()
+      if (keys.length <= 0) return
+
+      var out = []
+      for (var i = 0; i < keys.length; i++) {
+        var ymd = keys[i]
+        var col = map[ymd]
+        out.push([ymd, col])
+        setYmdNote(col, ymd)
+        setColumnCache(ymd, col)
+      }
+      idx.getRange(2, 1, out.length, 2).setValues(out)
+    } catch (e) {}
   }
 
   function findDateColumn(ymd) {
@@ -398,17 +484,49 @@ function doPostLocked(data) {
     return null
   }
 
+  // Fallback textual: identifica coluna por string do cabeçalho, mesmo com formatação incomum.
+  function findDateColumnByText(ymd) {
+    var lastCol = Math.max(getHeaderScanLastCol(), FIRST_DATE_COL)
+    var dispUnpadded = ymdToDisplayBR(ymd)
+    var dispPadded = ymdToDisplayBRPadded(ymd)
+
+    for (var c = FIRST_DATE_COL; c <= lastCol; c++) {
+      var dv = String(sheet.getRange(HEADER_ROW, c).getDisplayValue() || '')
+        .replace(/\u00A0/g, ' ')
+        .replace(/\u2007|\u202F/g, ' ')
+        .trim()
+      if (!dv) continue
+      var key = canonicalDateKeyFromDisplay(dv)
+      if (key === ymd || dv === dispUnpadded || dv === dispPadded || dv.indexOf(dispPadded) >= 0 || dv.indexOf(ymd) >= 0) {
+        setYmdNote(c, ymd)
+        return c
+      }
+    }
+    return null
+  }
+
   function ensureDateColumn(ymd) {
     // 0) Mapeamento estável no sheet de índice (evita depender do parsing do cabeçalho sempre)
     var mapped = readMappedCol(ymd)
-    if (mapped && isColumnHeaderForDay(mapped, ymd)) {
+    // Regra principal: se existe mapeamento no índice, usa a coluna mapeada.
+    // O índice é reconstruído no início de cada request para evitar drift após deleções.
+    if (mapped && mapped >= FIRST_DATE_COL) {
+      // Se o cabeçalho ficou inconsistente, reescreve a célula com a data correta.
+      if (!isColumnHeaderForDay(mapped, ymd)) {
+        var p0 = ymd.split('-')
+        var dt0 = new Date(parseInt(p0[0], 10), parseInt(p0[1], 10) - 1, parseInt(p0[2], 10), 12, 0, 0)
+        var hc0 = sheet.getRange(HEADER_ROW, mapped)
+        hc0.setValue(dt0)
+        hc0.setNumberFormat('dd/mm/yyyy')
+      }
       setYmdNote(mapped, ymd)
       setColumnCache(ymd, mapped)
       return mapped
     }
 
     var found = getColumnFromCache(ymd)
-    if (found && isColumnHeaderForDay(found, ymd)) {
+    // Cache também passa a ser confiado diretamente.
+    if (found && found >= FIRST_DATE_COL) {
       setYmdNote(found, ymd)
       writeMappedCol(ymd, found)
       return found
@@ -421,8 +539,30 @@ function doPostLocked(data) {
       return found
     }
 
+    found = findDateColumnByText(ymd)
+    if (found) {
+      setColumnCache(ymd, found)
+      writeMappedCol(ymd, found)
+      return found
+    }
+
     Utilities.sleep(150)
+    refreshDateIndexFromHeader()
+    mapped = readMappedCol(ymd)
+    if (mapped && mapped >= FIRST_DATE_COL) {
+      setYmdNote(mapped, ymd)
+      setColumnCache(ymd, mapped)
+      return mapped
+    }
+
     found = findDateColumn(ymd)
+    if (found) {
+      setColumnCache(ymd, found)
+      writeMappedCol(ymd, found)
+      return found
+    }
+
+    found = findDateColumnByText(ymd)
     if (found) {
       setColumnCache(ymd, found)
       writeMappedCol(ymd, found)
@@ -432,20 +572,9 @@ function doPostLocked(data) {
     found = getColumnFromCache(ymd)
     if (found) return found
 
-    var lastCol = getHeaderScanLastCol()
-    var newCol = Math.max(lastCol + 1, FIRST_DATE_COL)
-    var parts = ymd.split('-')
-    var y = parseInt(parts[0], 10)
-    var mo = parseInt(parts[1], 10) - 1
-    var d = parseInt(parts[2], 10)
-    var dt = new Date(y, mo, d, 12, 0, 0)
-    var cell = sheet.getRange(HEADER_ROW, newCol)
-    cell.setValue(dt)
-    cell.setNumberFormat('dd/mm/yyyy')
-    setYmdNote(newCol, ymd)
-    setColumnCache(ymd, newCol)
-    writeMappedCol(ymd, newCol)
-    return newCol
+    // Modo travado: não cria coluna automaticamente no webhook.
+    // Isso elimina a causa raiz de duplicação de colunas.
+    return null
   }
 
   /**
@@ -508,6 +637,53 @@ function doPostLocked(data) {
     return keeperCol
   }
 
+  /**
+   * Consolidação completa das colunas de data da aba atual.
+   * Mantém a coluna mais à esquerda por dia e remove duplicadas somando valores.
+   * Versão local para rodar automaticamente em TODO input.
+   */
+  function consolidateAllDateColumnsCurrentSheet() {
+    var lastCol = getHeaderScanLastCol()
+    var lastRow = Math.max(sheet.getLastRow(), 2)
+    var firstByDay = {}
+    var duplicates = [] // { day, keeperCol, dupCol }
+
+    for (var c = FIRST_DATE_COL; c <= lastCol; c++) {
+      var ymd = headerCellToYMD(c)
+      if (!ymd) {
+        var rawDisplay = sheet.getRange(HEADER_ROW, c).getDisplayValue()
+        ymd = canonicalDateKeyFromDisplay(rawDisplay)
+      }
+      if (!ymd) continue
+      if (!firstByDay[ymd]) {
+        firstByDay[ymd] = c
+        setYmdNote(c, ymd)
+      } else {
+        duplicates.push({ day: ymd, keeperCol: firstByDay[ymd], dupCol: c })
+      }
+    }
+
+    for (var i = duplicates.length - 1; i >= 0; i--) {
+      var d = duplicates[i]
+      var keeperRange = sheet.getRange(2, d.keeperCol, lastRow - 1, 1)
+      var dupRange = sheet.getRange(2, d.dupCol, lastRow - 1, 1)
+      var keeperVals = keeperRange.getValues()
+      var dupVals = dupRange.getValues()
+
+      for (var r = 0; r < keeperVals.length; r++) {
+        var a = Number(keeperVals[r][0] || 0)
+        var b = Number(dupVals[r][0] || 0)
+        var sum = a + b
+        keeperVals[r][0] = sum === 0 ? '' : sum
+      }
+      keeperRange.setValues(keeperVals)
+      sheet.deleteColumn(d.dupCol)
+    }
+
+    refreshDateIndexFromHeader()
+    return duplicates.length
+  }
+
   function findProductRow() {
     var lastRow = sheet.getLastRow()
     for (var r = HEADER_ROW + 1; r <= lastRow; r++) {
@@ -519,6 +695,9 @@ function doPostLocked(data) {
   }
 
   function processOne(rec) {
+    // Blindagem máxima: consolida SEMPRE antes de processar cada input.
+    consolidateAllDateColumnsCurrentSheet()
+
     var thisTipo = String(rec.tipo || tipo || 'upsert')
     var thisCodigo = String(rec.codigo_interno || incomingCodigo || '').trim().toLowerCase()
     var thisDescricao = String(rec.descricao || incomingDescricao || '').trim().toLowerCase()
@@ -536,16 +715,26 @@ function doPostLocked(data) {
       thisYmd = thisClient || thisIso || targetYmd
     }
 
-    var dateCol = consolidateColumnsForDay(thisYmd)
-    if (!dateCol) dateCol = ensureDateColumn(thisYmd)
-    writeMappedCol(thisYmd, dateCol)
-
     var productRow = findProductRow()
 
     if (thisTipo === 'clear_qty') {
-      if (productRow) sheet.getRange(productRow, dateCol).setValue('')
+      // Em exclusão, NUNCA cria coluna nova.
+      var clearCol = consolidateColumnsForDay(thisYmd)
+      if (!clearCol) clearCol = findDateColumn(thisYmd)
+      if (clearCol) {
+        writeMappedCol(thisYmd, clearCol)
+        if (productRow) sheet.getRange(productRow, clearCol).setValue('')
+      }
       return
     }
+
+    // Para upsert/edit, pode garantir/crear coluna do dia se não existir.
+    var dateCol = consolidateColumnsForDay(thisYmd)
+    if (!dateCol) dateCol = ensureDateColumn(thisYmd)
+    if (!dateCol) {
+      throw new Error('Coluna da data ' + thisYmd + ' não encontrada. Crie o cabeçalho dessa data e tente novamente.')
+    }
+    writeMappedCol(thisYmd, dateCol)
 
     if (thisTipo === 'edit_qty') {
       if (productRow) sheet.getRange(productRow, dateCol).setValue(thisQtd)
@@ -563,15 +752,91 @@ function doPostLocked(data) {
   }
 
   if (Array.isArray(data.records) && data.records.length > 0) {
+    refreshDateIndexFromHeader()
     for (var k = 0; k < data.records.length; k++) {
       processOne(data.records[k] || {})
     }
-    return ContentService.createTextOutput(JSON.stringify({ ok: true, processed: data.records.length })).setMimeType(
+    return ContentService.createTextOutput(JSON.stringify({ ok: true, processed: data.records.length, version: WEBHOOK_VERSION })).setMimeType(
       ContentService.MimeType.JSON,
     )
   }
 
+  refreshDateIndexFromHeader()
   processOne(data)
 
-  return ContentService.createTextOutput(JSON.stringify({ ok: true })).setMimeType(ContentService.MimeType.JSON)
+  return ContentService.createTextOutput(JSON.stringify({ ok: true, version: WEBHOOK_VERSION })).setMimeType(
+    ContentService.MimeType.JSON,
+  )
+}
+
+/**
+ * Runner seguro para trigger de tempo.
+ * Execute esta função via gatilho para manter a planilha consolidada continuamente.
+ */
+function consolidarColunasDuplicadasAuto() {
+  var lock = LockService.getScriptLock()
+  try {
+    lock.waitLock(30000)
+    consolidarColunasDuplicadas()
+  } catch (e) {
+    // Não propaga erro para evitar desativação silenciosa do trigger.
+    Logger.log('consolidarColunasDuplicadasAuto erro: ' + (e && e.message ? e.message : e))
+  } finally {
+    try {
+      lock.releaseLock()
+    } catch (e2) {}
+  }
+}
+
+/**
+ * Instala trigger para rodar a consolidação a cada 1 minuto.
+ * Execute manualmente 1x no editor.
+ */
+function instalarTriggerConsolidacaoMinuto() {
+  removerTriggerConsolidacaoMinuto()
+  ScriptApp.newTrigger('consolidarColunasDuplicadasAuto').timeBased().everyMinutes(1).create()
+}
+
+/**
+ * Remove triggers antigos dessa rotina para evitar duplicidade.
+ */
+function removerTriggerConsolidacaoMinuto() {
+  var triggers = ScriptApp.getProjectTriggers()
+  for (var i = 0; i < triggers.length; i++) {
+    var t = triggers[i]
+    if (t.getHandlerFunction && t.getHandlerFunction() === 'consolidarColunasDuplicadasAuto') {
+      ScriptApp.deleteTrigger(t)
+    }
+  }
+}
+
+/**
+ * Configuração recomendada (execute manualmente 1x):
+ * - remove triggers antigos
+ * - cria trigger novo a cada 1 minuto
+ * - retorna status para conferência
+ */
+function configurarConsolidacaoAuto() {
+  instalarTriggerConsolidacaoMinuto()
+  return statusConsolidacaoAuto()
+}
+
+/**
+ * Diagnóstico rápido dos triggers de consolidação.
+ */
+function statusConsolidacaoAuto() {
+  var triggers = ScriptApp.getProjectTriggers()
+  var out = []
+  for (var i = 0; i < triggers.length; i++) {
+    var t = triggers[i]
+    if (t.getHandlerFunction && t.getHandlerFunction() === 'consolidarColunasDuplicadasAuto') {
+      out.push({
+        handler: t.getHandlerFunction(),
+        eventType: String(t.getEventType ? t.getEventType() : ''),
+        uniqueId: String(t.getUniqueId ? t.getUniqueId() : ''),
+      })
+    }
+  }
+  Logger.log('statusConsolidacaoAuto: ' + JSON.stringify(out))
+  return { ok: true, total: out.length, triggers: out }
 }
