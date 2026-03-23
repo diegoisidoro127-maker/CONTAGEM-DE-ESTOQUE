@@ -1,4 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+
+/** Fila serial: um POST por vez para o webhook do Sheets (evita colunas duplicadas no servidor). */
+let sheetWebhookQueue = Promise.resolve(true as boolean)
 import type React from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { toDatetimeLocalValue, toISOStringFromDatetimeLocal } from '../lib/datetime'
@@ -62,7 +65,12 @@ function formatDateBRFromIso(isoLike: string) {
   return `${pad(dt.getDate())}/${pad(dt.getMonth() + 1)}/${dt.getFullYear()}`
 }
 
-function toLocalYYYYMMDDFromIso(isoLike: string) {
+/**
+ * Dia civil local (navegador) a partir de um ISO — deve ser o MESMO em:
+ * salvar, editar prévia, excluir e webhook da planilha (senão o Sheet cria outra coluna).
+ * Não usar slice(0,10) no ISO (isso é data em UTC, não o dia local).
+ */
+function dataContagemYmdFromIso(isoLike: string) {
   const dt = new Date(isoLike)
   if (Number.isNaN(dt.getTime())) return ''
   const pad = (n: number) => String(n).padStart(2, '0')
@@ -76,6 +84,9 @@ function isUuid(value: string | null | undefined) {
 
 export default function ContagemEstoque() {
   const sheetWebhookUrl = import.meta.env.VITE_SHEET_WEBHOOK_URL as string | undefined
+  // Quando usamos a opção 2 (outbox no Supabase), não devemos mandar direto para o Apps Script.
+  // Defina `VITE_SHEETS_DIRECT_WEBHOOK=true` apenas para testes/fallback.
+  const enableDirectSheetsWebhook = (import.meta.env.VITE_SHEETS_DIRECT_WEBHOOK as string | undefined) === 'true'
   const [conferentes, setConferentes] = useState<Conferente[]>([])
   const [conferentesLoading, setConferentesLoading] = useState(true)
   const [showAddConferente, setShowAddConferente] = useState(false)
@@ -411,7 +422,12 @@ export default function ContagemEstoque() {
     if (dataVencimento) payload.data_validade = dataVencimento
     if (quantidadeUp.trim() !== '') payload.up = Number(quantidadeUp.replace(',', '.'))
 
-    const dataContagemKey = String(payload.data_hora_contagem).slice(0, 10) // YYYY-MM-DD
+    const dataContagemKey = dataContagemYmdFromIso(String(payload.data_hora_contagem))
+    if (!dataContagemKey) {
+      setSaveError('Data/hora de contagem inválida.')
+      setSaving(false)
+      return
+    }
     const startIso = `${dataContagemKey}T00:00:00`
     const endIso = `${dataContagemKey}T23:59:59`
 
@@ -500,12 +516,13 @@ export default function ContagemEstoque() {
       await loadPreview()
 
       // Envio opcional para Google Sheets (não bloqueia a ação principal).
-      if (sheetWebhookUrl) {
+      if (sheetWebhookUrl && enableDirectSheetsWebhook) {
         const conferenteNome = conferentes.find((c) => c.id === conferenteId)?.nome ?? conferenteId
         sendToSheetInBackground(sheetWebhookUrl, {
+          tipo: 'upsert',
           data_hora_contagem: payload.data_hora_contagem,
-          // Use o dia do datetime-local (horário local) para não criar coluna “errada” por fuso.
-          data_contagem: dataHoraContagem.slice(0, 10),
+          // Mesmo critério de editar/excluir na prévia (dia local a partir do ISO gravado).
+          data_contagem: dataContagemYmdFromIso(String(payload.data_hora_contagem)),
           codigo_interno: payload.codigo_interno,
           descricao: payload.descricao,
           quantidade_contada: payload.quantidade_up,
@@ -589,8 +606,8 @@ export default function ContagemEstoque() {
       if (error) throw error
 
       // Planilha: ao excluir, limpar apenas a quantidade (não remover a linha).
-      if (sheetWebhookUrl && row) {
-        const dataContagem = toLocalYYYYMMDDFromIso(row.data_hora_contagem)
+      if (sheetWebhookUrl && enableDirectSheetsWebhook && row) {
+        const dataContagem = dataContagemYmdFromIso(String(row.data_hora_contagem))
         void sendToSheetInBackground(sheetWebhookUrl, {
           tipo: 'clear_qty',
           data_hora_contagem: row.data_hora_contagem,
@@ -627,8 +644,8 @@ export default function ContagemEstoque() {
       setEditingPreviewQuantidade('')
 
       // Planilha: ao editar, atualizar a quantidade na linha já existente.
-      if (sheetWebhookUrl && row) {
-        const dataContagem = toLocalYYYYMMDDFromIso(row.data_hora_contagem)
+      if (sheetWebhookUrl && enableDirectSheetsWebhook && row) {
+        const dataContagem = dataContagemYmdFromIso(String(row.data_hora_contagem))
         void sendToSheetInBackground(sheetWebhookUrl, {
           tipo: 'edit_qty',
           data_hora_contagem: row.data_hora_contagem,
@@ -650,41 +667,43 @@ export default function ContagemEstoque() {
 
   async function sendToSheetInBackground(webhookUrl: string, body: Record<string, any>): Promise<boolean> {
     const json = JSON.stringify(body)
-    // Google Apps Script Web App: application/json dispara preflight CORS que costuma falhar
-    // (o navegador cancela o POST antes de chegar ao doPost). text/plain evita o preflight.
     const plainHeaders = { 'Content-Type': 'text/plain;charset=utf-8' }
 
-    try {
-      const controller = new AbortController()
-      const timeout = setTimeout(() => controller.abort(), 20000)
-      const res = await fetch(webhookUrl.trim(), {
-        method: 'POST',
-        headers: plainHeaders,
-        body: json,
-        signal: controller.signal,
-        credentials: 'omit',
-      })
-      clearTimeout(timeout)
-      // Ajuda a diagnosticar no DevTools (aba Network); resposta pode ser opaca em alguns casos.
-      if (import.meta.env.DEV && !res.ok) {
-        console.warn('[Sheets webhook]', res.status, res.statusText)
-      }
-      return !!res.ok
-    } catch (err) {
-      if (import.meta.env.DEV) console.warn('[Sheets webhook] fetch falhou, tentando no-cors:', err)
+    const run = async (): Promise<boolean> => {
       try {
-        await fetch(webhookUrl.trim(), {
+        const controller = new AbortController()
+        const timeout = setTimeout(() => controller.abort(), 20000)
+        const res = await fetch(webhookUrl.trim(), {
           method: 'POST',
-          mode: 'no-cors',
+          headers: plainHeaders,
           body: json,
+          signal: controller.signal,
           credentials: 'omit',
         })
-        return true
-      } catch {
-        // silencioso: planilha é opcional
-        return false
+        clearTimeout(timeout)
+        if (import.meta.env.DEV && !res.ok) {
+          console.warn('[Sheets webhook]', res.status, res.statusText)
+        }
+        return !!res.ok
+      } catch (err) {
+        if (import.meta.env.DEV) console.warn('[Sheets webhook] fetch falhou, tentando no-cors:', err)
+        try {
+          await fetch(webhookUrl.trim(), {
+            method: 'POST',
+            mode: 'no-cors',
+            body: json,
+            credentials: 'omit',
+          })
+          return true
+        } catch {
+          return false
+        }
       }
     }
+
+    const next = sheetWebhookQueue.then(() => run())
+    sheetWebhookQueue = next.catch(() => false)
+    return next
   }
 
   function renderPreviewTable() {
@@ -694,7 +713,8 @@ export default function ContagemEstoque() {
       const descricaoOk =
         !previewFilterDescricao.trim() ||
         r.descricao.toLowerCase().includes(previewFilterDescricao.trim().toLowerCase())
-      const dataOk = !previewFilterData || String(r.data_hora_contagem).slice(0, 10) === previewFilterData
+      const dataOk =
+        !previewFilterData || dataContagemYmdFromIso(String(r.data_hora_contagem)) === previewFilterData
       const loteOk =
         !previewFilterLote.trim() || String(r.lote ?? '').toLowerCase().includes(previewFilterLote.trim().toLowerCase())
       const obsOk =
