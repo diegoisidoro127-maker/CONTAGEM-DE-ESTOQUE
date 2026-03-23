@@ -93,6 +93,8 @@ export default function ContagemEstoque() {
   // Slug da edge function pode variar por ambiente (ex.: dynamic-endpoint).
   // Pode definir VITE_OUTBOX_FUNCTION_NAME no Render.
   const outboxFunctionName = (import.meta.env.VITE_OUTBOX_FUNCTION_NAME as string | undefined)?.trim()
+  const supabaseUrlEnv = (import.meta.env.VITE_SUPABASE_URL as string | undefined)?.trim()
+  const supabaseAnonKeyEnv = (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined)?.trim()
   const [conferentes, setConferentes] = useState<Conferente[]>([])
   const [conferentesLoading, setConferentesLoading] = useState(true)
   const [showAddConferente, setShowAddConferente] = useState(false)
@@ -605,6 +607,30 @@ export default function ContagemEstoque() {
         if (!res?.error) return
         lastErr = res.error
       }
+
+      // Fallback extra para produção: chamada HTTP direta da function.
+      // Ajuda quando `functions.invoke()` não dispara por configuração de SDK/ambiente.
+      if (supabaseUrlEnv && supabaseAnonKeyEnv) {
+        for (const fnName of candidates) {
+          try {
+            const url = `${supabaseUrlEnv.replace(/\/$/, '')}/functions/v1/${fnName}`
+            const res = await fetch(url, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                apikey: supabaseAnonKeyEnv,
+                Authorization: `Bearer ${supabaseAnonKeyEnv}`,
+              },
+              body: '{}',
+            })
+            if (res.ok) return
+            lastErr = new Error(`fallback ${fnName}: ${res.status} ${res.statusText}`)
+          } catch (e) {
+            lastErr = e
+          }
+        }
+      }
+
       if (lastErr && import.meta.env.DEV) console.warn('[outbox kick] todas tentativas falharam:', lastErr)
     } catch (err) {
       // Não bloqueia o fluxo de salvamento.
