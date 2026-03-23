@@ -24,6 +24,7 @@ type Produto = {
 
 type ContagemPreviewRow = {
   id: string
+  source_ids: string[]
   data_hora_contagem: string
   codigo_interno: string
   descricao: string
@@ -576,8 +577,9 @@ export default function ContagemEstoque() {
     if (error) {
       setSaveError(`Erro ao carregar prévia: ${error.message}`)
     } else {
-      const mapped = (data ?? []).map((r: any) => ({
+      const rawRows = (data ?? []).map((r: any) => ({
         id: String(r.id),
+        source_ids: [String(r.id)],
         data_hora_contagem: String(r.data_hora_contagem ?? ''),
         codigo_interno: String(r.codigo_interno ?? ''),
         descricao: String(r.descricao ?? ''),
@@ -586,7 +588,23 @@ export default function ContagemEstoque() {
         observacao: r.observacao ?? null,
       })) as ContagemPreviewRow[]
 
-      setPreviewRows(mapped)
+      // Prévia agrupada: uma linha por dia + código + descrição, somando a quantidade.
+      const grouped = new Map<string, ContagemPreviewRow>()
+      for (const row of rawRows) {
+        const day = dataContagemYmdFromIso(String(row.data_hora_contagem))
+        const key = `${day}|${row.codigo_interno.trim().toLowerCase()}|${row.descricao.trim().toLowerCase()}`
+        const existing = grouped.get(key)
+        if (!existing) {
+          grouped.set(key, { ...row })
+          continue
+        }
+        existing.quantidade_up += Number(row.quantidade_up ?? 0)
+        existing.source_ids = existing.source_ids.concat(row.source_ids)
+        if (!existing.lote && row.lote) existing.lote = row.lote
+        if (!existing.observacao && row.observacao) existing.observacao = row.observacao
+      }
+
+      setPreviewRows(Array.from(grouped.values()))
     }
     setPreviewLoading(false)
   }
@@ -673,7 +691,8 @@ export default function ContagemEstoque() {
     setPreviewRowActionLoading(true)
     try {
       const row = previewRows.find((r) => r.id === id)
-      const { error } = await supabase.from('contagens_estoque').delete().eq('id', id)
+      const idsToDelete = row?.source_ids?.length ? row.source_ids : [id]
+      const { error } = await supabase.from('contagens_estoque').delete().in('id', idsToDelete)
       if (error) throw error
 
       // Planilha: ao excluir, limpar apenas a quantidade (não remover a linha).
@@ -711,8 +730,15 @@ export default function ContagemEstoque() {
     setPreviewRowActionLoading(true)
     try {
       const row = previewRows.find((r) => r.id === id)
-      const { error } = await supabase.from('contagens_estoque').update({ quantidade_up: qtd }).eq('id', id)
+      const sourceIds = row?.source_ids?.length ? row.source_ids : [id]
+      const keepId = sourceIds[0]
+      const { error } = await supabase.from('contagens_estoque').update({ quantidade_up: qtd }).eq('id', keepId)
       if (error) throw error
+      const otherIds = sourceIds.slice(1)
+      if (otherIds.length) {
+        const { error: delError } = await supabase.from('contagens_estoque').delete().in('id', otherIds)
+        if (delError) throw delError
+      }
       setEditingPreviewId(null)
       setEditingPreviewQuantidade('')
 
