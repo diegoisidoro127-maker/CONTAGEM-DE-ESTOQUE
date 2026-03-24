@@ -127,8 +127,9 @@ function canFetchChecklistFromSheet(opts: {
 }
 
 /**
- * Apps Script via proxy Supabase (POST com supabase.functions.invoke — evita CORS do fetch manual)
- * ou GET direto no webhook se não houver Supabase no front.
+ * Apps Script via proxy Supabase: POST JSON na edge (fetch explícito).
+ * Não usamos supabase.functions.invoke aqui — em produção costuma disparar
+ * FunctionsFetchError ("Failed to send a request to the Edge Function") mesmo com função ok.
  */
 async function fetchAppsScriptReadonlyGet(opts: {
   sheetWebhookUrl?: string
@@ -140,36 +141,58 @@ async function fetchAppsScriptReadonlyGet(opts: {
 }): Promise<Response> {
   const fn = (opts.listFunctionName || 'sheet-checklist-proxy').trim()
   if (opts.supabaseUrl?.trim() && opts.supabaseAnonKey?.trim()) {
+    const base = opts.supabaseUrl.replace(/\/$/, '')
+    const url = `${base}/functions/v1/${encodeURIComponent(fn)}`
     const body: Record<string, string> = { action: opts.action }
     if (opts.action === 'check_date_column' && opts.ymd) body.ymd = opts.ymd
 
-    if (typeof supabase?.functions?.invoke === 'function') {
-      const { data, error } = await supabase.functions.invoke(fn, {
+    const headers: Record<string, string> = {
+      apikey: opts.supabaseAnonKey,
+      Authorization: `Bearer ${opts.supabaseAnonKey}`,
+      'Content-Type': 'application/json',
+    }
+
+    const tryPost = () =>
+      fetch(url, {
         method: 'POST',
-        body,
+        headers,
+        body: JSON.stringify(body),
       })
-      if (error) {
-        const msg = error.message || String(error)
-        return new Response(JSON.stringify({ ok: false, error: msg }), {
-          status: 502,
-          headers: { 'content-type': 'application/json' },
-        })
-      }
-      return new Response(JSON.stringify(data ?? {}), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
+
+    const tryGet = () => {
+      const sp = new URLSearchParams({ action: opts.action })
+      if (opts.action === 'check_date_column' && opts.ymd) sp.set('ymd', opts.ymd)
+      return fetch(`${url}?${sp}`, {
+        method: 'GET',
+        headers: {
+          apikey: opts.supabaseAnonKey,
+          Authorization: `Bearer ${opts.supabaseAnonKey}`,
+        },
       })
     }
 
-    const base = opts.supabaseUrl.replace(/\/$/, '')
-    const sp = new URLSearchParams({ action: opts.action })
-    if (opts.action === 'check_date_column' && opts.ymd) sp.set('ymd', opts.ymd)
-    return fetch(`${base}/functions/v1/${fn}?${sp}`, {
-      headers: {
-        apikey: opts.supabaseAnonKey,
-        Authorization: `Bearer ${opts.supabaseAnonKey}`,
-      },
-    })
+    let lastErr: unknown
+    for (let i = 0; i < 2; i++) {
+      try {
+        const res = await tryPost()
+        return res
+      } catch (e) {
+        lastErr = e
+        if (i === 0) await new Promise((r) => setTimeout(r, 350))
+      }
+    }
+    try {
+      return await tryGet()
+    } catch (e2) {
+      lastErr = e2
+    }
+
+    const msg = lastErr instanceof Error ? lastErr.message : String(lastErr)
+    const hint =
+      /Failed to fetch|NetworkError|Load failed/i.test(msg) ?
+        ' Verifique CORS/rede, se a função existe com esse nome e se VITE_SUPABASE_URL está correto no build.'
+      : ''
+    throw new Error(`Não foi possível chamar a edge function "${fn}" (${msg}).${hint}`)
   }
   if (!opts.sheetWebhookUrl?.trim()) {
     throw new Error('Configure Supabase (URL + chave anon) ou VITE_SHEET_WEBHOOK_URL.')
