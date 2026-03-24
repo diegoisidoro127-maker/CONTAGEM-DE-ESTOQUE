@@ -127,22 +127,21 @@ function canFetchChecklistFromSheet(opts: {
 }
 
 /**
- * Apps Script via proxy Supabase: POST JSON na edge (fetch explícito).
- * Não usamos supabase.functions.invoke aqui — em produção costuma disparar
- * FunctionsFetchError ("Failed to send a request to the Edge Function") mesmo com função ok.
+ * Apps Script via proxy Supabase: POST/GET na edge (fetch).
+ * Tenta vários slugs: lista dedicada, depois a mesma função da outbox (ex. dynamic-endpoint), por último nomes comuns.
  */
 async function fetchAppsScriptReadonlyGet(opts: {
   sheetWebhookUrl?: string
   supabaseUrl?: string
   supabaseAnonKey?: string
   listFunctionName?: string
+  /** Mesmo slug que processa a outbox — costuma ser o que já funciona no projeto (ex. dynamic-endpoint). */
+  outboxFunctionName?: string
   action: 'list_items' | 'check_date_column'
   ymd?: string
 }): Promise<Response> {
-  const fn = (opts.listFunctionName || 'sheet-checklist-proxy').trim()
   if (opts.supabaseUrl?.trim() && opts.supabaseAnonKey?.trim()) {
     const base = opts.supabaseUrl.replace(/\/$/, '')
-    const url = `${base}/functions/v1/${encodeURIComponent(fn)}`
     const body: Record<string, string> = { action: opts.action }
     if (opts.action === 'check_date_column' && opts.ymd) body.ymd = opts.ymd
 
@@ -152,17 +151,25 @@ async function fetchAppsScriptReadonlyGet(opts: {
       'Content-Type': 'application/json',
     }
 
-    const tryPost = () =>
-      fetch(url, {
+    const candidates = [
+      opts.listFunctionName?.trim(),
+      opts.outboxFunctionName?.trim(),
+      'sheet-checklist-proxy',
+      'dynamic-endpoint',
+      'sheet-outbox-sync',
+    ].filter((v, i, a): v is string => !!v && a.indexOf(v) === i)
+
+    const tryPost = (fn: string) =>
+      fetch(`${base}/functions/v1/${encodeURIComponent(fn)}`, {
         method: 'POST',
         headers,
         body: JSON.stringify(body),
       })
 
-    const tryGet = () => {
+    const tryGet = (fn: string) => {
       const sp = new URLSearchParams({ action: opts.action })
       if (opts.action === 'check_date_column' && opts.ymd) sp.set('ymd', opts.ymd)
-      return fetch(`${url}?${sp}`, {
+      return fetch(`${base}/functions/v1/${encodeURIComponent(fn)}?${sp}`, {
         method: 'GET',
         headers: {
           apikey: opts.supabaseAnonKey,
@@ -172,27 +179,34 @@ async function fetchAppsScriptReadonlyGet(opts: {
     }
 
     let lastErr: unknown
-    for (let i = 0; i < 2; i++) {
-      try {
-        const res = await tryPost()
-        return res
-      } catch (e) {
-        lastErr = e
-        if (i === 0) await new Promise((r) => setTimeout(r, 350))
+    for (const fn of candidates) {
+      for (let i = 0; i < 2; i++) {
+        try {
+          const res = await tryPost(fn)
+          if (res.status === 404) break
+          return res
+        } catch (e) {
+          lastErr = e
+          if (i === 0) await new Promise((r) => setTimeout(r, 350))
+        }
       }
     }
-    try {
-      return await tryGet()
-    } catch (e2) {
-      lastErr = e2
+    for (const fn of candidates) {
+      try {
+        const res = await tryGet(fn)
+        if (res.status === 404) continue
+        return res
+      } catch (e2) {
+        lastErr = e2
+      }
     }
 
     const msg = lastErr instanceof Error ? lastErr.message : String(lastErr)
     const hint =
       /Failed to fetch|NetworkError|Load failed/i.test(msg) ?
-        ' Verifique CORS/rede, se a função existe com esse nome e se VITE_SUPABASE_URL está correto no build.'
+        ' Confira VITE_SUPABASE_URL no Render (sem typo), faça redeploy da edge sheet-outbox-sync com proxy de lista, ou remova VITE_SHEET_LIST_FUNCTION_NAME para usar dynamic-endpoint.'
       : ''
-    throw new Error(`Não foi possível chamar a edge function "${fn}" (${msg}).${hint}`)
+    throw new Error(`Não foi possível chamar nenhuma edge function de proxy (${candidates.join(', ')}). Último erro: ${msg}.${hint}`)
   }
   if (!opts.sheetWebhookUrl?.trim()) {
     throw new Error('Configure Supabase (URL + chave anon) ou VITE_SHEET_WEBHOOK_URL.')
@@ -788,6 +802,7 @@ export default function ContagemEstoque() {
         supabaseUrl: supabaseUrlEnv,
         supabaseAnonKey: supabaseAnonKeyEnv,
         listFunctionName: sheetListFunctionName,
+        outboxFunctionName: outboxFunctionName,
         action: 'list_items',
       })
     } catch (err) {
@@ -825,6 +840,7 @@ export default function ContagemEstoque() {
         supabaseUrl: supabaseUrlEnv,
         supabaseAnonKey: supabaseAnonKeyEnv,
         listFunctionName: sheetListFunctionName,
+        outboxFunctionName: outboxFunctionName,
         action: 'check_date_column',
         ymd,
       })
