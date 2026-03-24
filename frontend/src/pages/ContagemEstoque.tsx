@@ -5,6 +5,15 @@ let sheetWebhookQueue = Promise.resolve(true as boolean)
 import type React from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { toDatetimeLocalValue, toISOStringFromDatetimeLocal } from '../lib/datetime'
+import {
+  clearOfflineSession,
+  countPendingItems,
+  loadOfflineSession,
+  type OfflineChecklistItem,
+  type OfflineSession,
+  saveOfflineSession,
+  stableItemKey,
+} from '../lib/offlineContagemSession'
 
 type Conferente = {
   id: string
@@ -83,6 +92,31 @@ function isUuid(value: string | null | undefined) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
 }
 
+function toISODateLocal(d: Date) {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
+function newSessionId() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID()
+  return `sess-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`
+}
+
+function appendQueryParam(baseUrl: string, key: string, value: string) {
+  const u = baseUrl.trim()
+  const sep = u.includes('?') ? '&' : '?'
+  return `${u}${sep}${encodeURIComponent(key)}=${encodeURIComponent(value)}`
+}
+
+function buildWebhookUrlWithParams(baseUrl: string, params: Record<string, string>) {
+  let u = baseUrl.trim()
+  for (const [key, value] of Object.entries(params)) {
+    const sep = u.includes('?') ? '&' : '?'
+    u += `${sep}${encodeURIComponent(key)}=${encodeURIComponent(value)}`
+  }
+  return u
+}
+
 export default function ContagemEstoque() {
   const sheetWebhookUrl = import.meta.env.VITE_SHEET_WEBHOOK_URL as string | undefined
   // Modo definitivo: usar SOMENTE outbox (evita escrita paralela e coluna duplicada).
@@ -136,10 +170,46 @@ export default function ContagemEstoque() {
   const [previewLoading, setPreviewLoading] = useState(false)
   const [previewRows, setPreviewRows] = useState<ContagemPreviewRow[]>([])
 
+  /** Dia civil da contagem diária (lista + finalize usam este YMD). */
+  const [contagemDiaYmd, setContagemDiaYmd] = useState(() => toISODateLocal(new Date()))
+  const [offlineSession, setOfflineSession] = useState<OfflineSession | null>(null)
+  const [checklistLoading, setChecklistLoading] = useState(false)
+  const [checklistError, setChecklistError] = useState('')
+  const [finalizing, setFinalizing] = useState(false)
+  const [checklistFilterCodigo, setChecklistFilterCodigo] = useState('')
+  const [checklistFilterDescricao, setChecklistFilterDescricao] = useState('')
+  const [checklistFilterPendentes, setChecklistFilterPendentes] = useState(false)
+
   useEffect(() => {
     const id = setInterval(() => setClockTick((v) => v + 1), 1000)
     return () => clearInterval(id)
   }, [])
+
+  // Restaura sessão offline aberta (persistência no navegador).
+  useEffect(() => {
+    const s = loadOfflineSession()
+    if (s && s.status === 'aberta') {
+      setOfflineSession(s)
+      setContagemDiaYmd(s.data_contagem_ymd)
+      if (s.conferente_id) setConferenteId(s.conferente_id)
+    }
+  }, [])
+
+  // Persiste alterações da sessão aberta.
+  useEffect(() => {
+    if (!offlineSession || offlineSession.status !== 'aberta') return
+    saveOfflineSession(offlineSession)
+  }, [offlineSession])
+
+  // Mantém conferente_id da sessão alinhado ao seletor.
+  useEffect(() => {
+    if (!offlineSession || offlineSession.status !== 'aberta') return
+    if (!conferenteId) return
+    if (offlineSession.conferente_id === conferenteId) return
+    setOfflineSession((prev) =>
+      prev && prev.status === 'aberta' ? { ...prev, conferente_id: conferenteId } : prev,
+    )
+  }, [conferenteId, offlineSession?.status, offlineSession?.conferente_id])
 
   useEffect(() => {
     const onResize = () => setIsMobile(window.innerWidth <= 768)
@@ -405,151 +475,51 @@ export default function ContagemEstoque() {
       return
     }
 
-    const loteValue = lote.trim() === '' ? null : lote.trim()
-    const observacaoValue = observacao.trim() === '' ? null : observacao.trim()
-
     if (dataFabricacao && dataVencimento && dataVencimento < dataFabricacao) {
       setSaveError('Data de vencimento não pode ser menor que a data de fabricação.')
       return
     }
 
-    setSaving(true)
-    try {
-    const payload: Record<string, any> = {
-      data_hora_contagem: toISOStringFromDatetimeLocal(dataHoraContagem),
-      conferente_id: conferenteId,
-      produto_id: isUuid(produto?.id) ? produto?.id : null,
-      codigo_interno: codigoInterno.trim(),
-      descricao: descricaoFinal,
-      unidade_medida: produto?.unidade_medida ?? null,
-      quantidade_up: qtd,
-      lote: loteValue,
-      observacao: observacaoValue,
-    }
-
-    if (dataFabricacao) payload.data_fabricacao = dataFabricacao
-    if (dataVencimento) payload.data_validade = dataVencimento
-    if (quantidadeUp.trim() !== '') payload.up = Number(quantidadeUp.replace(',', '.'))
-
-    const dataContagemKey = dataContagemYmdFromIso(String(payload.data_hora_contagem))
-    if (!dataContagemKey) {
-      setSaveError('Data/hora de contagem inválida.')
-      setSaving(false)
+    if (!offlineSession || offlineSession.status !== 'aberta') {
+      setSaveError('Carregue a lista da planilha (sessão diária) antes de "Salvar na lista".')
       return
     }
-    const startIso = `${dataContagemKey}T00:00:00`
-    const endIso = `${dataContagemKey}T23:59:59`
 
-    // Regra: ao salvar no mesmo dia com mesmo codigo_interno + descricao, somar quantidade e manter uma única linha.
-    // (Assim a prévia e o Sheet ficam agregados.)
-    let saveError: any = null
-    const { data: existentes, error: existentesError } = await supabase
-      .from('contagens_estoque')
-      .select('id,quantidade_up,lote,observacao')
-      .gte('data_hora_contagem', startIso)
-      .lte('data_hora_contagem', endIso)
-      .eq('codigo_interno', payload.codigo_interno)
-      .eq('descricao', payload.descricao)
-
-    if (existentesError) {
-      saveError = existentesError
-    } else if (existentes && existentes.length > 0) {
-      const qtdExistente = existentes.reduce((acc: number, r: any) => acc + Number(r.quantidade_up ?? 0), 0)
-      const totalQtd = qtdExistente + qtd
-
-      const updateFields: Record<string, any> = { quantidade_up: totalQtd }
-      if (loteValue !== null) updateFields.lote = loteValue
-      if (observacaoValue !== null) updateFields.observacao = observacaoValue
-
-      // Para a planilha, mantém lote/obs anteriores se o usuário não preencheu na nova entrada.
-      if (loteValue === null) payload.lote = existentes[0].lote ?? null
-      if (observacaoValue === null) payload.observacao = existentes[0].observacao ?? null
-
-      const firstId = existentes[0].id
-
-      const { error: updError } = await supabase.from('contagens_estoque').update(updateFields).eq('id', firstId)
-      if (updError) {
-        // Fallback: se update falhar (ex.: RLS), não trava o salvamento; tenta inserir como nova linha.
-        // A soma pode não consolidar, mas pelo menos salva.
-        payload.quantidade_up = totalQtd
-        const { error: insError } = await supabase.from('contagens_estoque').insert(payload)
-        saveError = insError ?? updError
-      }
-      else {
-        const otherIds = existentes.slice(1).map((r: any) => r.id)
-        if (otherIds.length) {
-          const { error: delError } = await supabase.from('contagens_estoque').delete().in('id', otherIds)
-          // Se delete falhar, não bloqueia o salvamento.
-          if (delError) {
-            console.warn('Falha ao deletar duplicados:', delError.message)
-          }
-        }
+    setSaving(true)
+    try {
+      const code = codigoInterno.trim()
+      const descNorm = descricaoFinal.trim().toLowerCase()
+      const idx = offlineSession.items.findIndex(
+        (it) => it.codigo_interno.trim() === code && it.descricao.trim().toLowerCase() === descNorm,
+      )
+      if (idx < 0) {
+        setSaveError(
+          'Produto não está na lista do dia. Use código e descrição iguais aos da planilha (aba CONTAGEM DE ESTOQUE FISICA).',
+        )
+        setSaving(false)
+        return
       }
 
-      if (!saveError) {
-        payload.quantidade_up = totalQtd
-      }
-    } else {
-      let { error } = await supabase.from('contagens_estoque').insert(payload)
-      // Se o banco ainda não tiver as colunas, tenta salvar sem elas.
-      if (error && String(error.code ?? '') === '42703') {
-        delete payload.data_fabricacao
-        delete payload.data_validade
-        delete payload.up
-        const retry = await supabase.from('contagens_estoque').insert(payload)
-        error = retry.error
-      }
-      if (error) saveError = error
-    }
+      const qtdStr = String(qtd)
+      setOfflineSession((prev) => {
+        if (!prev || prev.status !== 'aberta') return prev
+        const nextItems = prev.items.map((it, i) => (i === idx ? { ...it, quantidade_contada: qtdStr } : it))
+        return { ...prev, items: nextItems }
+      })
 
-    if (saveError) {
-      setSaveError(`Erro ao salvar contagem: ${saveError.message ?? String(saveError)}`)
-      setSaveSuccess('')
-    } else {
       setSaveSuccess(
-        sheetWebhookUrl
-          ? 'Linha salva com sucesso. Enviando para a planilha…'
-          : 'Linha salva com sucesso. (Para Google Sheets: defina VITE_SHEET_WEBHOOK_URL no Render e faça um novo deploy.)',
+        `Quantidade ${qtd} gravada na lista local (offline). Clique em "Finalizar contagem diária" para salvar no banco e na planilha.`,
       )
       setSaveError('')
-      // Mantém código para facilitar batidas em sequência no mesmo produto.
       setLote('')
       setDataFabricacao('')
       setDataVencimento('')
       setObservacao('')
       setQuantidadeContada('')
-      setQuantidadeUp('') // opcional: volta pra vazio; ao enviar, vira 0
+      setQuantidadeUp('')
       setCodigoInterno('')
       setDescricaoInput('')
       setProduto(null)
-      await loadPreview()
-
-      // Opção 2: kick imediato + retries curtos.
-      kickOutboxSyncNowWithRetry()
-
-      // Envio opcional para Google Sheets (não bloqueia a ação principal).
-      if (sheetWebhookUrl && enableDirectSheetsWebhook) {
-        const conferenteNome = conferentes.find((c) => c.id === conferenteId)?.nome ?? conferenteId
-        sendToSheetInBackground(sheetWebhookUrl, {
-          tipo: 'upsert',
-          data_hora_contagem: payload.data_hora_contagem,
-          // Mesmo critério de editar/excluir na prévia (dia local a partir do ISO gravado).
-          data_contagem: dataContagemYmdFromIso(String(payload.data_hora_contagem)),
-          codigo_interno: payload.codigo_interno,
-          descricao: payload.descricao,
-          quantidade_contada: payload.quantidade_up,
-          up: payload.up ?? null,
-          lote: payload.lote ?? null,
-          observacao: payload.observacao ?? null,
-          conferente: conferenteNome,
-          aba: 'CONTAGEM DE ESTOQUE FISICA',
-        }).then((ok) => {
-          if (!ok) {
-            setSaveError('Salvei no banco, mas falhou o envio para o Sheet (webhook). Verifique a URL /exec e o Apps Script.')
-          }
-        })
-      }
-    }
     } catch (e: any) {
       setSaveError(`Erro ao salvar contagem: ${e?.message ? String(e.message) : 'verifique'}`)
       setSaveSuccess('')
@@ -558,11 +528,14 @@ export default function ContagemEstoque() {
     }
   }
 
-  async function loadPreview() {
+  async function loadPreview(dayOverride?: string) {
     setPreviewLoading(true)
     const pad = (n: number) => String(n).padStart(2, '0')
     const now = new Date()
-    const dayKey = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
+    const dayKey =
+      dayOverride && /^\d{4}-\d{2}-\d{2}$/.test(dayOverride)
+        ? dayOverride
+        : `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
     const startIso = `${dayKey}T00:00:00`
     const endIso = `${dayKey}T23:59:59`
 
@@ -667,6 +640,199 @@ export default function ContagemEstoque() {
     setTimeout(() => {
       void kickOutboxSync()
     }, 5000)
+  }
+
+  async function fetchListaChecklistFromSheet() {
+    if (!sheetWebhookUrl?.trim()) {
+      throw new Error('Defina VITE_SHEET_WEBHOOK_URL no ambiente para carregar a lista da planilha.')
+    }
+    const url = appendQueryParam(sheetWebhookUrl.trim(), 'action', 'list_items')
+    const res = await fetch(url)
+    const j = (await res.json()) as { ok?: boolean; items?: Array<{ codigo_interno: string; descricao: string }>; error?: string }
+    if (!j.ok) throw new Error(j.error || 'Falha ao carregar lista do Apps Script.')
+    return j.items ?? []
+  }
+
+  async function fetchSheetHasDateColumn(ymd: string): Promise<boolean> {
+    if (!sheetWebhookUrl?.trim()) return true
+    const url = buildWebhookUrlWithParams(sheetWebhookUrl.trim(), {
+      action: 'check_date_column',
+      ymd,
+    })
+    try {
+      const res = await fetch(url)
+      const j = (await res.json()) as { ok?: boolean; exists?: boolean }
+      if (!j.ok) return true
+      return !!j.exists
+    } catch {
+      return true
+    }
+  }
+
+  async function handleCarregarListaPlanilha() {
+    setChecklistError('')
+    if (!conferenteId) {
+      setChecklistError('Selecione um conferente antes de carregar a lista.')
+      return
+    }
+    if (
+      offlineSession &&
+      offlineSession.status === 'aberta' &&
+      !confirm('Já existe uma sessão em andamento no navegador. Substituir a lista (perde edições não finalizadas)?')
+    ) {
+      return
+    }
+    setChecklistLoading(true)
+    try {
+      const itemsRaw = await fetchListaChecklistFromSheet()
+      const items: OfflineChecklistItem[] = itemsRaw.map((row, index) => ({
+        key: stableItemKey(row.codigo_interno, row.descricao, index),
+        codigo_interno: row.codigo_interno,
+        descricao: row.descricao,
+        quantidade_contada: '',
+      }))
+      const sess: OfflineSession = {
+        sessionId: newSessionId(),
+        data_contagem_ymd: contagemDiaYmd,
+        conferente_id: conferenteId,
+        status: 'aberta',
+        items,
+        updatedAt: new Date().toISOString(),
+      }
+      setOfflineSession(sess)
+      saveOfflineSession(sess)
+      setSaveSuccess(`Lista carregada: ${items.length} itens. Preencha as quantidades e finalize quando terminar.`)
+      setSaveError('')
+    } catch (e: any) {
+      setChecklistError(e?.message ? String(e.message) : 'Erro ao carregar lista.')
+    } finally {
+      setChecklistLoading(false)
+    }
+  }
+
+  function handleDescartarSessaoLocal() {
+    if (!offlineSession || offlineSession.status !== 'aberta') {
+      clearOfflineSession()
+      setOfflineSession(null)
+      return
+    }
+    if (!confirm('Descartar a sessão local? As quantidades não finalizadas serão perdidas.')) return
+    clearOfflineSession()
+    setOfflineSession(null)
+    setChecklistError('')
+  }
+
+  function updateOfflineItemQty(key: string, quantidade: string) {
+    setOfflineSession((prev) => {
+      if (!prev || prev.status !== 'aberta') return prev
+      return {
+        ...prev,
+        items: prev.items.map((it) => (it.key === key ? { ...it, quantidade_contada: quantidade } : it)),
+      }
+    })
+  }
+
+  function handleLimparQuantidadeOffline(key: string) {
+    updateOfflineItemQty(key, '')
+  }
+
+  async function handleFinalizarContagemDiaria() {
+    setSaveError('')
+    setSaveSuccess('')
+    setChecklistError('')
+    if (!offlineSession || offlineSession.status !== 'aberta') {
+      setChecklistError('Não há sessão aberta. Carregue a lista da planilha primeiro.')
+      return
+    }
+    if (!conferenteId || offlineSession.conferente_id !== conferenteId) {
+      setChecklistError('Selecione o mesmo conferente da sessão (ou recarregue a lista).')
+      return
+    }
+
+    let itemsSnapshot = offlineSession.items.map((i) => ({ ...i }))
+    let pend = countPendingItems(itemsSnapshot)
+    if (pend > 0) {
+      const ok = window.confirm(
+        `Existem ${pend} item(ns) sem quantidade digitada. Deseja finalizar enviando 0 para esses itens?`,
+      )
+      if (!ok) {
+        setChecklistError(`Finalize após preencher todas as quantidades ou confirme o envio com 0. (${pend} pendente(s))`)
+        return
+      }
+      itemsSnapshot = itemsSnapshot.map((i) =>
+        String(i.quantidade_contada ?? '').trim() === '' ? { ...i, quantidade_contada: '0' } : i,
+      )
+    }
+
+    const ymd = offlineSession.data_contagem_ymd
+    const hasCol = await fetchSheetHasDateColumn(ymd)
+    if (!hasCol) {
+      const ok2 = window.confirm(
+        `A planilha pode não ter coluna de cabeçalho para a data ${ymd}. Crie a coluna da data na aba CONTAGEM DE ESTOQUE FISICA antes de continuar.\n\nDeseja continuar mesmo assim?`,
+      )
+      if (!ok2) return
+    }
+
+    const dataHoraIso = toISOStringFromDatetimeLocal(dataHoraContagem)
+    const rows: Record<string, unknown>[] = []
+    for (const it of itemsSnapshot) {
+      const q = Number(String(it.quantidade_contada).replace(',', '.'))
+      if (!Number.isFinite(q) || q < 0) {
+        setChecklistError(`Quantidade inválida para ${it.codigo_interno}.`)
+        return
+      }
+      rows.push({
+        data_hora_contagem: dataHoraIso,
+        conferente_id: offlineSession.conferente_id,
+        produto_id: null,
+        codigo_interno: it.codigo_interno.trim(),
+        descricao: it.descricao.trim(),
+        unidade_medida: null,
+        quantidade_up: q,
+        lote: null,
+        observacao: null,
+      })
+    }
+
+    setFinalizing(true)
+    try {
+      const { error: delErr } = await supabase
+        .from('contagens_estoque')
+        .delete()
+        .eq('data_contagem', ymd)
+        .eq('conferente_id', offlineSession.conferente_id)
+
+      if (delErr) {
+        const startIso = `${ymd}T00:00:00`
+        const endIso = `${ymd}T23:59:59`
+        const { error: del2 } = await supabase
+          .from('contagens_estoque')
+          .delete()
+          .eq('conferente_id', offlineSession.conferente_id)
+          .gte('data_hora_contagem', startIso)
+          .lte('data_hora_contagem', endIso)
+        if (del2) throw del2
+      }
+
+      const CHUNK = 250
+      for (let i = 0; i < rows.length; i += CHUNK) {
+        const chunk = rows.slice(i, i + CHUNK)
+        const { error: insErr } = await supabase.from('contagens_estoque').insert(chunk)
+        if (insErr) throw insErr
+      }
+
+      clearOfflineSession()
+      setOfflineSession(null)
+      setSaveSuccess(
+        `Contagem do dia ${ymd} finalizada: ${rows.length} registro(s) no banco. Processando envio à planilha…`,
+      )
+      kickOutboxSyncNowWithRetry()
+      await loadPreview(ymd)
+    } catch (e: any) {
+      setSaveError(`Erro ao finalizar: ${e?.message ? String(e.message) : 'verifique permissões (RLS) e tabelas.'}`)
+    } finally {
+      setFinalizing(false)
+    }
   }
 
   useEffect(() => {
@@ -966,9 +1132,183 @@ export default function ContagemEstoque() {
     )
   }
 
+  const checklistPending = offlineSession?.status === 'aberta' ? countPendingItems(offlineSession.items) : 0
+  const checklistCounted =
+    offlineSession?.status === 'aberta' ? offlineSession.items.length - checklistPending : 0
+
+  const filteredChecklistItems =
+    offlineSession?.status === 'aberta'
+      ? offlineSession.items.filter((it) => {
+          const codOk =
+            !checklistFilterCodigo.trim() ||
+            it.codigo_interno.toLowerCase().includes(checklistFilterCodigo.trim().toLowerCase())
+          const descOk =
+            !checklistFilterDescricao.trim() ||
+            it.descricao.toLowerCase().includes(checklistFilterDescricao.trim().toLowerCase())
+          const pend = String(it.quantidade_contada ?? '').trim() === ''
+          const pendOk = !checklistFilterPendentes || pend
+          return codOk && descOk && pendOk
+        })
+      : []
+
   return (
     <div style={{ padding: isMobile ? 10 : 16, maxWidth: 1200, margin: '0 auto' }}>
       <h2>Contagem de Estoque</h2>
+
+      <section
+        style={{
+          marginTop: 16,
+          padding: 16,
+          border: '1px solid var(--border, #ccc)',
+          borderRadius: 10,
+          background: 'var(--panel-bg, rgba(0,0,0,.04))',
+        }}
+      >
+        <h3 style={{ margin: '0 0 10px', fontSize: 18 }}>Contagem diária (offline → banco → planilha)</h3>
+        <p style={{ margin: '0 0 12px', fontSize: 13, color: 'var(--text, #555)' }}>
+          Carregue a lista a partir da planilha, preencha as quantidades no app (salvo no navegador) e só ao final
+          clique em <strong>Finalizar contagem diária</strong> para gravar no Supabase e enviar à planilha via fila.
+        </p>
+
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: isMobile ? '1fr' : 'repeat(12, 1fr)',
+            gap: 12,
+            alignItems: 'end',
+          }}
+        >
+          <label style={{ ...labelStyle, gridColumn: isMobile ? 'auto' : 'span 3' }}>
+            Data da contagem (dia civil)
+            <input
+              type="date"
+              value={contagemDiaYmd}
+              onChange={(e) => setContagemDiaYmd(e.target.value)}
+              disabled={!!offlineSession && offlineSession.status === 'aberta'}
+              style={inputStyle}
+            />
+          </label>
+          <div style={{ gridColumn: isMobile ? 'auto' : 'span 9', display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            <button
+              type="button"
+              style={buttonStyle}
+              disabled={checklistLoading || finalizing || !conferenteId || !sheetWebhookUrl}
+              onClick={() => void handleCarregarListaPlanilha()}
+            >
+              {checklistLoading ? 'Carregando lista…' : 'Carregar lista da planilha'}
+            </button>
+            <button
+              type="button"
+              style={{ ...buttonStyle, background: '#444' }}
+              disabled={finalizing}
+              onClick={() => handleDescartarSessaoLocal()}
+            >
+              Descartar sessão local
+            </button>
+            <button
+              type="button"
+              style={{ ...buttonStyle, background: checklistPending > 0 ? '#555' : '#0b5' }}
+              disabled={
+                finalizing ||
+                !offlineSession ||
+                offlineSession.status !== 'aberta' ||
+                offlineSession.items.length === 0
+              }
+              onClick={() => void handleFinalizarContagemDiaria()}
+            >
+              {finalizing ? 'Finalizando…' : 'Finalizar contagem diária'}
+            </button>
+          </div>
+        </div>
+
+        {checklistError ? <div style={{ color: '#b00020', marginTop: 10 }}>{checklistError}</div> : null}
+        {!sheetWebhookUrl ? (
+          <div style={{ color: '#b00020', marginTop: 10 }}>VITE_SHEET_WEBHOOK_URL não definida — não é possível carregar a lista.</div>
+        ) : null}
+
+        {offlineSession && offlineSession.status === 'aberta' ? (
+          <>
+            <div style={{ marginTop: 12, fontSize: 14 }}>
+              Progresso: <strong>{checklistCounted}</strong> contados / <strong>{offlineSession.items.length}</strong> total
+              {checklistPending > 0 ? (
+                <span style={{ color: '#a60', marginLeft: 8 }}>({checklistPending} pendente(s))</span>
+              ) : (
+                <span style={{ color: '#0a0', marginLeft: 8 }}>Todos preenchidos — pode finalizar.</span>
+              )}
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10, alignItems: 'center' }}>
+              <input
+                placeholder="Filtrar código"
+                value={checklistFilterCodigo}
+                onChange={(e) => setChecklistFilterCodigo(e.target.value)}
+                style={{ ...inputStyle, maxWidth: 220 }}
+              />
+              <input
+                placeholder="Filtrar descrição"
+                value={checklistFilterDescricao}
+                onChange={(e) => setChecklistFilterDescricao(e.target.value)}
+                style={{ ...inputStyle, flex: 1, minWidth: 180 }}
+              />
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+                <input
+                  type="checkbox"
+                  checked={checklistFilterPendentes}
+                  onChange={(e) => setChecklistFilterPendentes(e.target.checked)}
+                />
+                Só pendentes
+              </label>
+            </div>
+            <div style={{ overflowX: 'auto', marginTop: 10 }}>
+              <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 720 }}>
+                <thead>
+                  <tr>
+                    <th style={thStyle}>Código</th>
+                    <th style={thStyle}>Descrição</th>
+                    <th style={thStyle}>Qtd</th>
+                    <th style={thStyle}>Status</th>
+                    <th style={thStyle}>Ações</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredChecklistItems.map((it) => {
+                    const pend = String(it.quantidade_contada ?? '').trim() === ''
+                    return (
+                      <tr key={it.key}>
+                        <td style={tdStyle}>{it.codigo_interno}</td>
+                        <td style={{ ...tdStyle, whiteSpace: 'normal', maxWidth: 420 }}>{it.descricao}</td>
+                        <td style={tdStyle}>
+                          <input
+                            type="text"
+                            inputMode="decimal"
+                            value={it.quantidade_contada}
+                            onChange={(e) => updateOfflineItemQty(it.key, e.target.value)}
+                            style={{ padding: '8px 10px', border: '1px solid #ccc', borderRadius: 8, width: 110 }}
+                            placeholder="—"
+                          />
+                        </td>
+                        <td style={tdStyle}>{pend ? 'Pendente' : 'Contado'}</td>
+                        <td style={tdStyle}>
+                          <button
+                            type="button"
+                            style={{ ...buttonStyle, background: '#666', fontSize: 12, padding: '6px 10px' }}
+                            onClick={() => handleLimparQuantidadeOffline(it.key)}
+                          >
+                            Limpar
+                          </button>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
+        ) : (
+          <div style={{ marginTop: 10, fontSize: 13, color: 'var(--text, #666)' }}>
+            Nenhuma sessão aberta. Selecione conferente, data da contagem e clique em <strong>Carregar lista da planilha</strong>.
+          </div>
+        )}
+      </section>
 
       <form onSubmit={handleSubmit} style={{ display: 'grid', gap: 12, marginTop: 12 }}>
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(12, 1fr)', gap: 12 }}>
@@ -1394,7 +1734,7 @@ export default function ContagemEstoque() {
 
         <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginTop: 4 }}>
           <button type="submit" disabled={saving} style={buttonStyle}>
-            {saving ? 'Salvando...' : 'Salvar linha'}
+            {saving ? 'Gravando…' : 'Salvar na lista (offline)'}
           </button>
           {saveError ? <div style={{ color: '#b00020' }}>{saveError}</div> : null}
           {saveSuccess ? <div style={{ color: '#0f7a0f' }}>{saveSuccess}</div> : null}
@@ -1402,9 +1742,9 @@ export default function ContagemEstoque() {
       </form>
 
       <div style={{ marginTop: 26 }}>
-        <h3>Prévia estilo planilha (cada data vira uma coluna)</h3>
+        <h3>Prévia — registros já salvos no banco (hoje ou dia da última finalização)</h3>
         <div style={{ color: '#555', fontSize: 13, marginTop: 6 }}>
-          Mostrando até as 6 últimas datas encontradas. Atualize após inserir linhas.
+          A contagem do dia usa primeiro a lista offline; esta prévia reflete o que já foi gravado no Supabase.
         </div>
         <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginTop: 10 }}>
           <button

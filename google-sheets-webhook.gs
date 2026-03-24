@@ -52,15 +52,116 @@ function doPost(e) {
   }
 }
 
-function doGet() {
+function doGet(e) {
+  var action = ''
+  try {
+    action = e && e.parameter && e.parameter.action ? String(e.parameter.action) : ''
+  } catch (err0) {}
+
+  if (action === 'list_items') {
+    try {
+      var items = listItemsFromContagemSheet_()
+      return ContentService.createTextOutput(
+        JSON.stringify({ ok: true, items: items, version: WEBHOOK_VERSION }),
+      ).setMimeType(ContentService.MimeType.JSON)
+    } catch (err) {
+      return ContentService.createTextOutput(
+        JSON.stringify({ ok: false, error: String(err.message || err), version: WEBHOOK_VERSION }),
+      ).setMimeType(ContentService.MimeType.JSON)
+    }
+  }
+
+  if (action === 'check_date_column') {
+    try {
+      var ymd = e && e.parameter && e.parameter.ymd ? String(e.parameter.ymd).trim() : ''
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) {
+        return ContentService.createTextOutput(
+          JSON.stringify({ ok: false, error: 'Parâmetro ymd inválido (use yyyy-mm-dd)', version: WEBHOOK_VERSION }),
+        ).setMimeType(ContentService.MimeType.JSON)
+      }
+      var exists = spreadsheetHasDateColumn_(ymd)
+      return ContentService.createTextOutput(
+        JSON.stringify({ ok: true, ymd: ymd, exists: exists, version: WEBHOOK_VERSION }),
+      ).setMimeType(ContentService.MimeType.JSON)
+    } catch (err2) {
+      return ContentService.createTextOutput(
+        JSON.stringify({ ok: false, error: String(err2.message || err2), version: WEBHOOK_VERSION }),
+      ).setMimeType(ContentService.MimeType.JSON)
+    }
+  }
+
   return ContentService.createTextOutput(
     JSON.stringify({
       ok: true,
-      message: 'Use POST com JSON (text/plain) para gravar.',
+      message: 'Use POST com JSON (text/plain) para gravar. GET ?action=list_items para checklist.',
       version: WEBHOOK_VERSION,
       mode: 'no_auto_column_create',
     }),
   ).setMimeType(ContentService.MimeType.JSON)
+}
+
+/**
+ * Lista produtos da aba CONTAGEM DE ESTOQUE FISICA (col A=código, col B=descrição), a partir da linha 2.
+ */
+function listItemsFromContagemSheet_() {
+  var ss = SpreadsheetApp.openById('1EoT2x4MHtAu7bVkuwqxl2swdwqUI7n1Hg2EL9WBNeTk')
+  var sheet = ss.getSheetByName('CONTAGEM DE ESTOQUE FISICA')
+  if (!sheet) throw new Error('Aba CONTAGEM DE ESTOQUE FISICA não encontrada.')
+
+  var lastRow = sheet.getLastRow()
+  var maxR = Math.max(lastRow, 2)
+  var items = []
+  var emptyRun = 0
+
+  for (var r = 2; r <= maxR; r++) {
+    var ca = String(sheet.getRange(r, 1).getDisplayValue() || '').trim()
+    var cb = String(sheet.getRange(r, 2).getDisplayValue() || '').trim()
+    if (!ca && !cb) {
+      emptyRun++
+      if (emptyRun >= 10 && items.length > 0) break
+      continue
+    }
+    emptyRun = 0
+    if (!ca) continue
+    items.push({ codigo_interno: ca, descricao: cb || 'Produto sem descrição' })
+  }
+
+  return items
+}
+
+/**
+ * Verifica se já existe coluna de cabeçalho para o dia ymd (nota YMD: ou parse do cabeçalho).
+ */
+function spreadsheetHasDateColumn_(ymd) {
+  var ss = SpreadsheetApp.openById('1EoT2x4MHtAu7bVkuwqxl2swdwqUI7n1Hg2EL9WBNeTk')
+  var sheet = ss.getSheetByName('CONTAGEM DE ESTOQUE FISICA')
+  if (!sheet) return false
+  var HEADER_ROW = 1
+  var FIRST_DATE_COL = 3
+  var NOTE_PREFIX = 'YMD:'
+  var marker = NOTE_PREFIX + ymd
+  var lastCol = Math.max(sheet.getLastColumn(), FIRST_DATE_COL)
+  var maxScan = Math.min(Math.max(lastCol, 200), sheet.getMaxColumns())
+  for (var c = FIRST_DATE_COL; c <= maxScan; c++) {
+    var note = String(sheet.getRange(HEADER_ROW, c).getNote() || '')
+    if (note.indexOf(marker) >= 0) return true
+  }
+  var tz = ss.getSpreadsheetTimeZone ? ss.getSpreadsheetTimeZone() : Session.getScriptTimeZone()
+  var p = ymd.split('-')
+  var dispNeed = String(parseInt(p[2], 10)) + '/' + String(parseInt(p[1], 10)) + '/' + p[0]
+  var dispPadded =
+    String(p[2]).padStart(2, '0') +
+    '/' +
+    String(p[1]).padStart(2, '0') +
+    '/' +
+    p[0]
+  for (var c2 = FIRST_DATE_COL; c2 <= maxScan; c2++) {
+    var dv = String(sheet.getRange(HEADER_ROW, c2).getDisplayValue() || '')
+      .replace(/\u00A0/g, ' ')
+      .trim()
+    if (dv === dispNeed || dv === dispPadded || dv.indexOf(ymd) >= 0) return true
+  }
+  return false
 }
 
 /**
@@ -138,10 +239,14 @@ function consolidarColunasDuplicadas() {
     var dupVals = dupRange.getValues()
 
     for (var r = 0; r < keeperVals.length; r++) {
-      var a = Number(keeperVals[r][0] || 0)
-      var b = Number(dupVals[r][0] || 0)
+      var aRaw = keeperVals[r][0]
+      var bRaw = dupVals[r][0]
+      var aHas = aRaw !== '' && aRaw !== null && aRaw !== undefined
+      var bHas = bRaw !== '' && bRaw !== null && bRaw !== undefined
+      var a = Number(aRaw || 0)
+      var b = Number(bRaw || 0)
       var sum = a + b
-      keeperVals[r][0] = sum === 0 ? '' : sum
+      keeperVals[r][0] = sum === 0 ? (aHas || bHas ? 0 : '') : sum
     }
     keeperRange.setValues(keeperVals)
     sheet.deleteColumn(d.dupCol)
@@ -639,16 +744,67 @@ function doPostLocked(data) {
       var dupVals = dupRange.getValues()
 
       for (var r = 0; r < keeperVals.length; r++) {
-        var a = Number(keeperVals[r][0] || 0)
-        var b = Number(dupVals[r][0] || 0)
+        var aRaw = keeperVals[r][0]
+        var bRaw = dupVals[r][0]
+        var aHas = aRaw !== '' && aRaw !== null && aRaw !== undefined
+        var bHas = bRaw !== '' && bRaw !== null && bRaw !== undefined
+        var a = Number(aRaw || 0)
+        var b = Number(bRaw || 0)
         var sum = a + b
-        keeperVals[r][0] = sum === 0 ? '' : sum
+        keeperVals[r][0] = sum === 0 ? (aHas || bHas ? 0 : '') : sum
       }
 
       sheet.deleteColumn(dupCol)
     }
 
     keeperRange.setValues(keeperVals)
+    setYmdNote(keeperCol, ymd)
+    return keeperCol
+  }
+
+  /**
+   * Consolidação para "limpar": remove colunas duplicadas do dia SEM somar valores.
+   * Retorna a coluna keeper (mais à esquerda) ou null.
+   */
+  function consolidateColumnsForDayNoSum(ymd) {
+    var lastCol = getHeaderScanLastCol()
+    var marker = NOTE_PREFIX + ymd
+    var dispUnpadded = ymdToDisplayBR(ymd)
+    var dispPadded = ymdToDisplayBRPadded(ymd)
+
+    var matches = []
+    for (var c = FIRST_DATE_COL; c <= lastCol; c++) {
+      try {
+        var rr = sheet.getRange(HEADER_ROW, c)
+        var note = String(rr.getNote ? rr.getNote() : '')
+        if (note.indexOf(marker) >= 0) {
+          matches.push(c)
+          continue
+        }
+        var y = headerCellToYMD(c)
+        if (y && y === ymd) {
+          matches.push(c)
+          continue
+        }
+        var dv = String(rr.getDisplayValue() || '')
+          .replace(/\u00A0/g, ' ')
+          .replace(/\u2007|\u202F/g, ' ')
+          .trim()
+        var key = canonicalDateKeyFromDisplay(dv)
+        if (key === ymd || dv === dispUnpadded || dv === dispPadded || dv.indexOf(ymd) >= 0) matches.push(c)
+      } catch (e) {}
+    }
+
+    if (matches.length <= 0) return null
+    matches.sort(function (a, b) {
+      return a - b
+    })
+    var keeperCol = matches[0]
+
+    for (var j = matches.length - 1; j >= 1; j--) {
+      sheet.deleteColumn(matches[j])
+    }
+
     setYmdNote(keeperCol, ymd)
     return keeperCol
   }
@@ -687,10 +843,14 @@ function doPostLocked(data) {
       var dupVals = dupRange.getValues()
 
       for (var r = 0; r < keeperVals.length; r++) {
-        var a = Number(keeperVals[r][0] || 0)
-        var b = Number(dupVals[r][0] || 0)
+        var aRaw = keeperVals[r][0]
+        var bRaw = dupVals[r][0]
+        var aHas = aRaw !== '' && aRaw !== null && aRaw !== undefined
+        var bHas = bRaw !== '' && bRaw !== null && bRaw !== undefined
+        var a = Number(aRaw || 0)
+        var b = Number(bRaw || 0)
         var sum = a + b
-        keeperVals[r][0] = sum === 0 ? '' : sum
+        keeperVals[r][0] = sum === 0 ? (aHas || bHas ? 0 : '') : sum
       }
       keeperRange.setValues(keeperVals)
       sheet.deleteColumn(d.dupCol)
@@ -698,6 +858,41 @@ function doPostLocked(data) {
 
     refreshDateIndexFromHeader()
     return duplicates.length
+  }
+
+  /**
+   * Em exclusão, garante zero em qualquer coluna que represente o mesmo dia.
+   * Isso evita sobrar valor "antigo" em coluna duplicada.
+   */
+  function setZeroForAllDayColumns(productRow, ymd) {
+    if (!productRow || !ymd) return
+    var lastCol = getHeaderScanLastCol()
+    var marker = NOTE_PREFIX + ymd
+    var dispUnpadded = ymdToDisplayBR(ymd)
+    var dispPadded = ymdToDisplayBRPadded(ymd)
+
+    for (var c = FIRST_DATE_COL; c <= lastCol; c++) {
+      try {
+        var rr = sheet.getRange(HEADER_ROW, c)
+        var note = String(rr.getNote ? rr.getNote() : '')
+        var dv = String(rr.getDisplayValue() || '')
+          .replace(/\u00A0/g, ' ')
+          .replace(/\u2007|\u202F/g, ' ')
+          .trim()
+        var y = headerCellToYMD(c)
+        var key = canonicalDateKeyFromDisplay(dv)
+        var isDay =
+          note.indexOf(marker) >= 0 ||
+          (y && y === ymd) ||
+          key === ymd ||
+          dv === dispUnpadded ||
+          dv === dispPadded ||
+          dv.indexOf(ymd) >= 0
+        if (isDay) sheet.getRange(productRow, c).setValue(0)
+      } catch (e) {
+        // ignora erro pontual e segue as demais colunas
+      }
+    }
   }
 
   function findProductRow() {
@@ -734,12 +929,12 @@ function doPostLocked(data) {
     var productRow = findProductRow()
 
     if (thisTipo === 'clear_qty') {
-      // Em exclusão, NUNCA cria coluna nova.
-      var clearCol = consolidateColumnsForDay(thisYmd)
+      // Em exclusão: remove duplicadas do dia SEM somar e grava 0/vazio na coluna final.
+      var clearCol = consolidateColumnsForDayNoSum(thisYmd)
       if (!clearCol) clearCol = findDateColumn(thisYmd)
       if (clearCol) {
         writeMappedCol(thisYmd, clearCol)
-        if (productRow) sheet.getRange(productRow, clearCol).setValue('')
+        if (productRow) sheet.getRange(productRow, clearCol).setValue(0)
       }
       return
     }
