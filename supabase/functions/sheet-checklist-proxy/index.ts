@@ -1,5 +1,7 @@
-// Proxy GET → Apps Script (list_items, check_date_column) para evitar CORS no navegador.
+// Proxy GET/POST → Apps Script (list_items, check_date_column) para evitar CORS no navegador.
 // Secret: SHEET_WEBHOOK_URL (mesma URL /exec do webhook já usada em sheet-outbox-sync).
+// POST: body JSON { "action": "list_items" } ou { "action": "check_date_column", "ymd": "yyyy-mm-dd" }
+// (o front usa POST via supabase.functions.invoke — mais estável que fetch manual no browser).
 
 function incomingRequestUrl(req: Request): URL {
   const raw = req.url
@@ -12,7 +14,14 @@ function incomingRequestUrl(req: Request): URL {
 const corsHeaders: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'GET, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+}
+
+function jsonResponse(obj: unknown, status = 200) {
+  return new Response(JSON.stringify(obj), {
+    status,
+    headers: { ...corsHeaders, 'content-type': 'application/json' },
+  })
 }
 
 Deno.serve(async (req) => {
@@ -20,51 +29,54 @@ Deno.serve(async (req) => {
     return new Response('ok', { headers: corsHeaders })
   }
 
-  if (req.method !== 'GET') {
-    return new Response(JSON.stringify({ ok: false, error: 'Use GET' }), {
-      status: 405,
-      headers: { ...corsHeaders, 'content-type': 'application/json' },
-    })
+  if (req.method !== 'GET' && req.method !== 'POST') {
+    return jsonResponse({ ok: false, error: 'Use GET ou POST' }, 405)
   }
 
   const webhookUrl = Deno.env.get('SHEET_WEBHOOK_URL')
   if (!webhookUrl?.trim()) {
-    return new Response(
-      JSON.stringify({ ok: false, error: 'SHEET_WEBHOOK_URL não configurada na edge function.' }),
-      { status: 500, headers: { ...corsHeaders, 'content-type': 'application/json' } },
-    )
+    return jsonResponse({ ok: false, error: 'SHEET_WEBHOOK_URL não configurada na edge function.' }, 500)
   }
 
-  let incoming: URL
-  try {
-    incoming = incomingRequestUrl(req)
-  } catch {
-    return new Response(JSON.stringify({ ok: false, error: 'URL da requisição inválida' }), {
-      status: 400,
-      headers: { ...corsHeaders, 'content-type': 'application/json' },
-    })
+  let action = ''
+  let ymd = ''
+  const paramsToForward = new URLSearchParams()
+
+  if (req.method === 'GET') {
+    let incoming: URL
+    try {
+      incoming = incomingRequestUrl(req)
+    } catch {
+      return jsonResponse({ ok: false, error: 'URL da requisição inválida' }, 400)
+    }
+    incoming.searchParams.forEach((v, k) => paramsToForward.set(k, v))
+    action = incoming.searchParams.get('action') || ''
+    ymd = (incoming.searchParams.get('ymd') || '').trim()
+  } else {
+    let body: Record<string, unknown>
+    try {
+      body = (await req.json()) as Record<string, unknown>
+    } catch {
+      return jsonResponse({ ok: false, error: 'JSON inválido no body' }, 400)
+    }
+    action = typeof body.action === 'string' ? body.action : ''
+    ymd = typeof body.ymd === 'string' ? body.ymd.trim() : ''
+    paramsToForward.set('action', action)
+    if (ymd) paramsToForward.set('ymd', ymd)
   }
-  const action = incoming.searchParams.get('action')
 
   if (action === 'list_items') {
     // ok
   } else if (action === 'check_date_column') {
-    const ymd = (incoming.searchParams.get('ymd') || '').trim()
     if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) {
-      return new Response(JSON.stringify({ ok: false, error: 'Parâmetro ymd inválido (use yyyy-mm-dd)' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'content-type': 'application/json' },
-      })
+      return jsonResponse({ ok: false, error: 'Parâmetro ymd inválido (use yyyy-mm-dd)' }, 400)
     }
   } else {
-    return new Response(JSON.stringify({ ok: false, error: 'action deve ser list_items ou check_date_column' }), {
-      status: 400,
-      headers: { ...corsHeaders, 'content-type': 'application/json' },
-    })
+    return jsonResponse({ ok: false, error: 'action deve ser list_items ou check_date_column' }, 400)
   }
 
   const target = new URL(webhookUrl.trim())
-  incoming.searchParams.forEach((value, key) => {
+  paramsToForward.forEach((value, key) => {
     target.searchParams.set(key, value)
   })
 
@@ -73,15 +85,12 @@ Deno.serve(async (req) => {
     scriptRes = await fetch(target.toString(), { redirect: 'follow' })
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
-    return new Response(JSON.stringify({ ok: false, error: `Falha ao contatar Apps Script: ${msg}` }), {
-      status: 502,
-      headers: { ...corsHeaders, 'content-type': 'application/json' },
-    })
+    return jsonResponse({ ok: false, error: `Falha ao contatar Apps Script: ${msg}` }, 502)
   }
 
-  const body = await scriptRes.text()
+  const bodyText = await scriptRes.text()
   const ct = scriptRes.headers.get('content-type') || 'application/json'
-  return new Response(body, {
+  return new Response(bodyText, {
     status: scriptRes.status,
     headers: { ...corsHeaders, 'content-type': ct },
   })

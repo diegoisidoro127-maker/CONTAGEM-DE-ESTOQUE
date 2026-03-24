@@ -126,8 +126,11 @@ function canFetchChecklistFromSheet(opts: {
   return hasProxy || !!opts.sheetWebhookUrl?.trim()
 }
 
-/** GET no Apps Script via proxy Supabase (evita CORS) ou direto se só houver webhook. */
-function fetchAppsScriptReadonlyGet(opts: {
+/**
+ * Apps Script via proxy Supabase (POST com supabase.functions.invoke — evita CORS do fetch manual)
+ * ou GET direto no webhook se não houver Supabase no front.
+ */
+async function fetchAppsScriptReadonlyGet(opts: {
   sheetWebhookUrl?: string
   supabaseUrl?: string
   supabaseAnonKey?: string
@@ -137,6 +140,27 @@ function fetchAppsScriptReadonlyGet(opts: {
 }): Promise<Response> {
   const fn = (opts.listFunctionName || 'sheet-checklist-proxy').trim()
   if (opts.supabaseUrl?.trim() && opts.supabaseAnonKey?.trim()) {
+    const body: Record<string, string> = { action: opts.action }
+    if (opts.action === 'check_date_column' && opts.ymd) body.ymd = opts.ymd
+
+    if (typeof supabase?.functions?.invoke === 'function') {
+      const { data, error } = await supabase.functions.invoke(fn, {
+        method: 'POST',
+        body,
+      })
+      if (error) {
+        const msg = error.message || String(error)
+        return new Response(JSON.stringify({ ok: false, error: msg }), {
+          status: 502,
+          headers: { 'content-type': 'application/json' },
+        })
+      }
+      return new Response(JSON.stringify(data ?? {}), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    }
+
     const base = opts.supabaseUrl.replace(/\/$/, '')
     const sp = new URLSearchParams({ action: opts.action })
     if (opts.action === 'check_date_column' && opts.ymd) sp.set('ymd', opts.ymd)
@@ -148,7 +172,7 @@ function fetchAppsScriptReadonlyGet(opts: {
     })
   }
   if (!opts.sheetWebhookUrl?.trim()) {
-    return Promise.reject(new Error('Configure Supabase (URL + chave anon) ou VITE_SHEET_WEBHOOK_URL.'))
+    throw new Error('Configure Supabase (URL + chave anon) ou VITE_SHEET_WEBHOOK_URL.')
   }
   let url = appendQueryParam(opts.sheetWebhookUrl.trim(), 'action', opts.action)
   if (opts.action === 'check_date_column' && opts.ymd) {
@@ -745,9 +769,10 @@ export default function ContagemEstoque() {
       })
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
+      const fnLabel = (sheetListFunctionName || 'sheet-checklist-proxy').trim()
       if (useProxy && sheetWebhookUrl?.trim() && (msg === 'Failed to fetch' || msg.includes('Failed to fetch'))) {
         throw new Error(
-          `Não foi possível contatar a edge function (${msg}). Verifique rede, URL do projeto Supabase e se sheet-checklist-proxy está implantada. Se o proxy não existir ainda, defina também VITE_SHEET_WEBHOOK_URL (chamada direta pode falhar por CORS no navegador).`,
+          `Não foi possível contatar a edge function (${msg}). Confira VITE_SUPABASE_URL, faça deploy da função "${fnLabel}" (POST habilitado) e o secret SHEET_WEBHOOK_URL. Opcional: VITE_SHEET_WEBHOOK_URL (direto pode falhar por CORS).`,
         )
       }
       throw err instanceof Error ? err : new Error(msg)
