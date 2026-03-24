@@ -102,168 +102,8 @@ function newSessionId() {
   return `sess-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`
 }
 
-function appendQueryParam(baseUrl: string, key: string, value: string) {
-  const u = baseUrl.trim()
-  const sep = u.includes('?') ? '&' : '?'
-  return `${u}${sep}${encodeURIComponent(key)}=${encodeURIComponent(value)}`
-}
-
-function buildWebhookUrlWithParams(baseUrl: string, params: Record<string, string>) {
-  let u = baseUrl.trim()
-  for (const [key, value] of Object.entries(params)) {
-    const sep = u.includes('?') ? '&' : '?'
-    u += `${sep}${encodeURIComponent(key)}=${encodeURIComponent(value)}`
-  }
-  return u
-}
-
-function canFetchChecklistFromSheet(opts: {
-  sheetWebhookUrl?: string
-  supabaseUrl?: string
-  supabaseAnonKey?: string
-}) {
-  const hasProxy = !!(opts.supabaseUrl?.trim() && opts.supabaseAnonKey?.trim())
-  return hasProxy || !!opts.sheetWebhookUrl?.trim()
-}
-
-/**
- * Apps Script via proxy Supabase: POST/GET na edge (fetch).
- * Tenta vários slugs: lista dedicada, depois a mesma função da outbox (ex. dynamic-endpoint), por último nomes comuns.
- */
-async function fetchAppsScriptReadonlyGet(opts: {
-  sheetWebhookUrl?: string
-  supabaseUrl?: string
-  supabaseAnonKey?: string
-  listFunctionName?: string
-  /** Mesmo slug que processa a outbox — costuma ser o que já funciona no projeto (ex. dynamic-endpoint). */
-  outboxFunctionName?: string
-  action: 'list_items' | 'check_date_column'
-  ymd?: string
-}): Promise<Response> {
-  if (opts.supabaseUrl?.trim() && opts.supabaseAnonKey?.trim()) {
-    const base = opts.supabaseUrl.replace(/\/$/, '')
-    const body: Record<string, string> = { action: opts.action }
-    if (opts.action === 'check_date_column' && opts.ymd) body.ymd = opts.ymd
-
-    const headers: Record<string, string> = {
-      apikey: opts.supabaseAnonKey,
-      Authorization: `Bearer ${opts.supabaseAnonKey}`,
-      'Content-Type': 'application/json',
-    }
-
-    const candidates = [
-      opts.listFunctionName?.trim(),
-      opts.outboxFunctionName?.trim(),
-      'sheet-checklist-proxy',
-      'dynamic-endpoint',
-      'sheet-outbox-sync',
-    ].filter((v, i, a): v is string => !!v && a.indexOf(v) === i)
-
-    const tryPost = (fn: string) =>
-      fetch(`${base}/functions/v1/${encodeURIComponent(fn)}`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(body),
-      })
-
-    const tryGet = (fn: string) => {
-      const sp = new URLSearchParams({ action: opts.action })
-      if (opts.action === 'check_date_column' && opts.ymd) sp.set('ymd', opts.ymd)
-      return fetch(`${base}/functions/v1/${encodeURIComponent(fn)}?${sp}`, {
-        method: 'GET',
-        headers: {
-          apikey: opts.supabaseAnonKey,
-          Authorization: `Bearer ${opts.supabaseAnonKey}`,
-        },
-      })
-    }
-
-    let lastErr: unknown
-    for (const fn of candidates) {
-      for (let i = 0; i < 2; i++) {
-        try {
-          const res = await tryPost(fn)
-          if (res.status === 404) break
-          return res
-        } catch (e) {
-          lastErr = e
-          if (i === 0) await new Promise((r) => setTimeout(r, 350))
-        }
-      }
-    }
-    for (const fn of candidates) {
-      try {
-        const res = await tryGet(fn)
-        if (res.status === 404) continue
-        return res
-      } catch (e2) {
-        lastErr = e2
-      }
-    }
-
-    const msg = lastErr instanceof Error ? lastErr.message : String(lastErr)
-    const hint =
-      /Failed to fetch|NetworkError|Load failed/i.test(msg) ?
-        ' Confira VITE_SUPABASE_URL no Render (sem typo), faça redeploy da edge sheet-outbox-sync com proxy de lista, ou remova VITE_SHEET_LIST_FUNCTION_NAME para usar dynamic-endpoint.'
-      : ''
-    throw new Error(`Não foi possível chamar nenhuma edge function de proxy (${candidates.join(', ')}). Último erro: ${msg}.${hint}`)
-  }
-  if (!opts.sheetWebhookUrl?.trim()) {
-    throw new Error('Configure Supabase (URL + chave anon) ou VITE_SHEET_WEBHOOK_URL.')
-  }
-  let url = appendQueryParam(opts.sheetWebhookUrl.trim(), 'action', opts.action)
-  if (opts.action === 'check_date_column' && opts.ymd) {
-    url = appendQueryParam(url, 'ymd', opts.ymd)
-  }
-  return fetch(url)
-}
-
-async function parseListItemsResponse(res: Response): Promise<Array<{ codigo_interno: string; descricao: string }>> {
-  const text = await res.text()
-  const trimmed = text.trim()
-
-  if (res.status === 404) {
-    throw new Error(
-      'Função edge não encontrada (HTTP 404). Faça deploy de sheet-checklist-proxy (npx supabase functions deploy sheet-checklist-proxy) ou ajuste VITE_SHEET_LIST_FUNCTION_NAME se o nome for outro.',
-    )
-  }
-  if (res.status === 401) {
-    throw new Error('Não autorizado ao chamar a edge function (401). Confira VITE_SUPABASE_ANON_KEY no build do front (Render).')
-  }
-
-  if (!trimmed) {
-    throw new Error(`Resposta vazia ao carregar a lista (HTTP ${res.status}).`)
-  }
-  if (trimmed.startsWith('<') || trimmed.toLowerCase().startsWith('<!')) {
-    throw new Error(
-      'Resposta em HTML (não JSON). Confira se o Web App do Apps Script está publicado com acesso “qualquer pessoa” e se SHEET_WEBHOOK_URL na edge function aponta para a URL /exec correta.',
-    )
-  }
-
-  let j: { ok?: boolean; items?: Array<{ codigo_interno: string; descricao: string }>; error?: string }
-  try {
-    j = JSON.parse(trimmed) as typeof j
-  } catch {
-    throw new Error(
-      `Resposta inválida (HTTP ${res.status}): ${trimmed.length > 180 ? `${trimmed.slice(0, 180)}…` : trimmed}`,
-    )
-  }
-
-  if (!res.ok) {
-    throw new Error(j.error || `Erro HTTP ${res.status} ao carregar a lista.`)
-  }
-  if (!j.ok) {
-    throw new Error(
-      j.error ||
-        'Falha ao carregar lista no Apps Script. Confira deploy do script, nome da aba e permissões da planilha.',
-    )
-  }
-  return j.items ?? []
-}
-
 export default function ContagemEstoque() {
   const sheetWebhookUrl = import.meta.env.VITE_SHEET_WEBHOOK_URL as string | undefined
-  const sheetListFunctionName = (import.meta.env.VITE_SHEET_LIST_FUNCTION_NAME as string | undefined)?.trim()
   // Modo definitivo: usar SOMENTE outbox (evita escrita paralela e coluna duplicada).
   // Mantemos o envio direto desativado de forma fixa.
   const enableDirectSheetsWebhook = false
@@ -385,46 +225,33 @@ export default function ContagemEstoque() {
   useEffect(() => {
     ;(async () => {
       setProductOptionsLoading(true)
-      const tabelas = ['Todos os Produtos', 'todos_os_produtos', 'todos_produtos', 'produtos']
+      const tabela = 'produtos'
       let loaded: ProductOption[] = []
       let lastLoadError: string | null = null
 
-      for (const tabela of tabelas) {
-        // Carrega a linha inteira para não quebrar caso a tabela não tenha "id"
-        // (na base "Todos os Produtos" normalmente temos row_index/codigo_interno/descricao).
-        const { data, error } = await supabase.from(tabela).select('*').limit(10000)
+      const { data, error } = await supabase.from(tabela).select('*').order('codigo_interno').limit(10000)
 
-        if (error) {
-          const code = String(error.code ?? '')
-          // ignora tabela ausente / não cacheada no PostgREST e tenta próxima
-          if (code === '42P01' || code === 'PGRST205' || code === '42703') continue
-          lastLoadError = error.message ?? 'erro ao carregar produtos'
-          continue
-        }
-
-        if (data?.length) {
-          const mapped = (data as Array<Record<string, any>>)
-            .map((row) => {
-              const codigo = pickFirstString(row, ['codigo_interno', 'codigo', 'CÓDIGO', 'cod_produto'])
-              const descricao = pickFirstString(row, ['descricao', 'DESCRIÇÃO', 'descrição', 'desc_produto'])
-              if (!codigo) return null
-              return {
-                id: String(row.id ?? row.row_index ?? row.dataset_id ?? codigo),
-                codigo,
-                descricao: descricao || 'Produto sem descrição',
-                unidade_medida:
-                  pickFirstString(row, ['unidade_medida', 'unidade', 'UNIDADE', 'und']) || null,
-                data_fabricacao: row.data_fabricacao ?? null,
-                data_validade: row.data_validade ?? null,
-                ean: row.ean ?? null,
-                dun: row.dun ?? null,
-              } as ProductOption
-            })
-            .filter(Boolean) as ProductOption[]
-
-          loaded = mapped
-          break
-        }
+      if (error) {
+        lastLoadError = error.message ?? 'erro ao carregar produtos'
+      } else if (data?.length) {
+        loaded = (data as Array<Record<string, any>>)
+          .map((row) => {
+            const codigo = pickFirstString(row, ['codigo_interno', 'codigo', 'CÓDIGO', 'cod_produto'])
+            const descricao = pickFirstString(row, ['descricao', 'DESCRIÇÃO', 'descrição', 'desc_produto'])
+            if (!codigo) return null
+            return {
+              id: String(row.id ?? codigo),
+              codigo,
+              descricao: descricao || 'Produto sem descrição',
+              unidade_medida:
+                pickFirstString(row, ['unidade_medida', 'unidade', 'UNIDADE', 'und']) || null,
+              data_fabricacao: row.data_fabricacao ?? null,
+              data_validade: row.data_validade ?? null,
+              ean: row.ean ?? null,
+              dun: row.dun ?? null,
+            } as ProductOption
+          })
+          .filter(Boolean) as ProductOption[]
       }
 
       // remove duplicados por código
@@ -519,48 +346,43 @@ export default function ContagemEstoque() {
         return
       }
 
-      // Busca em múltiplas tabelas para suportar a base importada ("Todos os Produtos")
-      const tabelas = ['produtos', 'Todos os Produtos', 'todos_os_produtos', 'todos_produtos']
-      const colunasBusca = ['codigo_interno', 'codigo', 'CÓDIGO', 'cod_produto', 'ean', 'dun']
+      const tabela = 'produtos'
+      const colunasBusca = ['codigo_interno', 'codigo', 'ean', 'dun']
 
       let found: Produto | null = null
       let lastMeaningfulError: any = null
 
-      for (const tabela of tabelas) {
-        for (const coluna of colunasBusca) {
-          const resp = await supabase.from(tabela).select('*').eq(coluna, codigo).limit(1).maybeSingle()
+      for (const coluna of colunasBusca) {
+        const resp = await supabase.from(tabela).select('*').eq(coluna, codigo).limit(1).maybeSingle()
 
-          // Ignora "coluna não existe" e "tabela não existe", tenta próxima opção.
-          if (resp.error) {
-            const code = String(resp.error.code ?? '')
-            const msg = String(resp.error.message ?? '').toLowerCase()
-            if (code !== '42703' && code !== '42P01' && code !== 'PGRST205' && !msg.includes('schema cache')) {
-              lastMeaningfulError = resp.error
-            }
-            continue
+        if (resp.error) {
+          const code = String(resp.error.code ?? '')
+          const msg = String(resp.error.message ?? '').toLowerCase()
+          if (code !== '42703' && code !== '42P01' && code !== 'PGRST205' && !msg.includes('schema cache')) {
+            lastMeaningfulError = resp.error
           }
-
-          if (resp.data) {
-            const row = resp.data as Record<string, any>
-            const descricao = pickFirstString(row, ['descricao', 'DESCRIÇÃO', 'descrição', 'desc_produto'])
-            const codigoInterno =
-              pickFirstString(row, ['codigo_interno', 'codigo', 'CÓDIGO', 'cod_produto']) || codigo
-            const unidade = pickFirstString(row, ['unidade_medida', 'UNIDADE', 'unidade', 'und']) || null
-
-            found = {
-              id: String(row.id ?? codigoInterno),
-              codigo_interno: codigoInterno,
-              descricao: descricao || 'Produto sem descrição',
-              unidade_medida: unidade,
-              data_fabricacao: row.data_fabricacao ?? null,
-              data_validade: row.data_validade ?? null,
-              ean: row.ean ?? null,
-              dun: row.dun ?? null,
-            }
-            break
-          }
+          continue
         }
-        if (found) break
+
+        if (resp.data) {
+          const row = resp.data as Record<string, any>
+          const descricao = pickFirstString(row, ['descricao', 'DESCRIÇÃO', 'descrição', 'desc_produto'])
+          const codigoInterno =
+            pickFirstString(row, ['codigo_interno', 'codigo', 'CÓDIGO', 'cod_produto']) || codigo
+          const unidade = pickFirstString(row, ['unidade_medida', 'UNIDADE', 'unidade', 'und']) || null
+
+          found = {
+            id: String(row.id ?? codigoInterno),
+            codigo_interno: codigoInterno,
+            descricao: descricao || 'Produto sem descrição',
+            unidade_medida: unidade,
+            data_fabricacao: row.data_fabricacao ?? null,
+            data_validade: row.data_validade ?? null,
+            ean: row.ean ?? null,
+            dun: row.dun ?? null,
+          }
+          break
+        }
       }
 
       if (!found && lastMeaningfulError) {
@@ -626,7 +448,7 @@ export default function ContagemEstoque() {
     }
 
     if (!offlineSession || offlineSession.status !== 'aberta') {
-      setSaveError('Carregue a lista da planilha (sessão diária) antes de "Salvar na lista".')
+      setSaveError('Carregue a lista de produtos (sessão diária) antes de "Salvar na lista".')
       return
     }
 
@@ -639,7 +461,7 @@ export default function ContagemEstoque() {
       )
       if (idx < 0) {
         setSaveError(
-          'Produto não está na lista do dia. Use código e descrição iguais aos da planilha (aba CONTAGEM DE ESTOQUE FISICA).',
+          'Produto não está na lista do dia. Use código e descrição iguais aos cadastrados em produtos.',
         )
         setSaving(false)
         return
@@ -653,7 +475,7 @@ export default function ContagemEstoque() {
       })
 
       setSaveSuccess(
-        `Quantidade ${qtd} gravada na lista local (offline). Clique em "Finalizar contagem diária" para salvar no banco e na planilha.`,
+        `Quantidade ${qtd} gravada na lista local (offline). Clique em "Finalizar contagem diária" para salvar no banco.`,
       )
       setSaveError('')
       setLote('')
@@ -787,69 +609,27 @@ export default function ContagemEstoque() {
     }, 5000)
   }
 
-  async function fetchListaChecklistFromSheet() {
-    if (!canFetchChecklistFromSheet({ sheetWebhookUrl, supabaseUrl: supabaseUrlEnv, supabaseAnonKey: supabaseAnonKeyEnv })) {
+  async function fetchListaChecklistFromDb(): Promise<Array<{ codigo_interno: string; descricao: string }>> {
+    const { data, error } = await supabase
+      .from('produtos')
+      .select('codigo_interno,descricao')
+      .order('codigo_interno', { ascending: true })
+    if (error) {
+      throw new Error(`Erro ao carregar produtos: ${error.message}`)
+    }
+    const rows = (data ?? []) as Array<{ codigo_interno?: string; descricao?: string }>
+    const out = rows
+      .map((r) => ({
+        codigo_interno: String(r.codigo_interno ?? '').trim(),
+        descricao: String(r.descricao ?? '').trim() || 'Produto sem descrição',
+      }))
+      .filter((r) => r.codigo_interno.length > 0)
+    if (out.length === 0) {
       throw new Error(
-        'Configure VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY (com a edge function sheet-checklist-proxy) ou VITE_SHEET_WEBHOOK_URL.',
+        'Nenhum produto em public.produtos. Rode o script supabase/sql/sync_produtos_lista_oficial.sql no SQL Editor do Supabase.',
       )
     }
-
-    const useProxy = !!(supabaseUrlEnv?.trim() && supabaseAnonKeyEnv?.trim())
-    let res: Response
-    try {
-      res = await fetchAppsScriptReadonlyGet({
-        sheetWebhookUrl,
-        supabaseUrl: supabaseUrlEnv,
-        supabaseAnonKey: supabaseAnonKeyEnv,
-        listFunctionName: sheetListFunctionName,
-        outboxFunctionName: outboxFunctionName,
-        action: 'list_items',
-      })
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      const fnLabel = (sheetListFunctionName || 'sheet-checklist-proxy').trim()
-      if (useProxy && sheetWebhookUrl?.trim() && (msg === 'Failed to fetch' || msg.includes('Failed to fetch'))) {
-        throw new Error(
-          `Não foi possível contatar a edge function (${msg}). Confira VITE_SUPABASE_URL, faça deploy da função "${fnLabel}" (POST habilitado) e o secret SHEET_WEBHOOK_URL. Opcional: VITE_SHEET_WEBHOOK_URL (direto pode falhar por CORS).`,
-        )
-      }
-      throw err instanceof Error ? err : new Error(msg)
-    }
-
-    if (!res.ok && res.status === 404 && useProxy && sheetWebhookUrl?.trim()) {
-      try {
-        res = await fetch(appendQueryParam(sheetWebhookUrl.trim(), 'action', 'list_items'))
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e)
-        throw new Error(
-          `A edge function retornou 404 e a chamada direta à planilha falhou (${msg}). Faça deploy: npx supabase functions deploy ${(sheetListFunctionName || 'sheet-checklist-proxy').trim()} e configure o secret SHEET_WEBHOOK_URL.`,
-        )
-      }
-    }
-
-    return parseListItemsResponse(res)
-  }
-
-  async function fetchSheetHasDateColumn(ymd: string): Promise<boolean> {
-    if (!canFetchChecklistFromSheet({ sheetWebhookUrl, supabaseUrl: supabaseUrlEnv, supabaseAnonKey: supabaseAnonKeyEnv })) {
-      return true
-    }
-    try {
-      const res = await fetchAppsScriptReadonlyGet({
-        sheetWebhookUrl,
-        supabaseUrl: supabaseUrlEnv,
-        supabaseAnonKey: supabaseAnonKeyEnv,
-        listFunctionName: sheetListFunctionName,
-        outboxFunctionName: outboxFunctionName,
-        action: 'check_date_column',
-        ymd,
-      })
-      const j = (await res.json()) as { ok?: boolean; exists?: boolean }
-      if (!j.ok) return true
-      return !!j.exists
-    } catch {
-      return true
-    }
+    return out
   }
 
   async function handleCarregarListaPlanilha() {
@@ -867,7 +647,7 @@ export default function ContagemEstoque() {
     }
     setChecklistLoading(true)
     try {
-      const itemsRaw = await fetchListaChecklistFromSheet()
+      const itemsRaw = await fetchListaChecklistFromDb()
       const items: OfflineChecklistItem[] = itemsRaw.map((row, index) => ({
         key: stableItemKey(row.codigo_interno, row.descricao, index),
         codigo_interno: row.codigo_interno,
@@ -924,7 +704,7 @@ export default function ContagemEstoque() {
     setSaveSuccess('')
     setChecklistError('')
     if (!offlineSession || offlineSession.status !== 'aberta') {
-      setChecklistError('Não há sessão aberta. Carregue a lista da planilha primeiro.')
+      setChecklistError('Não há sessão aberta. Carregue a lista de produtos primeiro.')
       return
     }
     if (!conferenteId || offlineSession.conferente_id !== conferenteId) {
@@ -948,13 +728,6 @@ export default function ContagemEstoque() {
     }
 
     const ymd = offlineSession.data_contagem_ymd
-    const hasCol = await fetchSheetHasDateColumn(ymd)
-    if (!hasCol) {
-      const ok2 = window.confirm(
-        `A planilha pode não ter coluna de cabeçalho para a data ${ymd}. Crie a coluna da data na aba CONTAGEM DE ESTOQUE FISICA antes de continuar.\n\nDeseja continuar mesmo assim?`,
-      )
-      if (!ok2) return
-    }
 
     const dataHoraIso = toISOStringFromDatetimeLocal(dataHoraContagem)
     const rows: Record<string, unknown>[] = []
@@ -1006,10 +779,7 @@ export default function ContagemEstoque() {
 
       clearOfflineSession()
       setOfflineSession(null)
-      setSaveSuccess(
-        `Contagem do dia ${ymd} finalizada: ${rows.length} registro(s) no banco. Processando envio à planilha…`,
-      )
-      kickOutboxSyncNowWithRetry()
+      setSaveSuccess(`Contagem do dia ${ymd} finalizada: ${rows.length} registro(s) gravados no banco.`)
       await loadPreview(ymd)
     } catch (e: any) {
       setSaveError(`Erro ao finalizar: ${e?.message ? String(e.message) : 'verifique permissões (RLS) e tabelas.'}`)
@@ -1334,13 +1104,7 @@ export default function ContagemEstoque() {
         })
       : []
 
-  const checklistFetchReady = canFetchChecklistFromSheet({
-    sheetWebhookUrl,
-    supabaseUrl: supabaseUrlEnv,
-    supabaseAnonKey: supabaseAnonKeyEnv,
-  })
-  const carregarListaDisabled =
-    checklistLoading || finalizing || !conferenteId || !checklistFetchReady
+  const carregarListaDisabled = checklistLoading || finalizing || !conferenteId
 
   return (
     <div style={{ padding: isMobile ? 10 : 16, maxWidth: 1200, margin: '0 auto' }}>
@@ -1355,10 +1119,11 @@ export default function ContagemEstoque() {
           background: 'var(--panel-bg, rgba(0,0,0,.04))',
         }}
       >
-        <h3 style={{ margin: '0 0 10px', fontSize: 18 }}>Contagem diária (offline → banco → planilha)</h3>
+        <h3 style={{ margin: '0 0 10px', fontSize: 18 }}>Contagem diária (offline → banco)</h3>
         <p style={{ margin: '0 0 12px', fontSize: 13, color: 'var(--text, #555)' }}>
-          Carregue a lista a partir da planilha, preencha as quantidades no app (salvo no navegador) e só ao final
-          clique em <strong>Finalizar contagem diária</strong> para gravar no Supabase e enviar à planilha via fila.
+          Carregue a lista a partir da tabela <strong>public.produtos</strong> no Supabase, preencha as quantidades no app
+          (salvo no navegador) e clique em <strong>Finalizar contagem diária</strong> para gravar em{' '}
+          <strong>contagens_estoque</strong>.
         </p>
 
         <div
@@ -1491,7 +1256,7 @@ export default function ContagemEstoque() {
               disabled={carregarListaDisabled}
               onClick={() => void handleCarregarListaPlanilha()}
             >
-              {checklistLoading ? 'Carregando lista…' : 'Carregar lista da planilha'}
+              {checklistLoading ? 'Carregando lista…' : 'Carregar lista de produtos'}
             </button>
             <button
               type="button"
@@ -1518,16 +1283,9 @@ export default function ContagemEstoque() {
         </div>
 
         {checklistError ? <div style={{ color: '#b00020', marginTop: 10 }}>{checklistError}</div> : null}
-        {checklistFetchReady && !conferenteId ? (
+        {!conferenteId ? (
           <div style={{ color: 'var(--text, #888)', marginTop: 8, fontSize: 13 }}>
-            Selecione um <strong>conferente</strong> acima para habilitar &quot;Carregar lista da planilha&quot;.
-          </div>
-        ) : null}
-        {!checklistFetchReady ? (
-          <div style={{ color: '#b00020', marginTop: 10 }}>
-            Defina <strong>VITE_SUPABASE_URL</strong> e <strong>VITE_SUPABASE_ANON_KEY</strong> e faça deploy da edge function{' '}
-            <strong>sheet-checklist-proxy</strong> (secret <strong>SHEET_WEBHOOK_URL</strong>), ou use{' '}
-            <strong>VITE_SHEET_WEBHOOK_URL</strong> para chamada direta (pode falhar no navegador por CORS).
+            Selecione um <strong>conferente</strong> acima para habilitar &quot;Carregar lista de produtos&quot;.
           </div>
         ) : null}
 
@@ -1610,7 +1368,7 @@ export default function ContagemEstoque() {
           </>
         ) : (
           <div style={{ marginTop: 10, fontSize: 13, color: 'var(--text, #666)' }}>
-            Nenhuma sessão aberta. Acima, selecione o conferente e a data; depois clique em <strong>Carregar lista da planilha</strong>.
+            Nenhuma sessão aberta. Acima, selecione o conferente e a data; depois clique em <strong>Carregar lista de produtos</strong>.
           </div>
         )}
       </section>
