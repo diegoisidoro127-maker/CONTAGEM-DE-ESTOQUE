@@ -117,8 +117,49 @@ function buildWebhookUrlWithParams(baseUrl: string, params: Record<string, strin
   return u
 }
 
+function canFetchChecklistFromSheet(opts: {
+  sheetWebhookUrl?: string
+  supabaseUrl?: string
+  supabaseAnonKey?: string
+}) {
+  const hasProxy = !!(opts.supabaseUrl?.trim() && opts.supabaseAnonKey?.trim())
+  return hasProxy || !!opts.sheetWebhookUrl?.trim()
+}
+
+/** GET no Apps Script via proxy Supabase (evita CORS) ou direto se só houver webhook. */
+function fetchAppsScriptReadonlyGet(opts: {
+  sheetWebhookUrl?: string
+  supabaseUrl?: string
+  supabaseAnonKey?: string
+  listFunctionName?: string
+  action: 'list_items' | 'check_date_column'
+  ymd?: string
+}): Promise<Response> {
+  const fn = (opts.listFunctionName || 'sheet-checklist-proxy').trim()
+  if (opts.supabaseUrl?.trim() && opts.supabaseAnonKey?.trim()) {
+    const base = opts.supabaseUrl.replace(/\/$/, '')
+    const sp = new URLSearchParams({ action: opts.action })
+    if (opts.action === 'check_date_column' && opts.ymd) sp.set('ymd', opts.ymd)
+    return fetch(`${base}/functions/v1/${fn}?${sp}`, {
+      headers: {
+        apikey: opts.supabaseAnonKey,
+        Authorization: `Bearer ${opts.supabaseAnonKey}`,
+      },
+    })
+  }
+  if (!opts.sheetWebhookUrl?.trim()) {
+    return Promise.reject(new Error('Configure Supabase (URL + chave anon) ou VITE_SHEET_WEBHOOK_URL.'))
+  }
+  let url = appendQueryParam(opts.sheetWebhookUrl.trim(), 'action', opts.action)
+  if (opts.action === 'check_date_column' && opts.ymd) {
+    url = appendQueryParam(url, 'ymd', opts.ymd)
+  }
+  return fetch(url)
+}
+
 export default function ContagemEstoque() {
   const sheetWebhookUrl = import.meta.env.VITE_SHEET_WEBHOOK_URL as string | undefined
+  const sheetListFunctionName = (import.meta.env.VITE_SHEET_LIST_FUNCTION_NAME as string | undefined)?.trim()
   // Modo definitivo: usar SOMENTE outbox (evita escrita paralela e coluna duplicada).
   // Mantemos o envio direto desativado de forma fixa.
   const enableDirectSheetsWebhook = false
@@ -643,24 +684,43 @@ export default function ContagemEstoque() {
   }
 
   async function fetchListaChecklistFromSheet() {
-    if (!sheetWebhookUrl?.trim()) {
-      throw new Error('Defina VITE_SHEET_WEBHOOK_URL no ambiente para carregar a lista da planilha.')
+    if (!canFetchChecklistFromSheet({ sheetWebhookUrl, supabaseUrl: supabaseUrlEnv, supabaseAnonKey: supabaseAnonKeyEnv })) {
+      throw new Error(
+        'Configure VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY (com a edge function sheet-checklist-proxy) ou VITE_SHEET_WEBHOOK_URL.',
+      )
     }
-    const url = appendQueryParam(sheetWebhookUrl.trim(), 'action', 'list_items')
-    const res = await fetch(url)
-    const j = (await res.json()) as { ok?: boolean; items?: Array<{ codigo_interno: string; descricao: string }>; error?: string }
+    const res = await fetchAppsScriptReadonlyGet({
+      sheetWebhookUrl,
+      supabaseUrl: supabaseUrlEnv,
+      supabaseAnonKey: supabaseAnonKeyEnv,
+      listFunctionName: sheetListFunctionName,
+      action: 'list_items',
+    })
+    const j = (await res.json().catch(() => ({}))) as {
+      ok?: boolean
+      items?: Array<{ codigo_interno: string; descricao: string }>
+      error?: string
+    }
+    if (!res.ok) {
+      throw new Error(j.error || `Erro HTTP ${res.status} ao carregar a lista.`)
+    }
     if (!j.ok) throw new Error(j.error || 'Falha ao carregar lista do Apps Script.')
     return j.items ?? []
   }
 
   async function fetchSheetHasDateColumn(ymd: string): Promise<boolean> {
-    if (!sheetWebhookUrl?.trim()) return true
-    const url = buildWebhookUrlWithParams(sheetWebhookUrl.trim(), {
-      action: 'check_date_column',
-      ymd,
-    })
+    if (!canFetchChecklistFromSheet({ sheetWebhookUrl, supabaseUrl: supabaseUrlEnv, supabaseAnonKey: supabaseAnonKeyEnv })) {
+      return true
+    }
     try {
-      const res = await fetch(url)
+      const res = await fetchAppsScriptReadonlyGet({
+        sheetWebhookUrl,
+        supabaseUrl: supabaseUrlEnv,
+        supabaseAnonKey: supabaseAnonKeyEnv,
+        listFunctionName: sheetListFunctionName,
+        action: 'check_date_column',
+        ymd,
+      })
       const j = (await res.json()) as { ok?: boolean; exists?: boolean }
       if (!j.ok) return true
       return !!j.exists
@@ -1151,6 +1211,14 @@ export default function ContagemEstoque() {
         })
       : []
 
+  const checklistFetchReady = canFetchChecklistFromSheet({
+    sheetWebhookUrl,
+    supabaseUrl: supabaseUrlEnv,
+    supabaseAnonKey: supabaseAnonKeyEnv,
+  })
+  const carregarListaDisabled =
+    checklistLoading || finalizing || !conferenteId || !checklistFetchReady
+
   return (
     <div style={{ padding: isMobile ? 10 : 16, maxWidth: 1200, margin: '0 auto' }}>
       <h2>Contagem de Estoque</h2>
@@ -1176,6 +1244,108 @@ export default function ContagemEstoque() {
             gridTemplateColumns: isMobile ? '1fr' : 'repeat(12, 1fr)',
             gap: 12,
             alignItems: 'end',
+            marginBottom: 4,
+          }}
+        >
+          <label style={{ ...labelStyle, gridColumn: isMobile ? 'auto' : 'span 6' }}>
+            Conferente
+            <select
+              value={conferenteId}
+              onChange={(e) => setConferenteId(e.target.value)}
+              style={inputStyle}
+              disabled={conferentesLoading || (!!offlineSession && offlineSession.status === 'aberta')}
+            >
+              <option value="">Selecione...</option>
+              {conferentes.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.nome}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <div style={{ gridColumn: isMobile ? 'auto' : 'span 6', display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <button
+              type="button"
+              onClick={() => setShowAddConferente((v) => !v)}
+              disabled={addingConferente || (!!offlineSession && offlineSession.status === 'aberta')}
+              style={buttonStyle}
+            >
+              {showAddConferente ? 'Cancelar' : 'Cadastrar conferente'}
+            </button>
+
+            {showAddConferente ? (
+              offlineSession?.status === 'aberta' ? (
+                <div style={{ fontSize: 12, color: 'var(--text, #888)' }}>
+                  Finalize ou descarte a sessão da checklist para cadastrar um novo conferente.
+                </div>
+              ) : (
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: isMobile ? '1fr' : '1fr auto',
+                    gap: 8,
+                    alignItems: 'end',
+                  }}
+                >
+                  <div style={labelStyle}>
+                    Nome do conferente
+                    <input
+                      value={newConferenteNome}
+                      onChange={(e) => setNewConferenteNome(e.target.value)}
+                      style={inputStyle}
+                      placeholder="Ex: João Silva"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const nome = newConferenteNome.trim()
+                      if (!nome) return
+                      setAddingConferente(true)
+                      setSaveError('')
+
+                      const { data, error } = await supabase
+                        .from('conferentes')
+                        .insert({ nome })
+                        .select('id,nome')
+                        .maybeSingle()
+
+                      if (error) {
+                        if (error.code === '42501' || String(error.message).toLowerCase().includes('row-level security')) {
+                          setSaveError(
+                            'Sem permissão para cadastrar conferente no banco. Rode o SQL de policy (RLS) no Supabase para liberar insert em conferentes.',
+                          )
+                        } else {
+                          setSaveError(`Erro ao cadastrar conferente: ${error.message}`)
+                        }
+                      } else if (data?.id) {
+                        setConferenteId(data.id)
+                        setNewConferenteNome('')
+                        setShowAddConferente(false)
+                        const { data: list } = await supabase.from('conferentes').select('id,nome').order('nome')
+                        setConferentes(list ?? [])
+                      }
+
+                      setAddingConferente(false)
+                    }}
+                    disabled={addingConferente}
+                    style={buttonStyle}
+                  >
+                    {addingConferente ? 'Salvando...' : 'Salvar'}
+                  </button>
+                </div>
+              )
+            ) : null}
+          </div>
+        </div>
+
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: isMobile ? '1fr' : 'repeat(12, 1fr)',
+            gap: 12,
+            alignItems: 'end',
           }}
         >
           <label style={{ ...labelStyle, gridColumn: isMobile ? 'auto' : 'span 3' }}>
@@ -1191,8 +1361,11 @@ export default function ContagemEstoque() {
           <div style={{ gridColumn: isMobile ? 'auto' : 'span 9', display: 'flex', flexWrap: 'wrap', gap: 8 }}>
             <button
               type="button"
-              style={buttonStyle}
-              disabled={checklistLoading || finalizing || !conferenteId || !sheetWebhookUrl}
+              style={{
+                ...buttonStyle,
+                ...(carregarListaDisabled ? { opacity: 0.45, cursor: 'not-allowed' } : {}),
+              }}
+              disabled={carregarListaDisabled}
               onClick={() => void handleCarregarListaPlanilha()}
             >
               {checklistLoading ? 'Carregando lista…' : 'Carregar lista da planilha'}
@@ -1222,8 +1395,17 @@ export default function ContagemEstoque() {
         </div>
 
         {checklistError ? <div style={{ color: '#b00020', marginTop: 10 }}>{checklistError}</div> : null}
-        {!sheetWebhookUrl ? (
-          <div style={{ color: '#b00020', marginTop: 10 }}>VITE_SHEET_WEBHOOK_URL não definida — não é possível carregar a lista.</div>
+        {checklistFetchReady && !conferenteId ? (
+          <div style={{ color: 'var(--text, #888)', marginTop: 8, fontSize: 13 }}>
+            Selecione um <strong>conferente</strong> acima para habilitar &quot;Carregar lista da planilha&quot;.
+          </div>
+        ) : null}
+        {!checklistFetchReady ? (
+          <div style={{ color: '#b00020', marginTop: 10 }}>
+            Defina <strong>VITE_SUPABASE_URL</strong> e <strong>VITE_SUPABASE_ANON_KEY</strong> e faça deploy da edge function{' '}
+            <strong>sheet-checklist-proxy</strong> (secret <strong>SHEET_WEBHOOK_URL</strong>), ou use{' '}
+            <strong>VITE_SHEET_WEBHOOK_URL</strong> para chamada direta (pode falhar no navegador por CORS).
+          </div>
         ) : null}
 
         {offlineSession && offlineSession.status === 'aberta' ? (
@@ -1305,14 +1487,17 @@ export default function ContagemEstoque() {
           </>
         ) : (
           <div style={{ marginTop: 10, fontSize: 13, color: 'var(--text, #666)' }}>
-            Nenhuma sessão aberta. Selecione conferente, data da contagem e clique em <strong>Carregar lista da planilha</strong>.
+            Nenhuma sessão aberta. Acima, selecione o conferente e a data; depois clique em <strong>Carregar lista da planilha</strong>.
           </div>
         )}
       </section>
 
       <form onSubmit={handleSubmit} style={{ display: 'grid', gap: 12, marginTop: 12 }}>
+        <p style={{ margin: 0, fontSize: 13, color: 'var(--text, #666)' }}>
+          Conferente da contagem: use o seletor na seção <strong>Contagem diária</strong> acima.
+        </p>
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(12, 1fr)', gap: 12 }}>
-          <label style={labelStyle}>
+          <label style={{ ...labelStyle, gridColumn: isMobile ? 'auto' : 'span 12' }}>
             Data e hora do registro
             <input
               type="datetime-local"
@@ -1327,93 +1512,6 @@ export default function ContagemEstoque() {
               style={inputStyle}
             />
           </label>
-
-          <label style={{ ...labelStyle, gridColumn: isMobile ? 'auto' : 'span 6' }}>
-            Conferente
-            <select
-              value={conferenteId}
-              onChange={(e) => setConferenteId(e.target.value)}
-              style={inputStyle}
-              disabled={conferentesLoading}
-            >
-              <option value="">Selecione...</option>
-              {conferentes.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.nome}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <div style={{ gridColumn: isMobile ? 'auto' : 'span 6', display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <button
-              type="button"
-              onClick={() => setShowAddConferente((v) => !v)}
-              disabled={addingConferente}
-              style={buttonStyle}
-            >
-              {showAddConferente ? 'Cancelar' : 'Cadastrar conferente'}
-            </button>
-
-            {showAddConferente ? (
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: isMobile ? '1fr' : '1fr auto',
-                  gap: 8,
-                  alignItems: 'end',
-                }}
-              >
-                <div style={labelStyle}>
-                  Nome do conferente
-                  <input
-                    value={newConferenteNome}
-                    onChange={(e) => setNewConferenteNome(e.target.value)}
-                    style={inputStyle}
-                    placeholder="Ex: João Silva"
-                  />
-                </div>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    const nome = newConferenteNome.trim()
-                    if (!nome) return
-                    setAddingConferente(true)
-                    setSaveError('')
-
-                    const { data, error } = await supabase
-                      .from('conferentes')
-                      .insert({ nome })
-                      .select('id,nome')
-                      .maybeSingle()
-
-                    if (error) {
-                      if (error.code === '42501' || String(error.message).toLowerCase().includes('row-level security')) {
-                        setSaveError(
-                          'Sem permissão para cadastrar conferente no banco. Rode o SQL de policy (RLS) no Supabase para liberar insert em conferentes.'
-                        )
-                      } else {
-                        setSaveError(`Erro ao cadastrar conferente: ${error.message}`)
-                      }
-                    } else if (data?.id) {
-                      setConferenteId(data.id)
-                      setNewConferenteNome('')
-                      setShowAddConferente(false)
-                      // recarrega lista para consistência visual
-                      const { data: list } = await supabase.from('conferentes').select('id,nome').order('nome')
-                      setConferentes(list ?? [])
-                    }
-
-                    setAddingConferente(false)
-                  }}
-                  disabled={addingConferente}
-                  style={buttonStyle}
-                >
-                  {addingConferente ? 'Salvando...' : 'Salvar'}
-                </button>
-              </div>
-            ) : null}
-          </div>
         </div>
 
         <label style={labelStyle}>
