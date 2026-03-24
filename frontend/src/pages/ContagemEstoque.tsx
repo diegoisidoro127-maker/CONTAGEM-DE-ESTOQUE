@@ -157,6 +157,49 @@ function fetchAppsScriptReadonlyGet(opts: {
   return fetch(url)
 }
 
+async function parseListItemsResponse(res: Response): Promise<Array<{ codigo_interno: string; descricao: string }>> {
+  const text = await res.text()
+  const trimmed = text.trim()
+
+  if (res.status === 404) {
+    throw new Error(
+      'Função edge não encontrada (HTTP 404). Faça deploy de sheet-checklist-proxy (npx supabase functions deploy sheet-checklist-proxy) ou ajuste VITE_SHEET_LIST_FUNCTION_NAME se o nome for outro.',
+    )
+  }
+  if (res.status === 401) {
+    throw new Error('Não autorizado ao chamar a edge function (401). Confira VITE_SUPABASE_ANON_KEY no build do front (Render).')
+  }
+
+  if (!trimmed) {
+    throw new Error(`Resposta vazia ao carregar a lista (HTTP ${res.status}).`)
+  }
+  if (trimmed.startsWith('<') || trimmed.toLowerCase().startsWith('<!')) {
+    throw new Error(
+      'Resposta em HTML (não JSON). Confira se o Web App do Apps Script está publicado com acesso “qualquer pessoa” e se SHEET_WEBHOOK_URL na edge function aponta para a URL /exec correta.',
+    )
+  }
+
+  let j: { ok?: boolean; items?: Array<{ codigo_interno: string; descricao: string }>; error?: string }
+  try {
+    j = JSON.parse(trimmed) as typeof j
+  } catch {
+    throw new Error(
+      `Resposta inválida (HTTP ${res.status}): ${trimmed.length > 180 ? `${trimmed.slice(0, 180)}…` : trimmed}`,
+    )
+  }
+
+  if (!res.ok) {
+    throw new Error(j.error || `Erro HTTP ${res.status} ao carregar a lista.`)
+  }
+  if (!j.ok) {
+    throw new Error(
+      j.error ||
+        'Falha ao carregar lista no Apps Script. Confira deploy do script, nome da aba e permissões da planilha.',
+    )
+  }
+  return j.items ?? []
+}
+
 export default function ContagemEstoque() {
   const sheetWebhookUrl = import.meta.env.VITE_SHEET_WEBHOOK_URL as string | undefined
   const sheetListFunctionName = (import.meta.env.VITE_SHEET_LIST_FUNCTION_NAME as string | undefined)?.trim()
@@ -689,23 +732,39 @@ export default function ContagemEstoque() {
         'Configure VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY (com a edge function sheet-checklist-proxy) ou VITE_SHEET_WEBHOOK_URL.',
       )
     }
-    const res = await fetchAppsScriptReadonlyGet({
-      sheetWebhookUrl,
-      supabaseUrl: supabaseUrlEnv,
-      supabaseAnonKey: supabaseAnonKeyEnv,
-      listFunctionName: sheetListFunctionName,
-      action: 'list_items',
-    })
-    const j = (await res.json().catch(() => ({}))) as {
-      ok?: boolean
-      items?: Array<{ codigo_interno: string; descricao: string }>
-      error?: string
+
+    const useProxy = !!(supabaseUrlEnv?.trim() && supabaseAnonKeyEnv?.trim())
+    let res: Response
+    try {
+      res = await fetchAppsScriptReadonlyGet({
+        sheetWebhookUrl,
+        supabaseUrl: supabaseUrlEnv,
+        supabaseAnonKey: supabaseAnonKeyEnv,
+        listFunctionName: sheetListFunctionName,
+        action: 'list_items',
+      })
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      if (useProxy && sheetWebhookUrl?.trim() && (msg === 'Failed to fetch' || msg.includes('Failed to fetch'))) {
+        throw new Error(
+          `Não foi possível contatar a edge function (${msg}). Verifique rede, URL do projeto Supabase e se sheet-checklist-proxy está implantada. Se o proxy não existir ainda, defina também VITE_SHEET_WEBHOOK_URL (chamada direta pode falhar por CORS no navegador).`,
+        )
+      }
+      throw err instanceof Error ? err : new Error(msg)
     }
-    if (!res.ok) {
-      throw new Error(j.error || `Erro HTTP ${res.status} ao carregar a lista.`)
+
+    if (!res.ok && res.status === 404 && useProxy && sheetWebhookUrl?.trim()) {
+      try {
+        res = await fetch(appendQueryParam(sheetWebhookUrl.trim(), 'action', 'list_items'))
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        throw new Error(
+          `A edge function retornou 404 e a chamada direta à planilha falhou (${msg}). Faça deploy: npx supabase functions deploy ${(sheetListFunctionName || 'sheet-checklist-proxy').trim()} e configure o secret SHEET_WEBHOOK_URL.`,
+        )
+      }
     }
-    if (!j.ok) throw new Error(j.error || 'Falha ao carregar lista do Apps Script.')
-    return j.items ?? []
+
+    return parseListItemsResponse(res)
   }
 
   async function fetchSheetHasDateColumn(ymd: string): Promise<boolean> {

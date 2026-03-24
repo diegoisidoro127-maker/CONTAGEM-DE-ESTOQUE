@@ -1,6 +1,14 @@
 // Proxy GET → Apps Script (list_items, check_date_column) para evitar CORS no navegador.
 // Secret: SHEET_WEBHOOK_URL (mesma URL /exec do webhook já usada em sheet-outbox-sync).
 
+function incomingRequestUrl(req: Request): URL {
+  const raw = req.url
+  if (raw.startsWith('http://') || raw.startsWith('https://')) return new URL(raw)
+  const host = req.headers.get('host') ?? 'localhost'
+  const proto = req.headers.get('x-forwarded-proto') ?? 'https'
+  return new URL(raw, `${proto}://${host}`)
+}
+
 const corsHeaders: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -27,7 +35,15 @@ Deno.serve(async (req) => {
     )
   }
 
-  const incoming = new URL(req.url)
+  let incoming: URL
+  try {
+    incoming = incomingRequestUrl(req)
+  } catch {
+    return new Response(JSON.stringify({ ok: false, error: 'URL da requisição inválida' }), {
+      status: 400,
+      headers: { ...corsHeaders, 'content-type': 'application/json' },
+    })
+  }
   const action = incoming.searchParams.get('action')
 
   if (action === 'list_items') {
