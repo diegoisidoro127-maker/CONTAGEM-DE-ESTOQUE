@@ -1029,6 +1029,19 @@ export default function ContagemEstoque() {
     offlineSession,
   ])
 
+  const hasAnyQtyInChecklist = useMemo(
+    () =>
+      offlineSession?.status === 'aberta' &&
+      offlineSession.items.some((i) => String(i.quantidade_contada ?? '').trim() !== ''),
+    [offlineSession],
+  )
+
+  const canPressSalvarLista = useMemo(
+    () =>
+      Boolean(conferenteId) && offlineSession?.status === 'aberta' && !saving && (canSubmit || hasAnyQtyInChecklist),
+    [conferenteId, offlineSession?.status, saving, canSubmit, hasAnyQtyInChecklist],
+  )
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setSaveError('')
@@ -1038,11 +1051,29 @@ export default function ContagemEstoque() {
       setSaveError('Selecione um conferente.')
       return
     }
-    const descricaoFinal = (descricaoInput.trim() || produto?.descricao || '').trim()
+    if (!offlineSession || offlineSession.status !== 'aberta') {
+      setSaveError('Carregue a lista de produtos (sessão diária) antes de "Salvar na lista".')
+      return
+    }
+
     const codeFromInput = codigoInterno.trim()
+    const descricaoDigitada = descricaoInput.trim()
+    const formIdentityEmpty = !codeFromInput && !descricaoDigitada
+    const countedItems = offlineSession.items.filter((i) => String(i.quantidade_contada ?? '').trim() !== '').length
+
+    if (formIdentityEmpty && countedItems > 0) {
+      saveOfflineSession(offlineSession)
+      setSaveSuccess(
+        `Lista salva na sessão local (${countedItems} produto(s) com quantidade). As alterações na coluna Qtd já eram gravadas ao digitar; use Finalizar contagem diária para enviar ao Supabase.`,
+      )
+      setSaveError('')
+      return
+    }
+
+    const descricaoFinal = (descricaoDigitada || produto?.descricao || '').trim()
     const codeFinal = (() => {
       if (codeFromInput) return codeFromInput
-      if (!descricaoFinal || offlineSession?.status !== 'aberta') return ''
+      if (!descricaoFinal || offlineSession.status !== 'aberta') return ''
       const descNorm = descricaoFinal.toLowerCase()
       const matches = offlineSession.items.filter((it) => it.descricao.trim().toLowerCase() === descNorm)
       return matches.length === 1 ? matches[0].codigo_interno.trim() : ''
@@ -1050,12 +1081,10 @@ export default function ContagemEstoque() {
     if (!codeFinal) {
       if (!descricaoFinal) {
         setSaveError(
-          offlineSession?.status === 'aberta'
-            ? 'Este botão usa o formulário abaixo: informe código ou descrição do produto. As quantidades digitadas na tabela da lista acima já ficam salvas na sessão — ao terminar tudo, use Finalizar contagem diária.'
-            : 'Informe o código do produto.',
+          countedItems > 0
+            ? 'Ou preencha código ou descrição abaixo para gravar lote/UP/observação num produto, ou deixe só as quantidades na lista e use Finalizar contagem diária.'
+            : 'Informe o código do produto, a descrição, ou preencha ao menos uma quantidade na lista acima.',
         )
-      } else if (offlineSession?.status !== 'aberta') {
-        setSaveError('Carregue a lista de produtos (sessão diária) antes de "Salvar na lista".')
       } else {
         setSaveError(
           'Não foi possível identificar o código pelo texto da descrição (há mais de um produto com texto parecido ou não há correspondência). Informe o código do produto.',
@@ -1076,11 +1105,6 @@ export default function ContagemEstoque() {
 
     if (dataFabricacao && dataVencimento && dataVencimento < dataFabricacao) {
       setSaveError('Data de vencimento não pode ser menor que a data de fabricação.')
-      return
-    }
-
-    if (!offlineSession || offlineSession.status !== 'aberta') {
-      setSaveError('Carregue a lista de produtos (sessão diária) antes de "Salvar na lista".')
       return
     }
 
@@ -3511,24 +3535,27 @@ export default function ContagemEstoque() {
             }}
           >
             <strong>Lista acima:</strong> cada quantidade na coluna <strong>Qtd</strong> já é gravada na sessão local ao
-            digitar — não precisa clicar aqui só por causa da quantidade. O botão abaixo serve para aplicar{' '}
-            <strong>neste formulário</strong> (código ou descrição) a quantidade, lote, UP, observação, etc. num produto
-            da lista. Para gravar tudo no Supabase, use <strong>Finalizar contagem diária</strong>.
+            digitar. Você também pode clicar em <strong>Salvar na lista</strong> com a lista preenchida (sem usar o
+            formulário) para confirmar tudo no armazenamento local. Com código ou descrição abaixo, o mesmo botão grava
+            também lote, UP e observação na linha escolhida. Para enviar ao Supabase, use{' '}
+            <strong>Finalizar contagem diária</strong>.
           </p>
         ) : null}
 
         <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginTop: 4, flexWrap: 'wrap' }}>
           <button
             type="submit"
-            disabled={saving || !canSubmit}
+            disabled={saving || !canPressSalvarLista}
             title={
-              !canSubmit && offlineSession?.status === 'aberta'
-                ? 'Preencha código ou descrição do produto neste bloco, ou use só a tabela e Finalizar.'
-                : undefined
+              saving || canPressSalvarLista
+                ? undefined
+                : offlineSession?.status === 'aberta'
+                  ? 'Preencha ao menos uma quantidade na lista acima ou código e descrição neste bloco.'
+                  : 'Carregue a lista de produtos primeiro.'
             }
             style={{
               ...buttonStyle,
-              ...(saving || !canSubmit ? { opacity: 0.5, cursor: 'not-allowed' } : {}),
+              ...(saving || !canPressSalvarLista ? { opacity: 0.5, cursor: 'not-allowed' } : {}),
             }}
           >
             {saving ? 'Gravando…' : 'Salvar na lista (offline)'}
