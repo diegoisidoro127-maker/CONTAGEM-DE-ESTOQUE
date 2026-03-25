@@ -431,6 +431,18 @@ export default function ContagemEstoque() {
   const [confirmFinalizeMissingOpen, setConfirmFinalizeMissingOpen] = useState(false)
   const [missingItemsForFinalize, setMissingItemsForFinalize] = useState<OfflineChecklistItem[]>([])
   const [mobileChecklistLimit, setMobileChecklistLimit] = useState(20)
+  /** Feedback visual: linha da checklist acabou de ser gravada no `localStorage`. */
+  const [checklistSavedFlashKey, setChecklistSavedFlashKey] = useState<string | null>(null)
+  const checklistSavedFlashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  function flashChecklistRowSaved(key: string) {
+    setChecklistSavedFlashKey(key)
+    if (checklistSavedFlashTimerRef.current) window.clearTimeout(checklistSavedFlashTimerRef.current)
+    checklistSavedFlashTimerRef.current = window.setTimeout(() => {
+      setChecklistSavedFlashKey(null)
+      checklistSavedFlashTimerRef.current = null
+    }, 1800)
+  }
 
   const dataHoraContagem = useMemo(() => {
     const elapsed = Date.now() - clockRealStartMs
@@ -501,6 +513,12 @@ export default function ContagemEstoque() {
     const onResize = () => setIsMobile(window.innerWidth <= 768)
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (checklistSavedFlashTimerRef.current) window.clearTimeout(checklistSavedFlashTimerRef.current)
+    }
   }, [])
 
   useEffect(() => {
@@ -836,12 +854,16 @@ export default function ContagemEstoque() {
 
       setOfflineSession((prev) => {
         if (!prev || prev.status !== 'aberta') return prev
-        return {
+        const next = {
           ...prev,
           items: prev.items.map((it) =>
             it.codigo_interno.trim() === codigo ? { ...it, foto_base64: photoPreviewBase64 } : it,
           ),
         }
+        saveOfflineSession(next)
+        const hit = next.items.find((it) => it.codigo_interno.trim() === codigo)
+        if (hit) flashChecklistRowSaved(hit.key)
+        return next
       })
 
       setPhotoCameraOpen(false)
@@ -869,12 +891,16 @@ export default function ContagemEstoque() {
     setPhotoUiError('')
     setOfflineSession((prev) => {
       if (!prev || prev.status !== 'aberta') return prev
-      return {
+      const next = {
         ...prev,
         items: prev.items.map((it) =>
           it.codigo_interno.trim() === codigo ? { ...it, foto_base64: '' } : it,
         ),
       }
+      saveOfflineSession(next)
+      const hit = next.items.find((it) => it.codigo_interno.trim() === codigo)
+      if (hit) flashChecklistRowSaved(hit.key)
+      return next
     })
     setPhotoPreviewBase64('')
   }
@@ -885,10 +911,13 @@ export default function ContagemEstoque() {
     if (!confirm('Remover a foto deste produto da lista?')) return
     setOfflineSession((prev) => {
       if (!prev || prev.status !== 'aberta') return prev
-      return {
+      const next = {
         ...prev,
         items: prev.items.map((row) => (row.key === it.key ? { ...row, foto_base64: '' } : row)),
       }
+      saveOfflineSession(next)
+      flashChecklistRowSaved(it.key)
+      return next
     })
   }
 
@@ -1099,7 +1128,11 @@ export default function ContagemEstoque() {
       setOfflineSession((prev) => {
         if (!prev || prev.status !== 'aberta') return prev
         const nextItems = prev.items.map((it, i) => (i === idx ? { ...it, ...itemPatch } : it))
-        return { ...prev, items: nextItems }
+        const next = { ...prev, items: nextItems }
+        saveOfflineSession(next)
+        const row = nextItems[idx]
+        if (row) flashChecklistRowSaved(row.key)
+        return next
       })
 
       setSaveSuccess(
@@ -1390,11 +1423,14 @@ export default function ContagemEstoque() {
   function updateOfflineItemQty(key: string, quantidade: string) {
     setOfflineSession((prev) => {
       if (!prev || prev.status !== 'aberta') return prev
-      return {
+      const next = {
         ...prev,
         items: prev.items.map((it) => (it.key === key ? { ...it, quantidade_contada: quantidade } : it)),
       }
+      saveOfflineSession(next)
+      return next
     })
+    flashChecklistRowSaved(key)
   }
 
   function handleLimparQuantidadeOffline(key: string) {
@@ -1419,11 +1455,14 @@ export default function ContagemEstoque() {
   ) {
     setOfflineSession((prev) => {
       if (!prev || prev.status !== 'aberta') return prev
-      return {
+      const next = {
         ...prev,
         items: prev.items.map((it) => (it.key === key ? { ...it, ...patch } : it)),
       }
+      saveOfflineSession(next)
+      return next
     })
+    flashChecklistRowSaved(key)
   }
 
   function handleToggleChecklistCollapse() {
@@ -2578,7 +2617,8 @@ export default function ContagemEstoque() {
             {!checklistListCollapsed ? (
               <>
                 <p style={{ margin: '10px 0 0', fontSize: 12, color: 'var(--text, #888)' }}>
-                  Informe a <strong>quantidade</strong> diretamente na coluna Qtd. Use <strong>Editar</strong> para ajustar
+                  Informe a <strong>quantidade</strong> diretamente na coluna Qtd — cada alteração é{' '}
+                  <strong>gravada na hora</strong> no navegador (sessão local). Use <strong>Editar</strong> para ajustar
                   código, descrição ou quantidade na mesma linha.
                 </p>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10, alignItems: 'center' }}>
@@ -2703,7 +2743,12 @@ export default function ContagemEstoque() {
                               <div style={{ fontSize: 12, whiteSpace: 'normal', color: 'var(--text, #111)', marginTop: 2 }}>{it.descricao}</div>
 
                               <label style={{ ...labelStyle, marginTop: 8, gap: 4 }}>
-                                Qtd
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                                  <span>Qtd</span>
+                                  {checklistSavedFlashKey === it.key ? (
+                                    <span style={{ fontSize: 11, color: '#0a0', fontWeight: 700 }}>Salvo na sessão</span>
+                                  ) : null}
+                                </div>
                                 <input
                                   type="text"
                                   inputMode="decimal"
@@ -2891,15 +2936,20 @@ export default function ContagemEstoque() {
                                   <td style={tdStyle}>{it.codigo_interno}</td>
                                   <td style={{ ...tdStyle, whiteSpace: 'normal', maxWidth: 420 }}>{it.descricao}</td>
                                   <td style={tdStyle}>
-                                    <input
-                                      type="text"
-                                      inputMode="decimal"
-                                      value={it.quantidade_contada}
-                                      onChange={(e) => updateOfflineItemQty(it.key, e.target.value)}
-                                      style={checklistQtdInputStyle}
-                                      placeholder="—"
-                                      aria-label={`Quantidade ${it.codigo_interno}`}
-                                    />
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                                      <input
+                                        type="text"
+                                        inputMode="decimal"
+                                        value={it.quantidade_contada}
+                                        onChange={(e) => updateOfflineItemQty(it.key, e.target.value)}
+                                        style={checklistQtdInputStyle}
+                                        placeholder="—"
+                                        aria-label={`Quantidade ${it.codigo_interno}`}
+                                      />
+                                      {checklistSavedFlashKey === it.key ? (
+                                        <span style={{ fontSize: 11, color: '#0a0', fontWeight: 700 }}>Salvo</span>
+                                      ) : null}
+                                    </div>
                                   </td>
                                   <td style={tdStyle}>{pend ? 'Pendente' : 'Contado'}</td>
                                   <td style={{ ...tdStyle, whiteSpace: 'normal' }}>
