@@ -80,6 +80,12 @@ function pickFirstCell(row: Record<string, any>, keys: string[]): string {
 /** Cadastro existente no Supabase (não criar tabela nova no app). */
 const TABELA_PRODUTOS = 'Todos os Produtos'
 
+/** Alguns códigos da tabela não devem entrar na checklist do app. */
+const CHECKLIST_EXCLUIR_CODIGOS = new Set<string>([
+  // Você pediu para retirar este produto.
+  '01.06.0027',
+])
+
 /**
  * Ordem do armazém dividida em 4 rotas/contagens.
  * A lista abaixo define SOMENTE a divisão (grupo) e a ordem relativa de exibição.
@@ -818,7 +824,10 @@ export default function ContagemEstoque() {
       codigo_interno: r.codigo,
       descricao: r.descricao,
     }))
-    if (out.length === 0) {
+
+    // Remove da checklist os códigos que você não quer contar.
+    const outFiltrado = out.filter((r) => !CHECKLIST_EXCLUIR_CODIGOS.has(r.codigo_interno))
+    if (outFiltrado.length === 0) {
       const n = (data ?? []).length
       throw new Error(
         n === 0
@@ -826,7 +835,7 @@ export default function ContagemEstoque() {
           : `Nenhum produto válido após ler "${TABELA_PRODUTOS}" (${n} linhas: falta codigo_interno ou colunas incompatíveis).`,
       )
     }
-    return out
+    return outFiltrado
   }
 
   async function handleCarregarListaPlanilha() {
@@ -847,10 +856,15 @@ export default function ContagemEstoque() {
       let itemsRaw = await fetchListaChecklistFromDb()
 
       if (checklistListMode === 'armazem') {
-        const missing = itemsRaw
-          .map((it) => it.codigo_interno)
-          .filter((codigo) => getArmazemContagem(codigo) === null)
+        const missing = itemsRaw.map((it) => it.codigo_interno).filter((codigo) => getArmazemContagem(codigo) === null)
         setArmazemMissingCodes(missing)
+        if (missing.length > 0) {
+          throw new Error(
+            `Modo armazém não está completo: faltam ${missing.length} código(s) para mapear nas 1-4 contagens. ` +
+              `Ex.: ${missing.slice(0, 10).join(', ')}. ` +
+              `Para continuar (sem "OUTROS"), ajuste o mapeamento no app (ARMAZEM_CONTAGEM_CODES).`,
+          )
+        }
 
         itemsRaw = itemsRaw.slice().sort((a, b) => {
           const ga = getArmazemContagem(a.codigo_interno) ?? 999
@@ -1395,18 +1409,24 @@ export default function ContagemEstoque() {
   }
   type ChecklistDisplayItem = ChecklistDisplayHeader | OfflineChecklistItem
 
-  const checklistDisplayItems: ChecklistDisplayItem[] =
+  const armazemModoIncompleto =
     offlineSession?.status === 'aberta' && offlineSession.listMode === 'armazem'
+      ? offlineSession.items.some((it) => getArmazemContagem(it.codigo_interno) === null)
+      : false
+
+  const checklistDisplayItems: ChecklistDisplayItem[] =
+    offlineSession?.status === 'aberta' && offlineSession.listMode === 'armazem' && !armazemModoIncompleto
       ? (() => {
           const out: ChecklistDisplayItem[] = []
           let lastContagem: number | null = null
           let hdrSeq = 0
           for (const it of filteredChecklistItems) {
             const contagem = getArmazemContagem(it.codigo_interno)
+            if (contagem === null) continue // deveria não acontecer (validação na carga)
             if (contagem !== lastContagem) {
               out.push({
                 kind: 'header',
-                key: `hdr-${contagem ?? 'outros'}-${hdrSeq++}`,
+                key: `hdr-${contagem}-${hdrSeq++}`,
                 contagem,
               })
               lastContagem = contagem
@@ -1415,7 +1435,9 @@ export default function ContagemEstoque() {
           }
           return out
         })()
-      : filteredChecklistItems
+      : armazemModoIncompleto
+        ? []
+        : filteredChecklistItems
 
   const carregarListaDisabled = checklistLoading || finalizing || !conferenteId
 
@@ -1633,10 +1655,10 @@ export default function ContagemEstoque() {
                 ) : (
                   <span style={{ color: '#0a0', marginLeft: 8 }}>Todos preenchidos — pode finalizar.</span>
                 )}
-                {offlineSession.listMode === 'armazem' && armazemMissingCodes.length > 0 ? (
-                  <div style={{ marginTop: 6, fontSize: 12, color: '#a60' }}>
-                    Aviso: {armazemMissingCodes.length} código(s) não mapeado(s) em 1-4 contagens e ficarão em <strong>OUTROS</strong>. Primeiro(s):{' '}
-                    <span style={{ fontFamily: 'monospace' }}>{armazemMissingCodes.slice(0, 8).join(', ')}</span>
+                {offlineSession.listMode === 'armazem' && armazemModoIncompleto ? (
+                  <div style={{ marginTop: 6, fontSize: 12, color: '#b00020' }}>
+                    Erro: modo armazém incompleto (faltam mapeamentos). Atualize o app para cobrir todos os códigos da tabela
+                    <span style={{ fontFamily: 'monospace' }}> Todos os Produtos</span>.
                   </div>
                 ) : null}
                 {checklistListCollapsed ? (
