@@ -9,7 +9,8 @@ type ProdutoDbRow = {
   id: string
   codigo_interno: string
   descricao: string
-  unidade_medida: string | null
+  /** Coluna `unidade` em "Todos os Produtos" (fallback: `unidade_medida` legado). */
+  unidade: string | null
   ean: string | null
   dun: string | null
 }
@@ -41,24 +42,30 @@ export default function BaseProdutos() {
     try {
       let data: Record<string, unknown>[] | null = null
       let qErr: { message?: string; code?: string } | null = null
-      const selFull = 'id,codigo_interno,descricao,unidade_medida,ean,dun'
+      const selFull = 'id,codigo_interno,descricao,unidade,ean,dun'
+      const selLegado = 'id,codigo_interno,descricao,unidade_medida,ean,dun'
       const selBasico = 'id,codigo_interno,descricao,ean,dun'
-      const res = await supabase.from(TABELA_PRODUTOS).select(selFull).order('codigo_interno', { ascending: true }).limit(20000)
+      let res = await supabase.from(TABELA_PRODUTOS).select(selFull).order('codigo_interno', { ascending: true }).limit(20000)
       data = res.data as Record<string, unknown>[] | null
       qErr = res.error
       if (qErr && (String(qErr.code) === '42703' || String(qErr.message ?? '').toLowerCase().includes('does not exist'))) {
-        const res2 = await supabase.from(TABELA_PRODUTOS).select(selBasico).order('codigo_interno', { ascending: true }).limit(20000)
-        data = res2.data as Record<string, unknown>[] | null
-        qErr = res2.error
+        res = await supabase.from(TABELA_PRODUTOS).select(selLegado).order('codigo_interno', { ascending: true }).limit(20000)
+        data = res.data as Record<string, unknown>[] | null
+        qErr = res.error
+      }
+      if (qErr && (String(qErr.code) === '42703' || String(qErr.message ?? '').toLowerCase().includes('does not exist'))) {
+        res = await supabase.from(TABELA_PRODUTOS).select(selBasico).order('codigo_interno', { ascending: true }).limit(20000)
+        data = res.data as Record<string, unknown>[] | null
+        qErr = res.error
       }
       if (qErr) throw qErr
       const mapped: ProdutoDbRow[] = (data ?? []).map((r: Record<string, unknown>) => {
-        const um = r.unidade_medida ?? r.unidade ?? r.UNIDADE
+        const um = r.unidade ?? r.unidade_medida ?? r.UNIDADE
         return {
           id: String(r.id ?? ''),
           codigo_interno: String(r.codigo_interno ?? r.codigo ?? ''),
           descricao: String(r.descricao ?? ''),
-          unidade_medida:
+          unidade:
             um != null && String(um).trim() !== '' ? String(um).trim() : null,
           ean: r.ean != null && String(r.ean).trim() !== '' ? String(r.ean) : null,
           dun: r.dun != null && String(r.dun).trim() !== '' ? String(r.dun) : null,
@@ -243,7 +250,7 @@ export default function BaseProdutos() {
                         <span style={{ fontFamily: 'monospace', fontSize: 13 }}>{r.codigo_interno}</span>
                       </td>
                       <td style={{ ...tdStyle, whiteSpace: 'normal', maxWidth: 320 }}>{r.descricao}</td>
-                      <td style={tdStyle}>{r.unidade_medida ?? '—'}</td>
+                      <td style={tdStyle}>{r.unidade ?? '—'}</td>
                       <td style={tdStyle}>
                         <input
                           value={r.ean ?? ''}
