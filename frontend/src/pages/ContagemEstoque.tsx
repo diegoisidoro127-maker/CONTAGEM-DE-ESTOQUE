@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 /** Fila serial: um POST por vez para o webhook do Sheets (evita colunas duplicadas no servidor). */
 let sheetWebhookQueue = Promise.resolve(true as boolean)
@@ -586,47 +586,44 @@ export default function ContagemEstoque() {
     return true
   }
 
-  const applyProductByBarcode = useCallback(
-    (barcode: string) => {
-      const code = barcode.trim()
-      if (!code) return false
+  function applyProductByBarcode(barcode: string) {
+    const code = barcode.trim()
+    if (!code) return false
 
-      const pDun = productByDun.get(code)
-      if (pDun) {
-        setBarcodeTipoLeitura('DUN')
-        setCodigoInterno(pDun.codigo)
-        applyProductByCode(pDun.codigo, { updateBarcodeLeitura: false })
-        setBarcodeLeitura(code)
-        setProdutoError('')
-        return true
-      }
+    const pDun = productByDun.get(code)
+    if (pDun) {
+      setBarcodeTipoLeitura('DUN')
+      setCodigoInterno(pDun.codigo)
+      applyProductByCode(pDun.codigo, { updateBarcodeLeitura: false })
+      setBarcodeLeitura(code)
+      setProdutoError('')
+      return true
+    }
 
-      const pEan = productByEan.get(code)
-      if (pEan) {
-        setBarcodeTipoLeitura('EAN')
-        setCodigoInterno(pEan.codigo)
-        applyProductByCode(pEan.codigo, { updateBarcodeLeitura: false })
-        setBarcodeLeitura(code)
-        setProdutoError('')
-        return true
-      }
+    const pEan = productByEan.get(code)
+    if (pEan) {
+      setBarcodeTipoLeitura('EAN')
+      setCodigoInterno(pEan.codigo)
+      applyProductByCode(pEan.codigo, { updateBarcodeLeitura: false })
+      setBarcodeLeitura(code)
+      setProdutoError('')
+      return true
+    }
 
-      // Fallback: se o bipador estiver enviando o próprio código interno.
-      const pCode = productByCode.get(code)
-      if (pCode) {
-        setBarcodeTipoLeitura(null)
-        setCodigoInterno(pCode.codigo)
-        applyProductByCode(pCode.codigo, { updateBarcodeLeitura: false })
-        setBarcodeLeitura(code)
-        setProdutoError('')
-        return true
-      }
+    // Fallback: se o bipador estiver enviando o próprio código interno.
+    const pCode = productByCode.get(code)
+    if (pCode) {
+      setBarcodeTipoLeitura(null)
+      setCodigoInterno(pCode.codigo)
+      applyProductByCode(pCode.codigo, { updateBarcodeLeitura: false })
+      setBarcodeLeitura(code)
+      setProdutoError('')
+      return true
+    }
 
-      setProdutoError('Código de barras não encontrado (DUN/EAN).')
-      return false
-    },
-    [productByDun, productByEan, productByCode],
-  )
+    setProdutoError('Código de barras não encontrado (DUN/EAN).')
+    return false
+  }
 
   useEffect(() => {
     if (!barcodeCameraOpen) return
@@ -686,7 +683,7 @@ export default function ContagemEstoque() {
       if (intervalId) window.clearInterval(intervalId)
       if (stream) stream.getTracks().forEach((t) => t.stop())
     }
-  }, [barcodeCameraOpen, applyProductByBarcode])
+  }, [barcodeCameraOpen, productByDun, productByEan, productByCode])
 
   function openPhotoModalForCodigo(codigo: string) {
     const code = codigo.trim()
