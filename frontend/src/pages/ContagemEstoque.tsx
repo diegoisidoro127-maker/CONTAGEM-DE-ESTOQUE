@@ -200,10 +200,27 @@ export default function ContagemEstoque() {
   const [checklistFilterCodigo, setChecklistFilterCodigo] = useState('')
   const [checklistFilterDescricao, setChecklistFilterDescricao] = useState('')
   const [checklistFilterPendentes, setChecklistFilterPendentes] = useState(false)
+  const [checklistListCollapsed, setChecklistListCollapsed] = useState(false)
+  const [checklistEditingKey, setChecklistEditingKey] = useState<string | null>(null)
+  const [checklistEditDraft, setChecklistEditDraft] = useState<{
+    codigo_interno: string
+    descricao: string
+    quantidade_contada: string
+  } | null>(null)
 
   useEffect(() => {
     const id = setInterval(() => setClockTick((v) => v + 1), 1000)
     return () => clearInterval(id)
+  }, [])
+
+  useEffect(() => {
+    try {
+      if (sessionStorage.getItem('contagem-checklist-collapsed') === '1') {
+        setChecklistListCollapsed(true)
+      }
+    } catch {
+      /* ignore */
+    }
   }, [])
 
   // Restaura sessão offline aberta (persistência no navegador).
@@ -720,6 +737,75 @@ export default function ContagemEstoque() {
     updateOfflineItemQty(key, '')
   }
 
+  function updateOfflineItemFields(
+    key: string,
+    patch: Partial<Pick<OfflineChecklistItem, 'codigo_interno' | 'descricao' | 'quantidade_contada'>>,
+  ) {
+    setOfflineSession((prev) => {
+      if (!prev || prev.status !== 'aberta') return prev
+      return {
+        ...prev,
+        items: prev.items.map((it) => (it.key === key ? { ...it, ...patch } : it)),
+      }
+    })
+  }
+
+  function handleToggleChecklistCollapse() {
+    setChecklistListCollapsed((prev) => {
+      const next = !prev
+      try {
+        sessionStorage.setItem('contagem-checklist-collapsed', next ? '1' : '0')
+      } catch {
+        /* ignore */
+      }
+      if (next) {
+        setChecklistEditingKey(null)
+        setChecklistEditDraft(null)
+      }
+      return next
+    })
+  }
+
+  function openChecklistEdit(it: OfflineChecklistItem) {
+    if (checklistEditingKey && checklistEditingKey !== it.key) {
+      if (!confirm('Há outra linha em edição. Descartar alterações nela e editar esta?')) return
+    }
+    setChecklistEditingKey(it.key)
+    setChecklistEditDraft({
+      codigo_interno: it.codigo_interno,
+      descricao: it.descricao,
+      quantidade_contada: it.quantidade_contada,
+    })
+  }
+
+  function cancelChecklistEdit() {
+    setChecklistEditingKey(null)
+    setChecklistEditDraft(null)
+  }
+
+  function saveChecklistEdit() {
+    if (!checklistEditingKey || !checklistEditDraft || !offlineSession || offlineSession.status !== 'aberta') {
+      return
+    }
+    const cod = checklistEditDraft.codigo_interno.trim()
+    const desc = checklistEditDraft.descricao.trim()
+    if (!cod) {
+      setChecklistError('Na edição da linha, informe o código.')
+      return
+    }
+    if (!desc) {
+      setChecklistError('Na edição da linha, informe a descrição.')
+      return
+    }
+    setChecklistError('')
+    updateOfflineItemFields(checklistEditingKey, {
+      codigo_interno: cod,
+      descricao: desc,
+      quantidade_contada: checklistEditDraft.quantidade_contada.trim(),
+    })
+    cancelChecklistEdit()
+  }
+
   async function handleFinalizarContagemDiaria() {
     setSaveError('')
     setSaveSuccess('')
@@ -808,12 +894,6 @@ export default function ContagemEstoque() {
       setFinalizing(false)
     }
   }
-
-  useEffect(() => {
-    // carrega uma primeira prévia
-    loadPreview()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
 
   const [editingPreviewId, setEditingPreviewId] = useState<string | null>(null)
   const [editingPreviewQuantidade, setEditingPreviewQuantidade] = useState<string>('')
@@ -1312,80 +1392,194 @@ export default function ContagemEstoque() {
 
         {offlineSession && offlineSession.status === 'aberta' ? (
           <>
-            <div style={{ marginTop: 12, fontSize: 14 }}>
-              Progresso: <strong>{checklistCounted}</strong> contados / <strong>{offlineSession.items.length}</strong> total
-              {checklistPending > 0 ? (
-                <span style={{ color: '#a60', marginLeft: 8 }}>({checklistPending} pendente(s))</span>
-              ) : (
-                <span style={{ color: '#0a0', marginLeft: 8 }}>Todos preenchidos — pode finalizar.</span>
-              )}
+            <div
+              style={{
+                marginTop: 12,
+                display: 'flex',
+                flexWrap: 'wrap',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 10,
+              }}
+            >
+              <div style={{ fontSize: 14 }}>
+                Progresso: <strong>{checklistCounted}</strong> contados / <strong>{offlineSession.items.length}</strong> total
+                {checklistPending > 0 ? (
+                  <span style={{ color: '#a60', marginLeft: 8 }}>({checklistPending} pendente(s))</span>
+                ) : (
+                  <span style={{ color: '#0a0', marginLeft: 8 }}>Todos preenchidos — pode finalizar.</span>
+                )}
+                {checklistListCollapsed ? (
+                  <span style={{ marginLeft: 8, fontSize: 12, color: 'var(--text, #888)' }}>
+                    Lista minimizada — use o botão ao lado para ver filtros e quantidades.
+                  </span>
+                ) : null}
+              </div>
+              <button
+                type="button"
+                style={{ ...buttonStyle, background: '#444', fontSize: 13 }}
+                onClick={() => handleToggleChecklistCollapse()}
+              >
+                {checklistListCollapsed ? 'Expandir lista' : 'Minimizar lista'}
+              </button>
             </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10, alignItems: 'center' }}>
-              <input
-                placeholder="Filtrar código"
-                value={checklistFilterCodigo}
-                onChange={(e) => setChecklistFilterCodigo(e.target.value)}
-                style={{ ...inputStyle, maxWidth: 220 }}
-              />
-              <input
-                placeholder="Filtrar descrição"
-                value={checklistFilterDescricao}
-                onChange={(e) => setChecklistFilterDescricao(e.target.value)}
-                style={{ ...inputStyle, flex: 1, minWidth: 180 }}
-              />
-              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
-                <input
-                  type="checkbox"
-                  checked={checklistFilterPendentes}
-                  onChange={(e) => setChecklistFilterPendentes(e.target.checked)}
-                />
-                Só pendentes
-              </label>
-            </div>
-            <div style={{ overflowX: 'auto', marginTop: 10 }}>
-              <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 720 }}>
-                <thead>
-                  <tr>
-                    <th style={thStyle}>Código</th>
-                    <th style={thStyle}>Descrição</th>
-                    <th style={thStyle}>Qtd</th>
-                    <th style={thStyle}>Status</th>
-                    <th style={thStyle}>Ações</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredChecklistItems.map((it) => {
-                    const pend = String(it.quantidade_contada ?? '').trim() === ''
-                    return (
-                      <tr key={it.key}>
-                        <td style={tdStyle}>{it.codigo_interno}</td>
-                        <td style={{ ...tdStyle, whiteSpace: 'normal', maxWidth: 420 }}>{it.descricao}</td>
-                        <td style={tdStyle}>
-                          <input
-                            type="text"
-                            inputMode="decimal"
-                            value={it.quantidade_contada}
-                            onChange={(e) => updateOfflineItemQty(it.key, e.target.value)}
-                            style={{ padding: '8px 10px', border: '1px solid #ccc', borderRadius: 8, width: 110 }}
-                            placeholder="—"
-                          />
-                        </td>
-                        <td style={tdStyle}>{pend ? 'Pendente' : 'Contado'}</td>
-                        <td style={tdStyle}>
-                          <button
-                            type="button"
-                            style={{ ...buttonStyle, background: '#666', fontSize: 12, padding: '6px 10px' }}
-                            onClick={() => handleLimparQuantidadeOffline(it.key)}
-                          >
-                            Limpar
-                          </button>
-                        </td>
+            {!checklistListCollapsed ? (
+              <>
+                <p style={{ margin: '10px 0 0', fontSize: 12, color: 'var(--text, #888)' }}>
+                  Informe a <strong>quantidade</strong> diretamente na coluna Qtd. Use <strong>Editar</strong> para ajustar
+                  código, descrição ou quantidade na mesma linha.
+                </p>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10, alignItems: 'center' }}>
+                  <input
+                    placeholder="Filtrar código"
+                    value={checklistFilterCodigo}
+                    onChange={(e) => setChecklistFilterCodigo(e.target.value)}
+                    style={{ ...inputStyle, maxWidth: 220 }}
+                  />
+                  <input
+                    placeholder="Filtrar descrição"
+                    value={checklistFilterDescricao}
+                    onChange={(e) => setChecklistFilterDescricao(e.target.value)}
+                    style={{ ...inputStyle, flex: 1, minWidth: 180 }}
+                  />
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+                    <input
+                      type="checkbox"
+                      checked={checklistFilterPendentes}
+                      onChange={(e) => setChecklistFilterPendentes(e.target.checked)}
+                    />
+                    Só pendentes
+                  </label>
+                </div>
+                <div style={{ overflowX: 'auto', marginTop: 10 }}>
+                  <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 720 }}>
+                    <thead>
+                      <tr>
+                        <th style={thStyle}>Código</th>
+                        <th style={thStyle}>Descrição</th>
+                        <th style={thStyle}>Qtd na lista</th>
+                        <th style={thStyle}>Status</th>
+                        <th style={thStyle}>Ações</th>
                       </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
+                    </thead>
+                    <tbody>
+                      {filteredChecklistItems.map((it) => {
+                        const pend = String(it.quantidade_contada ?? '').trim() === ''
+                        const isEditing = checklistEditingKey === it.key && checklistEditDraft
+                        return (
+                          <tr key={it.key}>
+                            {isEditing && checklistEditDraft ? (
+                              <>
+                                <td style={tdStyle}>
+                                  <input
+                                    value={checklistEditDraft.codigo_interno}
+                                    onChange={(e) =>
+                                      setChecklistEditDraft((d) =>
+                                        d ? { ...d, codigo_interno: e.target.value } : d,
+                                      )
+                                    }
+                                    style={{ ...checklistQtdInputStyle, width: '100%', minWidth: 100 }}
+                                    aria-label="Código"
+                                  />
+                                </td>
+                                <td style={{ ...tdStyle, whiteSpace: 'normal', maxWidth: 420 }}>
+                                  <textarea
+                                    value={checklistEditDraft.descricao}
+                                    onChange={(e) =>
+                                      setChecklistEditDraft((d) =>
+                                        d ? { ...d, descricao: e.target.value } : d,
+                                      )
+                                    }
+                                    rows={2}
+                                    style={{
+                                      ...checklistQtdInputStyle,
+                                      width: '100%',
+                                      minWidth: 160,
+                                      resize: 'vertical',
+                                      fontFamily: 'inherit',
+                                    }}
+                                    aria-label="Descrição"
+                                  />
+                                </td>
+                                <td style={tdStyle}>
+                                  <input
+                                    type="text"
+                                    inputMode="decimal"
+                                    value={checklistEditDraft.quantidade_contada}
+                                    onChange={(e) =>
+                                      setChecklistEditDraft((d) =>
+                                        d ? { ...d, quantidade_contada: e.target.value } : d,
+                                      )
+                                    }
+                                    style={checklistQtdInputStyle}
+                                    placeholder="—"
+                                    aria-label="Quantidade"
+                                  />
+                                </td>
+                                <td style={tdStyle}>Editando</td>
+                                <td style={{ ...tdStyle, whiteSpace: 'normal' }}>
+                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                                    <button
+                                      type="button"
+                                      style={{ ...buttonStyle, background: '#0b5', fontSize: 12, padding: '6px 10px' }}
+                                      onClick={() => saveChecklistEdit()}
+                                    >
+                                      Salvar
+                                    </button>
+                                    <button
+                                      type="button"
+                                      style={{ ...buttonStyle, background: '#666', fontSize: 12, padding: '6px 10px' }}
+                                      onClick={() => cancelChecklistEdit()}
+                                    >
+                                      Cancelar
+                                    </button>
+                                  </div>
+                                </td>
+                              </>
+                            ) : (
+                              <>
+                                <td style={tdStyle}>{it.codigo_interno}</td>
+                                <td style={{ ...tdStyle, whiteSpace: 'normal', maxWidth: 420 }}>{it.descricao}</td>
+                                <td style={tdStyle}>
+                                  <input
+                                    type="text"
+                                    inputMode="decimal"
+                                    value={it.quantidade_contada}
+                                    onChange={(e) => updateOfflineItemQty(it.key, e.target.value)}
+                                    style={checklistQtdInputStyle}
+                                    placeholder="—"
+                                    aria-label={`Quantidade ${it.codigo_interno}`}
+                                  />
+                                </td>
+                                <td style={tdStyle}>{pend ? 'Pendente' : 'Contado'}</td>
+                                <td style={{ ...tdStyle, whiteSpace: 'normal' }}>
+                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                                    <button
+                                      type="button"
+                                      style={{ ...buttonStyle, background: '#2a4d7a', fontSize: 12, padding: '6px 10px' }}
+                                      onClick={() => openChecklistEdit(it)}
+                                    >
+                                      Editar
+                                    </button>
+                                    <button
+                                      type="button"
+                                      style={{ ...buttonStyle, background: '#666', fontSize: 12, padding: '6px 10px' }}
+                                      onClick={() => handleLimparQuantidadeOffline(it.key)}
+                                    >
+                                      Limpar
+                                    </button>
+                                  </div>
+                                </td>
+                              </>
+                            )}
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            ) : null}
           </>
         ) : (
           <div style={{ marginTop: 10, fontSize: 13, color: 'var(--text, #666)' }}>
@@ -1742,9 +1936,13 @@ export default function ContagemEstoque() {
       </form>
 
       <div style={{ marginTop: 26 }}>
-        <h3>Prévia — registros já salvos no banco (hoje ou dia da última finalização)</h3>
-        <div style={{ color: '#555', fontSize: 13, marginTop: 6 }}>
-          A contagem do dia usa primeiro a lista offline; esta prévia reflete o que já foi gravado no Supabase.
+        <h3>Prévia — o que já está no banco (Supabase)</h3>
+        <div style={{ color: 'var(--text, #555)', fontSize: 13, marginTop: 6, maxWidth: 720 }}>
+          A lista da contagem diária fica <strong>só no navegador</strong> até você clicar em{' '}
+          <strong>Finalizar contagem diária</strong> — aí os registros são enviados para a tabela{' '}
+          <code style={{ fontSize: 12 }}>contagens_estoque</code>. Esta prévia mostra exatamente o que já foi gravado
+          no banco (por dia civil). Após finalizar, a prévia é atualizada automaticamente; use{' '}
+          <strong>Atualizar prévia</strong> para buscar de novo (por exemplo, outro dia ou depois de editar no banco).
         </div>
         <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginTop: 10 }}>
           <button
@@ -1756,7 +1954,15 @@ export default function ContagemEstoque() {
             {previewLoading ? 'Atualizando...' : 'Atualizar prévia'}
           </button>
         </div>
-        {previewRows.length ? renderPreviewTable() : <div style={{ marginTop: 10 }}>Sem dados ainda.</div>}
+        {previewRows.length ? (
+          renderPreviewTable()
+        ) : (
+          <div style={{ marginTop: 10, fontSize: 13, color: 'var(--text, #888)' }}>
+            Nenhum registro carregado para a data consultada (por padrão, <strong>hoje</strong>). Isso é normal se ainda
+            não finalizou a contagem do dia — finalize para gravar no Supabase, ou clique em{' '}
+            <strong>Atualizar prévia</strong> para listar o que já existe no banco.
+          </div>
+        )}
       </div>
     </div>
   )
@@ -1801,5 +2007,15 @@ const tdStyle: React.CSSProperties = {
   padding: 8,
   fontSize: 13,
   whiteSpace: 'nowrap',
+}
+
+const checklistQtdInputStyle: React.CSSProperties = {
+  padding: '8px 10px',
+  border: '1px solid var(--border, #ccc)',
+  borderRadius: 8,
+  width: 'min(100%, 140px)',
+  boxSizing: 'border-box',
+  background: 'var(--input-bg, #fff)',
+  color: 'var(--text, #111)',
 }
 
