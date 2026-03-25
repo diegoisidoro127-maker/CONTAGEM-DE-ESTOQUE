@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react'
 import type React from 'react'
+import * as XLSX from 'xlsx'
 import { supabase } from '../lib/supabaseClient'
 
 type ContagemRow = {
   id: string
-  data_contagem?: string
+  data_contagem?: string | null
   data_hora_contagem: string
   conferente_id: string
   conferentes?: { nome: string } | Array<{ nome: string }> | null
@@ -23,6 +24,7 @@ type ContagemRow = {
   data_validade: string | null
   ean: string | null
   dun: string | null
+  foto_base64?: string | null
 }
 
 function toISODateLocal(d: Date) {
@@ -51,6 +53,17 @@ function dateKeyFromIso(iso: string) {
   return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`
 }
 
+function conferenteNome(r: ContagemRow) {
+  if (!r.conferentes) return r.conferente_id
+  if (Array.isArray(r.conferentes)) return r.conferentes[0]?.nome ?? r.conferente_id
+  return r.conferentes.nome ?? r.conferente_id
+}
+
+function diaContagemLabel(r: ContagemRow) {
+  const ymd = (r.data_contagem != null ? String(r.data_contagem) : '').slice(0, 10) || dateKeyFromIso(r.data_hora_contagem)
+  return formatDateBR(ymd)
+}
+
 type RelatorioContagemProps = {
   mode?: 'periodo' | 'dia'
 }
@@ -70,7 +83,7 @@ export default function RelatorioContagem({ mode = 'periodo' }: RelatorioContage
   )
   const [endDate, setEndDate] = useState(() => toISODateLocal(new Date()))
   const [allTime, setAllTime] = useState(false)
-  const [useSingleDay, setUseSingleDay] = useState(() => isDiaMode)
+  const [useSingleDay, setUseSingleDay] = useState(false)
   const [singleDay, setSingleDay] = useState(() => toISODateLocal(new Date()))
   const [rows, setRows] = useState<ContagemRow[]>([])
 
@@ -89,6 +102,7 @@ export default function RelatorioContagem({ mode = 'periodo' }: RelatorioContage
     try {
       const selectCompleto = `
         id,
+        data_contagem,
         data_hora_contagem,
         conferente_id,
         conferentes(nome),
@@ -103,7 +117,8 @@ export default function RelatorioContagem({ mode = 'periodo' }: RelatorioContage
         data_fabricacao,
         data_validade,
         ean,
-        dun
+        dun,
+        foto_base64
       `
       const selectCompletoCompact = selectCompleto.replace(/\s+/g, '')
 
@@ -150,6 +165,7 @@ export default function RelatorioContagem({ mode = 'periodo' }: RelatorioContage
         try {
           const selectBasico = `
             id,
+            data_contagem,
             data_hora_contagem,
             conferente_id,
             conferentes(nome),
@@ -190,6 +206,7 @@ export default function RelatorioContagem({ mode = 'periodo' }: RelatorioContage
             ean: null,
             dun: null,
             up_adicional: null,
+            foto_base64: null,
           }))
 
           setRows(mapped as unknown as ContagemRow[])
@@ -250,86 +267,97 @@ export default function RelatorioContagem({ mode = 'periodo' }: RelatorioContage
     setRowActionLoading(false)
   }
 
+  function exportToExcel() {
+    if (!rows.length) return
+
+    const sheetRows = rows.map((r) => ({
+      Conferente: conferenteNome(r),
+      'Dia da contagem': diaContagemLabel(r),
+      'Data e hora do registro': formatDateTimeBR(r.data_hora_contagem),
+      'Código do produto': r.codigo_interno,
+      Descrição: r.descricao,
+      'Unidade de medida': r.unidade_medida ?? '',
+      'Quantidade contada': r.quantidade_up,
+      UP: r.up_adicional ?? '',
+      'Data de fabricação': r.data_fabricacao ? formatDateBR(String(r.data_fabricacao).slice(0, 10)) : '',
+      'Data de vencimento': r.data_validade ? formatDateBR(String(r.data_validade).slice(0, 10)) : '',
+      Lote: r.lote ?? '',
+      Observação: r.observacao ?? '',
+      EAN: r.ean ?? '',
+      DUN: r.dun ?? '',
+      Foto: r.foto_base64 ? 'Sim' : 'Não',
+    }))
+
+    const ws = XLSX.utils.json_to_sheet(sheetRows)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Contagens')
+    const safeFile = dateRangeText.replace(/[/\\?*[\]:]/g, '-').replace(/\s+/g, '_')
+    XLSX.writeFile(wb, `relatorio-contagem_${safeFile}.xlsx`)
+  }
+
   return (
     <div style={{ padding: 16, maxWidth: 1400, margin: '0 auto' }}>
-      <h2>{isDiaMode ? 'Todas as contagens (filtro por dia)' : 'Relatório completo por data de contagem'}</h2>
+      <h2>{isDiaMode ? 'Todas as contagens' : 'Relatório completo por data de contagem'}</h2>
 
       <div style={{ display: 'grid', gap: 12, marginTop: 12 }}>
         <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-          {!isDiaMode ? (
-            <>
-              <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13 }}>
-                Início
-                <input
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  disabled={allTime || useSingleDay}
-                  style={{ padding: '10px 10px', border: '1px solid #ccc', borderRadius: 8 }}
-                />
-              </label>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13 }}>
+            Início
+            <input
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              disabled={allTime || useSingleDay}
+              style={{ padding: '10px 10px', border: '1px solid #ccc', borderRadius: 8 }}
+            />
+          </label>
 
-              <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13 }}>
-                Fim
-                <input
-                  type="date"
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                  disabled={allTime || useSingleDay}
-                  style={{ padding: '10px 10px', border: '1px solid #ccc', borderRadius: 8 }}
-                />
-              </label>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13 }}>
+            Fim
+            <input
+              type="date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              disabled={allTime || useSingleDay}
+              style={{ padding: '10px 10px', border: '1px solid #ccc', borderRadius: 8 }}
+            />
+          </label>
 
-              <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13 }}>
-                <input
-                  type="checkbox"
-                  checked={allTime}
-                  disabled={useSingleDay}
-                  onChange={(e) => {
-                    const v = e.target.checked
-                    setAllTime(v)
-                    if (v) setUseSingleDay(false)
-                  }}
-                />
-                Carregar todas as datas
-              </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13 }}>
+            <input
+              type="checkbox"
+              checked={allTime}
+              disabled={useSingleDay}
+              onChange={(e) => {
+                const v = e.target.checked
+                setAllTime(v)
+                if (v) setUseSingleDay(false)
+              }}
+            />
+            Carregar todas as datas
+          </label>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13 }}>
-                  <input
-                    type="checkbox"
-                    checked={useSingleDay}
-                    onChange={(e) => {
-                      const v = e.target.checked
-                      setUseSingleDay(v)
-                      if (v) setAllTime(false)
-                    }}
-                  />
-                  Filtrar por dia
-                </div>
-                <input
-                  type="date"
-                  value={singleDay}
-                  onChange={(e) => setSingleDay(e.target.value)}
-                  disabled={!useSingleDay}
-                  style={{ padding: '10px 10px', border: '1px solid #ccc', borderRadius: 8 }}
-                />
-              </div>
-            </>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13 }}>
-                <input type="checkbox" checked={true} disabled={true} />
-                Dia
-              </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13 }}>
               <input
-                type="date"
-                value={singleDay}
-                onChange={(e) => setSingleDay(e.target.value)}
-                style={{ padding: '10px 10px', border: '1px solid #ccc', borderRadius: 8 }}
+                type="checkbox"
+                checked={useSingleDay}
+                onChange={(e) => {
+                  const v = e.target.checked
+                  setUseSingleDay(v)
+                  if (v) setAllTime(false)
+                }}
               />
+              Filtrar por dia
             </div>
-          )}
+            <input
+              type="date"
+              value={singleDay}
+              onChange={(e) => setSingleDay(e.target.value)}
+              disabled={!useSingleDay}
+              style={{ padding: '10px 10px', border: '1px solid #ccc', borderRadius: 8 }}
+            />
+          </div>
 
           <button
             type="button"
@@ -347,6 +375,25 @@ export default function RelatorioContagem({ mode = 'periodo' }: RelatorioContage
           >
             {loading ? 'Carregando...' : `Carregar (${dateRangeText})`}
           </button>
+
+          <button
+            type="button"
+            onClick={exportToExcel}
+            disabled={loading || rows.length === 0}
+            style={{
+              padding: '10px 14px',
+              borderRadius: 8,
+              border: '1px solid #1b5e20',
+              background: '#2e7d32',
+              color: 'white',
+              cursor: loading || rows.length === 0 ? 'not-allowed' : 'pointer',
+              height: 40,
+              opacity: loading || rows.length === 0 ? 0.5 : 1,
+            }}
+            title={rows.length === 0 ? 'Carregue o relatório antes de exportar' : 'Baixar planilha .xlsx'}
+          >
+            Exportar Excel
+          </button>
         </div>
 
         {error ? <div style={{ color: '#b00020' }}>{error}</div> : null}
@@ -354,38 +401,33 @@ export default function RelatorioContagem({ mode = 'periodo' }: RelatorioContage
 
         {rows.length ? (
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 1280 }}>
+            <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 1980 }}>
               <thead>
                 <tr>
+                  <th style={thStyle}>Conferente</th>
                   <th style={thStyle}>Dia da contagem</th>
                   <th style={thStyle}>Data e hora do registro</th>
-                  <th style={thStyle}>Conferente</th>
                   <th style={thStyle}>Código do produto</th>
                   <th style={thStyle}>Descrição</th>
                   <th style={thStyle}>Unidade de medida</th>
                   <th style={thStyle}>Quantidade contada</th>
                   <th style={thStyle}>UP</th>
-                  <th style={thStyle}>Lote</th>
-                  <th style={thStyle}>Observação</th>
                   <th style={thStyle}>Data de fabricação</th>
                   <th style={thStyle}>Data de vencimento</th>
+                  <th style={thStyle}>Lote</th>
+                  <th style={thStyle}>Observação</th>
                   <th style={thStyle}>EAN</th>
                   <th style={thStyle}>DUN</th>
+                  <th style={thStyle}>Foto</th>
                   <th style={thStyle}>Ações</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map((r) => (
                   <tr key={r.id}>
-                    <td style={tdStyle}>{formatDateBR(dateKeyFromIso(r.data_hora_contagem))}</td>
+                    <td style={tdStyle}>{conferenteNome(r)}</td>
+                    <td style={tdStyle}>{diaContagemLabel(r)}</td>
                     <td style={tdStyle}>{formatDateTimeBR(r.data_hora_contagem)}</td>
-                    <td style={tdStyle}>
-                      {(() => {
-                        if (!r.conferentes) return r.conferente_id
-                        if (Array.isArray(r.conferentes)) return r.conferentes[0]?.nome ?? r.conferente_id
-                        return r.conferentes.nome ?? r.conferente_id
-                      })()}
-                    </td>
                     <td style={tdStyle}>{r.codigo_interno}</td>
                     <td style={tdStyle}>{r.descricao}</td>
                     <td style={tdStyle}>{r.unidade_medida ?? ''}</td>
@@ -403,12 +445,27 @@ export default function RelatorioContagem({ mode = 'periodo' }: RelatorioContage
                       )}
                     </td>
                     <td style={tdStyle}>{r.up_adicional ?? ''}</td>
+                    <td style={tdStyle}>
+                      {r.data_fabricacao ? formatDateBR(String(r.data_fabricacao).slice(0, 10)) : ''}
+                    </td>
+                    <td style={tdStyle}>
+                      {r.data_validade ? formatDateBR(String(r.data_validade).slice(0, 10)) : ''}
+                    </td>
                     <td style={tdStyle}>{r.lote ?? ''}</td>
                     <td style={tdStyle}>{r.observacao ?? ''}</td>
-                    <td style={tdStyle}>{r.data_fabricacao ? formatDateBR(r.data_fabricacao) : ''}</td>
-                    <td style={tdStyle}>{r.data_validade ? formatDateBR(r.data_validade) : ''}</td>
                     <td style={tdStyle}>{r.ean ?? ''}</td>
                     <td style={tdStyle}>{r.dun ?? ''}</td>
+                    <td style={tdStyle}>
+                      {r.foto_base64 ? (
+                        <img
+                          src={`data:image/jpeg;base64,${r.foto_base64}`}
+                          alt=""
+                          style={{ maxWidth: 60, maxHeight: 45, objectFit: 'cover', borderRadius: 8 }}
+                        />
+                      ) : (
+                        <span style={{ color: '#888', fontSize: 12 }}>Sem foto</span>
+                      )}
+                    </td>
                     <td style={tdStyle}>
                       {editingId === r.id ? (
                         <div style={{ display: 'flex', gap: 6 }}>

@@ -16,6 +16,8 @@ import {
   stableItemKey,
 } from '../lib/offlineContagemSession'
 
+const PREVIEW_PAGE_SIZE = 15
+
 type Conferente = {
   id: string
   nome: string
@@ -1701,6 +1703,60 @@ export default function ContagemEstoque() {
   const [previewFilterData, setPreviewFilterData] = useState('')
   const [previewFilterLote, setPreviewFilterLote] = useState('')
   const [previewFilterObs, setPreviewFilterObs] = useState('')
+  const [previewPage, setPreviewPage] = useState(1)
+  const [previewShowAll, setPreviewShowAll] = useState(false)
+
+  const filteredPreviewRows = useMemo(() => {
+    return previewRows.filter((r) => {
+      const codigoOk =
+        !previewFilterCodigo.trim() || r.codigo_interno.toLowerCase().includes(previewFilterCodigo.trim().toLowerCase())
+      const descricaoOk =
+        !previewFilterDescricao.trim() ||
+        r.descricao.toLowerCase().includes(previewFilterDescricao.trim().toLowerCase())
+      const confOk =
+        !previewFilterConferente.trim() ||
+        r.conferente_nome.toLowerCase().includes(previewFilterConferente.trim().toLowerCase()) ||
+        r.conferente_id.toLowerCase().includes(previewFilterConferente.trim().toLowerCase())
+      const dataOk =
+        !previewFilterData ||
+        r.data_contagem === previewFilterData ||
+        dataContagemYmdFromIso(String(r.data_hora_contagem)) === previewFilterData
+      const loteOk =
+        !previewFilterLote.trim() || String(r.lote ?? '').toLowerCase().includes(previewFilterLote.trim().toLowerCase())
+      const obsOk =
+        !previewFilterObs.trim() || String(r.observacao ?? '').toLowerCase().includes(previewFilterObs.trim().toLowerCase())
+      return codigoOk && descricaoOk && confOk && dataOk && loteOk && obsOk
+    })
+  }, [
+    previewRows,
+    previewFilterCodigo,
+    previewFilterDescricao,
+    previewFilterConferente,
+    previewFilterData,
+    previewFilterLote,
+    previewFilterObs,
+  ])
+
+  const previewTotalPages = Math.max(1, Math.ceil(filteredPreviewRows.length / PREVIEW_PAGE_SIZE))
+  const previewPageSafe = Math.min(previewPage, previewTotalPages)
+  const displayPreviewRows = useMemo(() => {
+    if (previewShowAll) return filteredPreviewRows
+    const start = (previewPageSafe - 1) * PREVIEW_PAGE_SIZE
+    return filteredPreviewRows.slice(start, start + PREVIEW_PAGE_SIZE)
+  }, [filteredPreviewRows, previewPageSafe, previewShowAll])
+
+  useEffect(() => {
+    setPreviewPage(1)
+    setPreviewShowAll(false)
+  }, [
+    previewRows,
+    previewFilterCodigo,
+    previewFilterDescricao,
+    previewFilterConferente,
+    previewFilterData,
+    previewFilterLote,
+    previewFilterObs,
+  ])
 
   async function handlePreviewDelete(id: string) {
     if (!confirm('Deseja realmente excluir esta contagem?')) return
@@ -1849,26 +1905,77 @@ export default function ContagemEstoque() {
   }
 
   function renderPreviewTable() {
-    const filteredRows = previewRows.filter((r) => {
-      const codigoOk =
-        !previewFilterCodigo.trim() || r.codigo_interno.toLowerCase().includes(previewFilterCodigo.trim().toLowerCase())
-      const descricaoOk =
-        !previewFilterDescricao.trim() ||
-        r.descricao.toLowerCase().includes(previewFilterDescricao.trim().toLowerCase())
-      const confOk =
-        !previewFilterConferente.trim() ||
-        r.conferente_nome.toLowerCase().includes(previewFilterConferente.trim().toLowerCase()) ||
-        r.conferente_id.toLowerCase().includes(previewFilterConferente.trim().toLowerCase())
-      const dataOk =
-        !previewFilterData ||
-        r.data_contagem === previewFilterData ||
-        dataContagemYmdFromIso(String(r.data_hora_contagem)) === previewFilterData
-      const loteOk =
-        !previewFilterLote.trim() || String(r.lote ?? '').toLowerCase().includes(previewFilterLote.trim().toLowerCase())
-      const obsOk =
-        !previewFilterObs.trim() || String(r.observacao ?? '').toLowerCase().includes(previewFilterObs.trim().toLowerCase())
-      return codigoOk && descricaoOk && confOk && dataOk && loteOk && obsOk
+    const totalFiltered = filteredPreviewRows.length
+    const rangeFrom =
+      totalFiltered === 0 ? 0 : previewShowAll ? 1 : (previewPageSafe - 1) * PREVIEW_PAGE_SIZE + 1
+    const rangeTo =
+      totalFiltered === 0 ? 0 : previewShowAll ? totalFiltered : Math.min(previewPageSafe * PREVIEW_PAGE_SIZE, totalFiltered)
+
+    const previewNavStyleBtn = (disabled: boolean) => ({
+      padding: '6px 12px',
+      borderRadius: 6,
+      border: '1px solid var(--border, #ccc)',
+      background: disabled ? 'rgba(255,255,255,0.08)' : 'var(--surface, #222)',
+      color: 'var(--text, #eee)',
+      cursor: disabled ? 'not-allowed' : 'pointer',
+      fontSize: 13,
+      opacity: disabled ? 0.5 : 1,
     })
+
+    const previewPagination = (
+      <div
+        style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          alignItems: 'center',
+          gap: 10,
+          marginTop: 12,
+          marginBottom: 8,
+        }}
+      >
+        <span style={{ fontSize: 13, color: 'var(--text, #888)' }}>
+          {totalFiltered === 0
+            ? 'Nenhum registro com os filtros atuais.'
+            : previewShowAll
+              ? `Exibindo todos os ${totalFiltered} registros`
+              : `${rangeFrom}–${rangeTo} de ${totalFiltered} · Página ${previewPageSafe} de ${previewTotalPages} · ${PREVIEW_PAGE_SIZE} por página`}
+        </span>
+        <button
+          type="button"
+          disabled={previewShowAll || previewPageSafe <= 1 || totalFiltered === 0}
+          onClick={() => setPreviewPage((p) => Math.max(1, p - 1))}
+          style={previewNavStyleBtn(previewShowAll || previewPageSafe <= 1 || totalFiltered === 0)}
+        >
+          Anterior
+        </button>
+        <button
+          type="button"
+          disabled={previewShowAll || previewPageSafe >= previewTotalPages || totalFiltered === 0}
+          onClick={() => setPreviewPage((p) => Math.min(previewTotalPages, p + 1))}
+          style={previewNavStyleBtn(previewShowAll || previewPageSafe >= previewTotalPages || totalFiltered === 0)}
+        >
+          Próxima
+        </button>
+        {totalFiltered > PREVIEW_PAGE_SIZE ? (
+          previewShowAll ? (
+            <button
+              type="button"
+              onClick={() => {
+                setPreviewShowAll(false)
+                setPreviewPage(1)
+              }}
+              style={previewNavStyleBtn(false)}
+            >
+              Paginar ({PREVIEW_PAGE_SIZE} por página)
+            </button>
+          ) : (
+            <button type="button" onClick={() => setPreviewShowAll(true)} style={previewNavStyleBtn(false)}>
+              Mostrar tudo
+            </button>
+          )
+        ) : null}
+      </div>
+    )
 
     if (isMobile) {
       return (
@@ -1914,14 +2021,10 @@ export default function ContagemEstoque() {
             />
           </div>
 
-          {filteredRows.length === 0 ? (
-            <div style={{ marginTop: 12, fontSize: 13, color: 'var(--text, #888)' }}>
-              Nenhum registro encontrado com os filtros atuais.
-            </div>
-          ) : null}
+          {previewPagination}
 
           <div style={{ display: 'grid', gap: 12, marginTop: 14 }}>
-            {filteredRows.map((r) => {
+            {displayPreviewRows.map((r) => {
               return (
                 <div
                   key={r.id}
@@ -2078,6 +2181,7 @@ export default function ContagemEstoque() {
     return (
       <div style={{ overflowX: 'auto', marginTop: 16 }}>
         {previewRowError ? <div style={{ color: '#b00020', marginBottom: 8 }}>{previewRowError}</div> : null}
+        {previewPagination}
         <table
           style={{
             borderCollapse: 'collapse',
@@ -2166,7 +2270,7 @@ export default function ContagemEstoque() {
             </tr>
           </thead>
           <tbody>
-            {filteredRows.map((r) => {
+            {displayPreviewRows.map((r) => {
               return (
                 <tr key={r.id}>
                   <td style={tdStyle}>{r.conferente_nome}</td>
@@ -2276,6 +2380,7 @@ export default function ContagemEstoque() {
             })}
           </tbody>
         </table>
+        {totalFiltered > 0 ? previewPagination : null}
       </div>
     )
   }
