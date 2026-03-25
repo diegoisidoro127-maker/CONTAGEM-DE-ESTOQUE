@@ -1,3 +1,4 @@
+-- OBSOLETO: o app usa public."Todos os Produtos". Use sync_todos_os_produtos_lista.sql em vez deste arquivo.
 -- Sincroniza public.produtos com a lista oficial (código + descrição).
 -- Mantém ean, dun e unidade_medida dos registros existentes quando o codigo_interno coincide.
 -- Remove do cadastro qualquer produto que NÃO esteja nesta lista.

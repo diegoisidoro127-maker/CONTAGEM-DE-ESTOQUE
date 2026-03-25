@@ -61,6 +61,42 @@ function pickFirstString(row: Record<string, any>, keys: string[]) {
   return ''
 }
 
+/** Código/descrição podem vir como string ou número do PostgREST. */
+function pickFirstCell(row: Record<string, any>, keys: string[]): string {
+  for (const key of keys) {
+    const v = row[key]
+    if (v === null || v === undefined) continue
+    if (typeof v === 'number' && !Number.isNaN(v)) return String(v)
+    if (typeof v === 'boolean') continue
+    if (typeof v === 'string') {
+      const t = v.trim()
+      if (t !== '') return t
+    }
+  }
+  return ''
+}
+
+/** Cadastro existente no Supabase (não criar tabela nova no app). */
+const TABELA_PRODUTOS = 'Todos os Produtos'
+
+function mapRowToProductOption(row: Record<string, any>): ProductOption | null {
+  const codigo = pickFirstCell(row, ['codigo_interno', 'codigo', 'CÓDIGO', 'cod_produto'])
+  if (!codigo) return null
+  const descricao =
+    pickFirstCell(row, ['descricao', 'DESCRIÇÃO', 'descrição', 'desc_produto']) || 'Produto sem descrição'
+  return {
+    id: String(row.id ?? row.row_index ?? row.dataset_id ?? codigo),
+    codigo,
+    descricao,
+    unidade_medida:
+      pickFirstString(row, ['unidade_medida', 'unidade', 'UNIDADE', 'und']) || null,
+    data_fabricacao: row.data_fabricacao ?? null,
+    data_validade: row.data_validade ?? null,
+    ean: (row.ean ?? row.EAN) as string | null,
+    dun: (row.dun ?? row.DUN) as string | null,
+  }
+}
+
 function toDateInputValue(v?: string | null) {
   if (!v) return ''
   const str = String(v)
@@ -225,33 +261,18 @@ export default function ContagemEstoque() {
   useEffect(() => {
     ;(async () => {
       setProductOptionsLoading(true)
-      const tabela = 'produtos'
       let loaded: ProductOption[] = []
       let lastLoadError: string | null = null
 
-      const { data, error } = await supabase.from(tabela).select('*').order('codigo_interno').limit(10000)
+      const { data, error } = await supabase.from(TABELA_PRODUTOS).select('*').limit(15000)
 
       if (error) {
         lastLoadError = error.message ?? 'erro ao carregar produtos'
       } else if (data?.length) {
         loaded = (data as Array<Record<string, any>>)
-          .map((row) => {
-            const codigo = pickFirstString(row, ['codigo_interno', 'codigo', 'CÓDIGO', 'cod_produto'])
-            const descricao = pickFirstString(row, ['descricao', 'DESCRIÇÃO', 'descrição', 'desc_produto'])
-            if (!codigo) return null
-            return {
-              id: String(row.id ?? codigo),
-              codigo,
-              descricao: descricao || 'Produto sem descrição',
-              unidade_medida:
-                pickFirstString(row, ['unidade_medida', 'unidade', 'UNIDADE', 'und']) || null,
-              data_fabricacao: row.data_fabricacao ?? null,
-              data_validade: row.data_validade ?? null,
-              ean: row.ean ?? null,
-              dun: row.dun ?? null,
-            } as ProductOption
-          })
+          .map((row) => mapRowToProductOption(row))
           .filter(Boolean) as ProductOption[]
+        loaded.sort((a, b) => a.codigo.localeCompare(b.codigo, 'pt-BR'))
       }
 
       // remove duplicados por código
@@ -346,14 +367,13 @@ export default function ContagemEstoque() {
         return
       }
 
-      const tabela = 'produtos'
-      const colunasBusca = ['codigo_interno', 'codigo', 'ean', 'dun']
+      const colunasBusca = ['codigo_interno', 'codigo', 'CÓDIGO', 'ean', 'dun']
 
       let found: Produto | null = null
       let lastMeaningfulError: any = null
 
       for (const coluna of colunasBusca) {
-        const resp = await supabase.from(tabela).select('*').eq(coluna, codigo).limit(1).maybeSingle()
+        const resp = await supabase.from(TABELA_PRODUTOS).select('*').eq(coluna, codigo).limit(1).maybeSingle()
 
         if (resp.error) {
           const code = String(resp.error.code ?? '')
@@ -378,8 +398,8 @@ export default function ContagemEstoque() {
             unidade_medida: unidade,
             data_fabricacao: row.data_fabricacao ?? null,
             data_validade: row.data_validade ?? null,
-            ean: row.ean ?? null,
-            dun: row.dun ?? null,
+            ean: (row.ean ?? row.EAN) as string | null,
+            dun: (row.dun ?? row.DUN) as string | null,
           }
           break
         }
@@ -461,7 +481,7 @@ export default function ContagemEstoque() {
       )
       if (idx < 0) {
         setSaveError(
-          'Produto não está na lista do dia. Use código e descrição iguais aos cadastrados em produtos.',
+          'Produto não está na lista do dia. Use código e descrição iguais aos cadastrados em Todos os Produtos.',
         )
         setSaving(false)
         return
@@ -610,23 +630,24 @@ export default function ContagemEstoque() {
   }
 
   async function fetchListaChecklistFromDb(): Promise<Array<{ codigo_interno: string; descricao: string }>> {
-    const { data, error } = await supabase
-      .from('produtos')
-      .select('codigo_interno,descricao')
-      .order('codigo_interno', { ascending: true })
+    const { data, error } = await supabase.from(TABELA_PRODUTOS).select('*').limit(15000)
     if (error) {
-      throw new Error(`Erro ao carregar produtos: ${error.message}`)
+      throw new Error(`Erro ao carregar "${TABELA_PRODUTOS}": ${error.message}`)
     }
-    const rows = (data ?? []) as Array<{ codigo_interno?: string; descricao?: string }>
-    const out = rows
-      .map((r) => ({
-        codigo_interno: String(r.codigo_interno ?? '').trim(),
-        descricao: String(r.descricao ?? '').trim() || 'Produto sem descrição',
-      }))
-      .filter((r) => r.codigo_interno.length > 0)
+    const opts = (data ?? [])
+      .map((row) => mapRowToProductOption(row as Record<string, any>))
+      .filter(Boolean) as ProductOption[]
+    opts.sort((a, b) => a.codigo.localeCompare(b.codigo, 'pt-BR'))
+    const out = opts.map((r) => ({
+      codigo_interno: r.codigo,
+      descricao: r.descricao,
+    }))
     if (out.length === 0) {
+      const n = (data ?? []).length
       throw new Error(
-        'Nenhum produto em public.produtos. Rode o script supabase/sql/sync_produtos_lista_oficial.sql no SQL Editor do Supabase.',
+        n === 0
+          ? `Nenhuma linha retornada de "${TABELA_PRODUTOS}". Confira RLS (SELECT para anon/authenticated), se a tabela tem dados e o nome exato no Supabase.`
+          : `Nenhum produto válido após ler "${TABELA_PRODUTOS}" (${n} linhas: falta codigo_interno ou colunas incompatíveis).`,
       )
     }
     return out
@@ -1121,7 +1142,7 @@ export default function ContagemEstoque() {
       >
         <h3 style={{ margin: '0 0 10px', fontSize: 18 }}>Contagem diária (offline → banco)</h3>
         <p style={{ margin: '0 0 12px', fontSize: 13, color: 'var(--text, #555)' }}>
-          Carregue a lista a partir da tabela <strong>public.produtos</strong> no Supabase, preencha as quantidades no app
+          Carregue a lista a partir da tabela <strong>public.&quot;Todos os Produtos&quot;</strong> (codigo_interno + descricao), preencha as quantidades no app
           (salvo no navegador) e clique em <strong>Finalizar contagem diária</strong> para gravar em{' '}
           <strong>contagens_estoque</strong>.
         </p>
