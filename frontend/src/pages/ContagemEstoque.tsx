@@ -431,6 +431,13 @@ export default function ContagemEstoque() {
     saveOfflineSession(offlineSession)
   }, [offlineSession])
 
+  // O "dia civil" deve acompanhar o "data e hora do registro" quando não há sessão aberta.
+  useEffect(() => {
+    if (offlineSession?.status === 'aberta') return
+    const next = dataContagemYmdFromIso(toISOStringFromDatetimeLocal(dataHoraContagem))
+    if (next && next !== contagemDiaYmd) setContagemDiaYmd(next)
+  }, [dataHoraContagem, offlineSession?.status, contagemDiaYmd])
+
   // Mantém conferente_id da sessão alinhado ao seletor.
   useEffect(() => {
     if (!offlineSession || offlineSession.status !== 'aberta') return
@@ -1862,11 +1869,17 @@ export default function ContagemEstoque() {
           }}
         >
           <label style={{ ...labelStyle, gridColumn: isMobile ? 'auto' : 'span 3' }}>
-            Data da contagem (dia civil)
+            Data e hora do registro
             <input
-              type="date"
-              value={contagemDiaYmd}
-              onChange={(e) => setContagemDiaYmd(e.target.value)}
+              type="datetime-local"
+              value={dataHoraContagem}
+              onChange={(e) => {
+                const dt = new Date(e.target.value)
+                if (!Number.isNaN(dt.getTime())) {
+                  setClockBaseMs(dt.getTime())
+                  setClockRealStartMs(Date.now())
+                }
+              }}
               disabled={!!offlineSession && offlineSession.status === 'aberta'}
               style={inputStyle}
             />
@@ -2404,24 +2417,6 @@ export default function ContagemEstoque() {
         <p style={{ margin: 0, fontSize: 13, color: 'var(--text, #666)' }}>
           Conferente da contagem: use o seletor na seção <strong>Contagem diária</strong> acima.
         </p>
-        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(12, 1fr)', gap: 12 }}>
-          <label style={{ ...labelStyle, gridColumn: isMobile ? 'auto' : 'span 12' }}>
-            Data e hora do registro
-            <input
-              type="datetime-local"
-              value={dataHoraContagem}
-              onChange={(e) => {
-                const dt = new Date(e.target.value)
-                if (!Number.isNaN(dt.getTime())) {
-                  setClockBaseMs(dt.getTime())
-                  setClockRealStartMs(Date.now())
-                }
-              }}
-              style={inputStyle}
-            />
-          </label>
-        </div>
-
         <label style={labelStyle}>
           Leitura de código de barras (DUN/EAN)
           <div style={{ display: 'flex', gap: 8, alignItems: 'stretch' }}>
