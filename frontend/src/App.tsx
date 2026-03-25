@@ -117,18 +117,6 @@ export default function App() {
         </div>
       ) : (
         <>
-          <div style={{ padding: '14px 16px', textAlign: 'center' }}>
-            <img
-              src={logoUltrapao}
-              alt="Ultra Pão"
-              style={{ width: 72, height: 'auto', borderRadius: 8, marginBottom: 6 }}
-            />
-            <h1 style={{ margin: '6px 0 4px', fontSize: 22 }}>Painel de Contagem de Estoque</h1>
-            <div style={{ color: 'var(--text)', fontSize: 13 }}>
-              Contagem diária: abas abaixo para cadastro e relatórios.
-            </div>
-          </div>
-
           <header
             style={{
               display: 'flex',
