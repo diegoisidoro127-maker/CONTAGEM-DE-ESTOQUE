@@ -359,6 +359,7 @@ export default function ContagemEstoque() {
   const [checklistLoading, setChecklistLoading] = useState(false)
   const [checklistError, setChecklistError] = useState('')
   const [finalizing, setFinalizing] = useState(false)
+  const [finalizeProgress, setFinalizeProgress] = useState('')
   const [checklistFilterCodigo, setChecklistFilterCodigo] = useState('')
   const [checklistFilterDescricao, setChecklistFilterDescricao] = useState('')
   const [checklistFilterPendentes, setChecklistFilterPendentes] = useState(false)
@@ -371,6 +372,8 @@ export default function ContagemEstoque() {
     quantidade_contada: string
   } | null>(null)
   const [armazemMissingCodes, setArmazemMissingCodes] = useState<string[]>([])
+  const [confirmFinalizeMissingOpen, setConfirmFinalizeMissingOpen] = useState(false)
+  const [missingItemsForFinalize, setMissingItemsForFinalize] = useState<OfflineChecklistItem[]>([])
 
   useEffect(() => {
     const id = setInterval(() => setClockTick((v) => v + 1), 1000)
@@ -705,14 +708,11 @@ export default function ContagemEstoque() {
       dayOverride && /^\d{4}-\d{2}-\d{2}$/.test(dayOverride)
         ? dayOverride
         : `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
-    const startIso = `${dayKey}T00:00:00`
-    const endIso = `${dayKey}T23:59:59`
 
     const { data, error } = await supabase
       .from('contagens_estoque')
       .select('id,data_hora_contagem,codigo_interno,descricao,quantidade_up,lote,observacao')
-      .gte('data_hora_contagem', startIso)
-      .lte('data_hora_contagem', endIso)
+      .eq('data_contagem', dayKey)
       .order('data_hora_contagem', { ascending: false })
       .limit(2000)
 
@@ -733,7 +733,8 @@ export default function ContagemEstoque() {
       // Prévia agrupada: uma linha por dia + código + descrição, somando a quantidade.
       const grouped = new Map<string, ContagemPreviewRow>()
       for (const row of rawRows) {
-        const day = dataContagemYmdFromIso(String(row.data_hora_contagem))
+        // Como filtramos por data_contagem (dia civil), a chave do dia deve usar dayKey diretamente.
+        const day = dayKey
         const key = `${day}|${row.codigo_interno.trim().toLowerCase()}|${row.descricao.trim().toLowerCase()}`
         const existing = grouped.get(key)
         if (!existing) {
@@ -1006,6 +1007,8 @@ export default function ContagemEstoque() {
     setSaveError('')
     setSaveSuccess('')
     setChecklistError('')
+    setFinalizeProgress('')
+    setConfirmFinalizeMissingOpen(false)
     if (!offlineSession || offlineSession.status !== 'aberta') {
       setChecklistError('Não há sessão aberta. Carregue a lista de produtos primeiro.')
       return
@@ -1018,43 +1021,52 @@ export default function ContagemEstoque() {
     let itemsSnapshot = offlineSession.items.map((i) => ({ ...i }))
     let pend = countPendingItems(itemsSnapshot)
     if (pend > 0) {
-      const ok = window.confirm(
-        `Existem ${pend} item(ns) sem quantidade digitada. Deseja finalizar enviando 0 para esses itens?`,
-      )
-      if (!ok) {
-        setChecklistError(`Finalize após preencher todas as quantidades ou confirme o envio com 0. (${pend} pendente(s))`)
-        return
-      }
-      itemsSnapshot = itemsSnapshot.map((i) =>
-        String(i.quantidade_contada ?? '').trim() === '' ? { ...i, quantidade_contada: '0' } : i,
-      )
+      const missing = itemsSnapshot.filter((i) => String(i.quantidade_contada ?? '').trim() === '')
+      setMissingItemsForFinalize(missing)
+      setConfirmFinalizeMissingOpen(true)
+      return
     }
 
-    const ymd = offlineSession.data_contagem_ymd
+    await finalizeInternal({ sendZerosForMissing: false })
+  }
 
-    const dataHoraIso = toISOStringFromDatetimeLocal(dataHoraContagem)
-    const rows: Record<string, unknown>[] = []
-    for (const it of itemsSnapshot) {
-      const q = Number(String(it.quantidade_contada).replace(',', '.'))
-      if (!Number.isFinite(q) || q < 0) {
-        setChecklistError(`Quantidade inválida para ${it.codigo_interno}.`)
-        return
-      }
-      rows.push({
-        data_hora_contagem: dataHoraIso,
-        conferente_id: offlineSession.conferente_id,
-        produto_id: null,
-        codigo_interno: it.codigo_interno.trim(),
-        descricao: it.descricao.trim(),
-        unidade_medida: null,
-        quantidade_up: q,
-        lote: null,
-        observacao: null,
-      })
-    }
+  async function finalizeInternal({ sendZerosForMissing }: { sendZerosForMissing: boolean }) {
+    if (!offlineSession || offlineSession.status !== 'aberta') return
+    if (!conferenteId || offlineSession.conferente_id !== conferenteId) return
 
     setFinalizing(true)
     try {
+      const ymd = offlineSession.data_contagem_ymd
+      let itemsSnapshot = offlineSession.items.map((i) => ({ ...i }))
+
+      if (sendZerosForMissing) {
+        itemsSnapshot = itemsSnapshot.map((i) =>
+          String(i.quantidade_contada ?? '').trim() === '' ? { ...i, quantidade_contada: '0' } : i,
+        )
+      }
+
+      const dataHoraIso = toISOStringFromDatetimeLocal(dataHoraContagem)
+      const rows: Record<string, unknown>[] = []
+      for (const it of itemsSnapshot) {
+        const q = Number(String(it.quantidade_contada).replace(',', '.'))
+        if (!Number.isFinite(q) || q < 0) {
+          setChecklistError(`Quantidade inválida para ${it.codigo_interno}.`)
+          return
+        }
+        rows.push({
+          data_hora_contagem: dataHoraIso,
+          conferente_id: offlineSession.conferente_id,
+          produto_id: null,
+          codigo_interno: it.codigo_interno.trim(),
+          descricao: it.descricao.trim(),
+          unidade_medida: null,
+          quantidade_up: q,
+          lote: null,
+          observacao: null,
+        })
+      }
+
+      setFinalizeProgress('Conectando ao banco...')
       const { error: delErr } = await supabase
         .from('contagens_estoque')
         .delete()
@@ -1064,6 +1076,7 @@ export default function ContagemEstoque() {
       if (delErr) {
         const startIso = `${ymd}T00:00:00`
         const endIso = `${ymd}T23:59:59`
+        setFinalizeProgress('Limpando registros antigos (fallback)...')
         const { error: del2 } = await supabase
           .from('contagens_estoque')
           .delete()
@@ -1075,6 +1088,7 @@ export default function ContagemEstoque() {
 
       const CHUNK = 250
       for (let i = 0; i < rows.length; i += CHUNK) {
+        setFinalizeProgress(`Salvando: ${Math.min(i + CHUNK, rows.length)}/${rows.length} registros...`)
         const chunk = rows.slice(i, i + CHUNK)
         const { error: insErr } = await supabase.from('contagens_estoque').insert(chunk)
         if (insErr) throw insErr
@@ -1084,11 +1098,13 @@ export default function ContagemEstoque() {
       setOfflineSession(null)
       setChecklistListMode('todos')
       setSaveSuccess(`Contagem do dia ${ymd} finalizada: ${rows.length} registro(s) gravados no banco.`)
+      setFinalizeProgress('Concluído: registros salvos com sucesso.')
       await loadPreview(ymd)
     } catch (e: any) {
       setSaveError(`Erro ao finalizar: ${e?.message ? String(e.message) : 'verifique permissões (RLS) e tabelas.'}`)
     } finally {
       setFinalizing(false)
+      setConfirmFinalizeMissingOpen(false)
     }
   }
 
@@ -1249,9 +1265,9 @@ export default function ContagemEstoque() {
               <th style={thStyle}>Código</th>
               <th style={thStyle}>Descrição</th>
               <th style={thStyle}>Data (dd/mm/aaaa)</th>
-              <th style={thStyle}>Qtd (up)</th>
+              <th style={thStyle}>UP</th>
               <th style={thStyle}>Lote</th>
-              <th style={thStyle}>Obs</th>
+              <th style={thStyle}>Observação</th>
               <th style={thStyle}>Ações</th>
             </tr>
             <tr>
@@ -1629,6 +1645,10 @@ export default function ContagemEstoque() {
           </div>
         </div>
 
+        {finalizeProgress ? (
+          <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text, #555)' }}>{finalizeProgress}</div>
+        ) : null}
+
         {checklistError ? <div style={{ color: '#b00020', marginTop: 10 }}>{checklistError}</div> : null}
         {!conferenteId ? (
           <div style={{ color: 'var(--text, #888)', marginTop: 8, fontSize: 13 }}>
@@ -1858,6 +1878,91 @@ export default function ContagemEstoque() {
             Nenhuma sessão aberta. Acima, selecione o conferente e a data; depois clique em <strong>Carregar lista de produtos</strong>.
           </div>
         )}
+
+        {confirmFinalizeMissingOpen ? (
+          <div
+            style={{
+              position: 'fixed',
+              inset: 0,
+              background: 'rgba(0,0,0,.55)',
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+              padding: 16,
+              zIndex: 9999,
+            }}
+          >
+            <div
+              style={{
+                width: 'min(920px, 100%)',
+                background: 'var(--panel-bg, #fff)',
+                color: 'var(--text, #111)',
+                border: '1px solid var(--border, #ccc)',
+                borderRadius: 12,
+                padding: 16,
+              }}
+            >
+              <h3 style={{ margin: '0 0 8px' }}>Existem itens sem quantidade</h3>
+              {finalizing ? (
+                <div style={{ marginBottom: 10, fontSize: 12, color: 'var(--text, #444)' }}>
+                  {finalizeProgress || 'Processando...'}
+                </div>
+              ) : null}
+              <div style={{ fontSize: 13, color: 'var(--text, #444)' }}>
+                Há <strong>{missingItemsForFinalize.length}</strong> item(ns) sem quantidade digitada.
+                Deseja finalizar mesmo assim?
+              </div>
+
+              <div style={{ marginTop: 12, maxHeight: 320, overflow: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr>
+                      <th style={{ textAlign: 'left', padding: 8, borderBottom: '1px solid #ddd', fontSize: 12 }}>Código</th>
+                      <th style={{ textAlign: 'left', padding: 8, borderBottom: '1px solid #ddd', fontSize: 12 }}>Descrição</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {missingItemsForFinalize.slice(0, 200).map((it) => (
+                      <tr key={it.key}>
+                        <td style={{ padding: 8, borderBottom: '1px solid #f0f0f0', fontSize: 13, whiteSpace: 'nowrap' }}>
+                          {it.codigo_interno}
+                        </td>
+                        <td style={{ padding: 8, borderBottom: '1px solid #f0f0f0', fontSize: 13 }}>{it.descricao}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {missingItemsForFinalize.length > 200 ? (
+                  <div style={{ fontSize: 12, color: 'var(--text, #666)', marginTop: 8 }}>
+                    Mostrando apenas os primeiros 200 itens.
+                  </div>
+                ) : null}
+              </div>
+
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 14, flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  style={{ ...buttonStyle, background: '#666' }}
+                  onClick={() => {
+                    setConfirmFinalizeMissingOpen(false)
+                    setMissingItemsForFinalize([])
+                  }}
+                  disabled={finalizing}
+                >
+                  Voltar para preencher
+                </button>
+                <button
+                  type="button"
+                  style={{ ...buttonStyle, background: '#0b5' }}
+                  onClick={() => void finalizeInternal({ sendZerosForMissing: true })}
+                  disabled={finalizing}
+                >
+                  Finalizar mesmo assim (enviar 0)
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </section>
 
       <form onSubmit={handleSubmit} style={{ display: 'grid', gap: 12, marginTop: 12 }}>
