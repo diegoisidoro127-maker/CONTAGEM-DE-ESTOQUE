@@ -395,6 +395,7 @@ export default function ContagemEstoque() {
   const [armazemMissingCodes, setArmazemMissingCodes] = useState<string[]>([])
   const [confirmFinalizeMissingOpen, setConfirmFinalizeMissingOpen] = useState(false)
   const [missingItemsForFinalize, setMissingItemsForFinalize] = useState<OfflineChecklistItem[]>([])
+  const [mobileChecklistLimit, setMobileChecklistLimit] = useState(20)
 
   const dataHoraContagem = useMemo(() => {
     const elapsed = Date.now() - clockRealStartMs
@@ -432,6 +433,11 @@ export default function ContagemEstoque() {
       setStartFreshNotice('Sessão anterior limpa ao abrir a tela. Comece do zero.')
     }
   }, [])
+
+  // Mobile: evita lista infinita na tela, trazendo só alguns itens por vez.
+  useEffect(() => {
+    setMobileChecklistLimit(20)
+  }, [checklistListMode, checklistFilterCodigo, checklistFilterDescricao, checklistFilterPendentes, offlineSession?.status])
 
   // Persiste alterações da sessão aberta.
   useEffect(() => {
@@ -1796,6 +1802,40 @@ export default function ContagemEstoque() {
         ? []
         : filteredChecklistItems
 
+  const mobileProductsTotal = isMobile
+    ? checklistDisplayItems.reduce((acc, item) => {
+        const isHeader = 'kind' in item && item.kind === 'header'
+        return acc + (isHeader ? 0 : 1)
+      }, 0)
+    : 0
+  const mobileHasMore = isMobile && mobileProductsTotal > mobileChecklistLimit
+
+  const mobileChecklistVisibleItems: ChecklistDisplayItem[] =
+    isMobile && mobileHasMore
+      ? (() => {
+          const out: ChecklistDisplayItem[] = []
+          let includedProducts = 0
+          let pendingHeader: ChecklistDisplayHeader | null = null
+
+          for (const item of checklistDisplayItems) {
+            const isHeader = 'kind' in item && item.kind === 'header'
+            if (isHeader) {
+              pendingHeader = item as ChecklistDisplayHeader
+              continue
+            }
+
+            if (includedProducts >= mobileChecklistLimit) break
+            if (pendingHeader) {
+              out.push(pendingHeader)
+              pendingHeader = null
+            }
+            out.push(item)
+            includedProducts++
+          }
+          return out
+        })()
+      : checklistDisplayItems
+
   const carregarListaDisabled = checklistLoading || finalizing || !conferenteId
 
   return (
@@ -2093,8 +2133,9 @@ export default function ContagemEstoque() {
                   </label>
                 </div>
                 {isMobile ? (
-                  <div style={{ marginTop: 8, display: 'grid', gap: 8 }}>
-                    {checklistDisplayItems.map((item) => {
+                  <>
+                    <div style={{ marginTop: 8, display: 'grid', gap: 8 }}>
+                    {mobileChecklistVisibleItems.map((item) => {
                       if ('kind' in item && item.kind === 'header') {
                         return (
                           <div
@@ -2236,7 +2277,20 @@ export default function ContagemEstoque() {
                         </div>
                       )
                     })}
-                  </div>
+                    </div>
+                    {mobileHasMore ? (
+                      <div style={{ marginTop: 10, display: 'flex', justifyContent: 'center' }}>
+                        <button
+                          type="button"
+                          style={{ ...buttonStyle, background: '#444', fontSize: 13 }}
+                          onClick={() => setMobileChecklistLimit((n) => n + 20)}
+                          disabled={checklistLoading}
+                        >
+                          Carregar mais
+                        </button>
+                      </div>
+                    ) : null}
+                  </>
                 ) : (
                   <div style={{ overflowX: 'auto', marginTop: 10 }}>
                     <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 720 }}>
