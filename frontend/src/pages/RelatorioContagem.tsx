@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type React from 'react'
 import * as XLSX from 'xlsx'
 import { supabase } from '../lib/supabaseClient'
@@ -64,6 +64,9 @@ function diaContagemLabel(r: ContagemRow) {
   return formatDateBR(ymd)
 }
 
+/** Paginação (15 + “Mostrar tudo”) vale para Relatório completo e Todas as contagens — mesmo componente. */
+const RELATORIO_PAGE_SIZE = 15
+
 type RelatorioContagemProps = {
   mode?: 'periodo' | 'dia'
 }
@@ -86,12 +89,31 @@ export default function RelatorioContagem({ mode = 'periodo' }: RelatorioContage
   const [useSingleDay, setUseSingleDay] = useState(false)
   const [singleDay, setSingleDay] = useState(() => toISODateLocal(new Date()))
   const [rows, setRows] = useState<ContagemRow[]>([])
+  const [relatorioPage, setRelatorioPage] = useState(1)
+  const [relatorioShowAll, setRelatorioShowAll] = useState(false)
+  const prevLoadingRef = useRef(false)
 
   const dateRangeText = useMemo(() => {
     if (allTime) return 'Todas as datas'
     if (useSingleDay) return `Dia: ${formatDateBR(singleDay)}`
     return `${formatDateBR(startDate)} a ${formatDateBR(endDate)}`
   }, [allTime, useSingleDay, singleDay, startDate, endDate])
+
+  const relatorioTotalPages = Math.max(1, Math.ceil(rows.length / RELATORIO_PAGE_SIZE))
+  const relatorioPageSafe = Math.min(relatorioPage, relatorioTotalPages)
+  const displayRows = useMemo(() => {
+    if (relatorioShowAll) return rows
+    const start = (relatorioPageSafe - 1) * RELATORIO_PAGE_SIZE
+    return rows.slice(start, start + RELATORIO_PAGE_SIZE)
+  }, [rows, relatorioPageSafe, relatorioShowAll])
+
+  useEffect(() => {
+    if (prevLoadingRef.current && !loading) {
+      setRelatorioPage(1)
+      setRelatorioShowAll(false)
+    }
+    prevLoadingRef.current = loading
+  }, [loading])
 
   async function load() {
     setLoading(true)
@@ -295,6 +317,80 @@ export default function RelatorioContagem({ mode = 'periodo' }: RelatorioContage
     XLSX.writeFile(wb, `relatorio-contagem_${safeFile}.xlsx`)
   }
 
+  const totalRel = rows.length
+  const rangeFrom =
+    totalRel === 0 ? 0 : relatorioShowAll ? 1 : (relatorioPageSafe - 1) * RELATORIO_PAGE_SIZE + 1
+  const rangeTo =
+    totalRel === 0 ? 0 : relatorioShowAll ? totalRel : Math.min(relatorioPageSafe * RELATORIO_PAGE_SIZE, totalRel)
+
+  const relatorioNavStyleBtn = (disabled: boolean) => ({
+    padding: '6px 12px',
+    borderRadius: 6,
+    border: '1px solid var(--border, #ccc)',
+    background: disabled ? 'rgba(255,255,255,0.08)' : 'var(--surface, #222)',
+    color: 'var(--text, #eee)',
+    cursor: disabled ? 'not-allowed' : 'pointer',
+    fontSize: 13,
+    opacity: disabled ? 0.5 : 1,
+  })
+
+  const relatorioPagination = (
+    <div
+      style={{
+        display: 'flex',
+        flexWrap: 'wrap',
+        alignItems: 'center',
+        gap: 10,
+        marginTop: 12,
+        marginBottom: 8,
+      }}
+    >
+      <span style={{ fontSize: 13, color: 'var(--text, #888)' }}>
+        {totalRel === 0
+          ? ''
+          : relatorioShowAll
+            ? `Exibindo todos os ${totalRel} registros`
+            : `${rangeFrom}–${rangeTo} de ${totalRel} · Página ${relatorioPageSafe} de ${relatorioTotalPages} · ${RELATORIO_PAGE_SIZE} por página`}
+      </span>
+      <button
+        type="button"
+        disabled={relatorioShowAll || relatorioPageSafe <= 1 || totalRel === 0}
+        onClick={() => setRelatorioPage((p) => Math.max(1, p - 1))}
+        style={relatorioNavStyleBtn(relatorioShowAll || relatorioPageSafe <= 1 || totalRel === 0)}
+      >
+        Anterior
+      </button>
+      <button
+        type="button"
+        disabled={relatorioShowAll || relatorioPageSafe >= relatorioTotalPages || totalRel === 0}
+        onClick={() => setRelatorioPage((p) => Math.min(relatorioTotalPages, p + 1))}
+        style={relatorioNavStyleBtn(
+          relatorioShowAll || relatorioPageSafe >= relatorioTotalPages || totalRel === 0,
+        )}
+      >
+        Próxima
+      </button>
+      {totalRel > RELATORIO_PAGE_SIZE ? (
+        relatorioShowAll ? (
+          <button
+            type="button"
+            onClick={() => {
+              setRelatorioShowAll(false)
+              setRelatorioPage(1)
+            }}
+            style={relatorioNavStyleBtn(false)}
+          >
+            Paginar ({RELATORIO_PAGE_SIZE} por página)
+          </button>
+        ) : (
+          <button type="button" onClick={() => setRelatorioShowAll(true)} style={relatorioNavStyleBtn(false)}>
+            Mostrar tudo
+          </button>
+        )
+      ) : null}
+    </div>
+  )
+
   return (
     <div style={{ padding: 16, maxWidth: 1400, margin: '0 auto' }}>
       <h2>{isDiaMode ? 'Todas as contagens' : 'Relatório completo por data de contagem'}</h2>
@@ -401,6 +497,7 @@ export default function RelatorioContagem({ mode = 'periodo' }: RelatorioContage
 
         {rows.length ? (
           <div style={{ overflowX: 'auto' }}>
+            {relatorioPagination}
             <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 1980 }}>
               <thead>
                 <tr>
@@ -423,7 +520,7 @@ export default function RelatorioContagem({ mode = 'periodo' }: RelatorioContage
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r) => (
+                {displayRows.map((r) => (
                   <tr key={r.id}>
                     <td style={tdStyle}>{conferenteNome(r)}</td>
                     <td style={tdStyle}>{diaContagemLabel(r)}</td>
@@ -517,6 +614,7 @@ export default function RelatorioContagem({ mode = 'periodo' }: RelatorioContage
                 ))}
               </tbody>
             </table>
+            {totalRel > 0 ? relatorioPagination : null}
           </div>
         ) : (
           !loading ? <div style={{ marginTop: 8 }}>Sem dados no período.</div> : null

@@ -164,9 +164,9 @@ export default function App() {
           {view === 'contagem' ? (
             <ContagemEstoque />
           ) : view === 'relatorio' ? (
-            <RelatorioContagem mode="periodo" />
+            <RelatorioContagem key="relatorio" mode="periodo" />
           ) : (
-            <RelatorioContagem mode="dia" />
+            <RelatorioContagem key="todas" mode="dia" />
           )}
         </>
       )}
