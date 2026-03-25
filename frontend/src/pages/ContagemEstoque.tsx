@@ -1506,7 +1506,13 @@ export default function ContagemEstoque() {
     return (
       <div style={{ overflowX: 'auto', marginTop: 16 }}>
         {previewRowError ? <div style={{ color: '#b00020', marginBottom: 8 }}>{previewRowError}</div> : null}
-        <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 1100 }}>
+        <table
+          style={{
+            borderCollapse: 'collapse',
+            width: '100%',
+            minWidth: isMobile ? 820 : 1100,
+          }}
+        >
           <thead>
             <tr>
               <th style={thStyle}>Código</th>
@@ -1990,47 +1996,40 @@ export default function ContagemEstoque() {
                     Só pendentes
                   </label>
                 </div>
-                <div style={{ overflowX: 'auto', marginTop: 10 }}>
-                  <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 720 }}>
-                    <thead>
-                      <tr>
-                        <th style={thStyle}>Código</th>
-                        <th style={thStyle}>Descrição</th>
-                        <th style={thStyle}>Qtd na lista</th>
-                        <th style={thStyle}>Status</th>
-                        <th style={thStyle}>Ações</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {checklistDisplayItems.map((item) => {
-                        if ('kind' in item && item.kind === 'header') {
-                          return (
-                            <tr key={item.key}>
-                              <td
-                                colSpan={5}
-                                style={{
-                                  padding: '10px 8px',
-                                  fontWeight: 800,
-                                  fontSize: 12,
-                                  borderBottom: '1px solid #444',
-                                  background: 'rgba(255, 255, 255, .04)',
-                                  color: 'var(--text, #111)',
-                                }}
-                              >
-                                {formatArmazemGroupLabel(item.contagem)}
-                              </td>
-                            </tr>
-                          )
-                        }
-                        const it = item as OfflineChecklistItem
-                        const hasPhoto = Boolean(String(it.foto_base64 ?? '').trim())
-                        const pend = String(it.quantidade_contada ?? '').trim() === ''
-                        const isEditing = checklistEditingKey === it.key && checklistEditDraft
+                {isMobile ? (
+                  <div style={{ marginTop: 10, display: 'grid', gap: 10 }}>
+                    {checklistDisplayItems.map((item) => {
+                      if ('kind' in item && item.kind === 'header') {
                         return (
-                          <tr key={it.key}>
-                            {isEditing && checklistEditDraft ? (
-                              <>
-                                <td style={tdStyle}>
+                          <div
+                            key={item.key}
+                            style={{
+                              padding: '10px 10px',
+                              fontWeight: 800,
+                              fontSize: 12,
+                              border: '1px solid #444',
+                              borderRadius: 10,
+                              background: 'rgba(255, 255, 255, .04)',
+                              color: 'var(--text, #111)',
+                            }}
+                          >
+                            {formatArmazemGroupLabel(item.contagem)}
+                          </div>
+                        )
+                      }
+
+                      const it = item as OfflineChecklistItem
+                      const hasPhoto = Boolean(String(it.foto_base64 ?? '').trim())
+                      const pend = String(it.quantidade_contada ?? '').trim() === ''
+                      const isEditing = checklistEditingKey === it.key && checklistEditDraft
+
+                      return (
+                        <div key={it.key} style={{ border: '1px solid var(--border, #ccc)', borderRadius: 12, padding: 12 }}>
+                          {isEditing && checklistEditDraft ? (
+                            <>
+                              <div style={{ display: 'grid', gap: 10 }}>
+                                <label style={{ ...labelStyle }}>
+                                  Código
                                   <input
                                     value={checklistEditDraft.codigo_interno}
                                     onChange={(e) =>
@@ -2038,11 +2037,11 @@ export default function ContagemEstoque() {
                                         d ? { ...d, codigo_interno: e.target.value } : d,
                                       )
                                     }
-                                    style={{ ...checklistQtdInputStyle, width: '100%', minWidth: 100 }}
-                                    aria-label="Código"
+                                    style={{ ...inputStyle, minWidth: 0 }}
                                   />
-                                </td>
-                                <td style={{ ...tdStyle, whiteSpace: 'normal', maxWidth: 420 }}>
+                                </label>
+                                <label style={{ ...labelStyle }}>
+                                  Descrição
                                   <textarea
                                     value={checklistEditDraft.descricao}
                                     onChange={(e) =>
@@ -2051,17 +2050,11 @@ export default function ContagemEstoque() {
                                       )
                                     }
                                     rows={2}
-                                    style={{
-                                      ...checklistQtdInputStyle,
-                                      width: '100%',
-                                      minWidth: 160,
-                                      resize: 'vertical',
-                                      fontFamily: 'inherit',
-                                    }}
-                                    aria-label="Descrição"
+                                    style={{ ...inputStyle, resize: 'vertical', minHeight: 48 }}
                                   />
-                                </td>
-                                <td style={tdStyle}>
+                                </label>
+                                <label style={{ ...labelStyle }}>
+                                  Qtd
                                   <input
                                     type="text"
                                     inputMode="decimal"
@@ -2071,81 +2064,241 @@ export default function ContagemEstoque() {
                                         d ? { ...d, quantidade_contada: e.target.value } : d,
                                       )
                                     }
-                                    style={checklistQtdInputStyle}
+                                    style={inputStyle}
                                     placeholder="—"
-                                    aria-label="Quantidade"
                                   />
+                                </label>
+                              </div>
+                              <div style={{ marginTop: 10, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                                <button
+                                  type="button"
+                                  style={{ ...buttonStyle, background: '#0b5', fontSize: 13, flex: '1 1 160px' }}
+                                  onClick={() => saveChecklistEdit()}
+                                >
+                                  Salvar
+                                </button>
+                                <button
+                                  type="button"
+                                  style={{ ...buttonStyle, background: '#666', fontSize: 13, flex: '1 1 160px' }}
+                                  onClick={() => cancelChecklistEdit()}
+                                >
+                                  Cancelar
+                                </button>
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <div style={{ fontSize: 12, color: 'var(--text, #666)', marginBottom: 6 }}>
+                                Status: <strong style={{ color: pend ? '#a60' : '#0a0' }}>{pend ? 'Pendente' : 'Contado'}</strong>
+                              </div>
+                              <div style={{ fontSize: 13, fontWeight: 800, fontFamily: 'monospace' }}>{it.codigo_interno}</div>
+                              <div style={{ fontSize: 13, whiteSpace: 'normal', color: 'var(--text, #111)', marginTop: 4 }}>{it.descricao}</div>
+
+                              <label style={{ ...labelStyle, marginTop: 10 }}>
+                                Qtd
+                                <input
+                                  type="text"
+                                  inputMode="decimal"
+                                  value={it.quantidade_contada}
+                                  onChange={(e) => updateOfflineItemQty(it.key, e.target.value)}
+                                  style={inputStyle}
+                                  placeholder="—"
+                                />
+                              </label>
+
+                              <div style={{ marginTop: 10, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                                <button
+                                  type="button"
+                                  style={{ ...buttonStyle, background: '#2a4d7a', fontSize: 13, flex: '1 1 160px' }}
+                                  onClick={() => openChecklistEdit(it)}
+                                >
+                                  Editar
+                                </button>
+                                <button
+                                  type="button"
+                                  style={{ ...buttonStyle, background: '#666', fontSize: 13, flex: '1 1 160px' }}
+                                  onClick={() => handleLimparQuantidadeOffline(it.key)}
+                                >
+                                  Limpar
+                                </button>
+                                <button
+                                  type="button"
+                                  style={{
+                                    ...buttonStyle,
+                                    background: hasPhoto ? '#0b5' : '#444',
+                                    fontSize: 13,
+                                    flex: '1 1 160px',
+                                  }}
+                                  onClick={() => openPhotoModalForCodigo(it.codigo_interno)}
+                                  title={hasPhoto ? 'Ver/atualizar foto' : 'Anexar foto'}
+                                >
+                                  {hasPhoto ? 'Foto (ok)' : 'Sem foto'}
+                                </button>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  <div style={{ overflowX: 'auto', marginTop: 10 }}>
+                    <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 720 }}>
+                      <thead>
+                        <tr>
+                          <th style={thStyle}>Código</th>
+                          <th style={thStyle}>Descrição</th>
+                          <th style={thStyle}>Qtd na lista</th>
+                          <th style={thStyle}>Status</th>
+                          <th style={thStyle}>Ações</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {checklistDisplayItems.map((item) => {
+                          if ('kind' in item && item.kind === 'header') {
+                            return (
+                              <tr key={item.key}>
+                                <td
+                                  colSpan={5}
+                                  style={{
+                                    padding: '10px 8px',
+                                    fontWeight: 800,
+                                    fontSize: 12,
+                                    borderBottom: '1px solid #444',
+                                    background: 'rgba(255, 255, 255, .04)',
+                                    color: 'var(--text, #111)',
+                                  }}
+                                >
+                                  {formatArmazemGroupLabel(item.contagem)}
                                 </td>
-                                <td style={tdStyle}>Editando</td>
-                                <td style={{ ...tdStyle, whiteSpace: 'normal' }}>
-                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                                    <button
-                                      type="button"
-                                      style={{ ...buttonStyle, background: '#0b5', fontSize: 12, padding: '6px 10px' }}
-                                      onClick={() => saveChecklistEdit()}
-                                    >
-                                      Salvar
-                                    </button>
-                                    <button
-                                      type="button"
-                                      style={{ ...buttonStyle, background: '#666', fontSize: 12, padding: '6px 10px' }}
-                                      onClick={() => cancelChecklistEdit()}
-                                    >
-                                      Cancelar
-                                    </button>
-                                  </div>
-                                </td>
-                              </>
-                            ) : (
-                              <>
-                                <td style={tdStyle}>{it.codigo_interno}</td>
-                                <td style={{ ...tdStyle, whiteSpace: 'normal', maxWidth: 420 }}>{it.descricao}</td>
-                                <td style={tdStyle}>
-                                  <input
-                                    type="text"
-                                    inputMode="decimal"
-                                    value={it.quantidade_contada}
-                                    onChange={(e) => updateOfflineItemQty(it.key, e.target.value)}
-                                    style={checklistQtdInputStyle}
-                                    placeholder="—"
-                                    aria-label={`Quantidade ${it.codigo_interno}`}
-                                  />
-                                </td>
-                                <td style={tdStyle}>{pend ? 'Pendente' : 'Contado'}</td>
-                                <td style={{ ...tdStyle, whiteSpace: 'normal' }}>
-                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                                    <button
-                                      type="button"
-                                      style={{ ...buttonStyle, background: '#2a4d7a', fontSize: 12, padding: '6px 10px' }}
-                                      onClick={() => openChecklistEdit(it)}
-                                    >
-                                      Editar
-                                    </button>
-                                    <button
-                                      type="button"
-                                      style={{ ...buttonStyle, background: '#666', fontSize: 12, padding: '6px 10px' }}
-                                      onClick={() => handleLimparQuantidadeOffline(it.key)}
-                                    >
-                                      Limpar
-                                    </button>
-                                    <button
-                                      type="button"
-                                      style={{ ...buttonStyle, background: hasPhoto ? '#0b5' : '#444', fontSize: 12, padding: '6px 10px' }}
-                                      onClick={() => openPhotoModalForCodigo(it.codigo_interno)}
-                                      title={hasPhoto ? 'Ver/atualizar foto' : 'Anexar foto'}
-                                    >
-                                      {hasPhoto ? 'Foto (ok)' : 'Sem foto'}
-                                    </button>
-                                  </div>
-                                </td>
-                              </>
-                            )}
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+                              </tr>
+                            )
+                          }
+                          const it = item as OfflineChecklistItem
+                          const hasPhoto = Boolean(String(it.foto_base64 ?? '').trim())
+                          const pend = String(it.quantidade_contada ?? '').trim() === ''
+                          const isEditing = checklistEditingKey === it.key && checklistEditDraft
+                          return (
+                            <tr key={it.key}>
+                              {isEditing && checklistEditDraft ? (
+                                <>
+                                  <td style={tdStyle}>
+                                    <input
+                                      value={checklistEditDraft.codigo_interno}
+                                      onChange={(e) =>
+                                        setChecklistEditDraft((d) =>
+                                          d ? { ...d, codigo_interno: e.target.value } : d,
+                                        )
+                                      }
+                                      style={{ ...checklistQtdInputStyle, width: '100%', minWidth: 100 }}
+                                      aria-label="Código"
+                                    />
+                                  </td>
+                                  <td style={{ ...tdStyle, whiteSpace: 'normal', maxWidth: 420 }}>
+                                    <textarea
+                                      value={checklistEditDraft.descricao}
+                                      onChange={(e) =>
+                                        setChecklistEditDraft((d) =>
+                                          d ? { ...d, descricao: e.target.value } : d,
+                                        )
+                                      }
+                                      rows={2}
+                                      style={{
+                                        ...checklistQtdInputStyle,
+                                        width: '100%',
+                                        minWidth: 160,
+                                        resize: 'vertical',
+                                        fontFamily: 'inherit',
+                                      }}
+                                      aria-label="Descrição"
+                                    />
+                                  </td>
+                                  <td style={tdStyle}>
+                                    <input
+                                      type="text"
+                                      inputMode="decimal"
+                                      value={checklistEditDraft.quantidade_contada}
+                                      onChange={(e) =>
+                                        setChecklistEditDraft((d) =>
+                                          d ? { ...d, quantidade_contada: e.target.value } : d,
+                                        )
+                                      }
+                                      style={checklistQtdInputStyle}
+                                      placeholder="—"
+                                      aria-label="Quantidade"
+                                    />
+                                  </td>
+                                  <td style={tdStyle}>Editando</td>
+                                  <td style={{ ...tdStyle, whiteSpace: 'normal' }}>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                                      <button
+                                        type="button"
+                                        style={{ ...buttonStyle, background: '#0b5', fontSize: 12, padding: '6px 10px' }}
+                                        onClick={() => saveChecklistEdit()}
+                                      >
+                                        Salvar
+                                      </button>
+                                      <button
+                                        type="button"
+                                        style={{ ...buttonStyle, background: '#666', fontSize: 12, padding: '6px 10px' }}
+                                        onClick={() => cancelChecklistEdit()}
+                                      >
+                                        Cancelar
+                                      </button>
+                                    </div>
+                                  </td>
+                                </>
+                              ) : (
+                                <>
+                                  <td style={tdStyle}>{it.codigo_interno}</td>
+                                  <td style={{ ...tdStyle, whiteSpace: 'normal', maxWidth: 420 }}>{it.descricao}</td>
+                                  <td style={tdStyle}>
+                                    <input
+                                      type="text"
+                                      inputMode="decimal"
+                                      value={it.quantidade_contada}
+                                      onChange={(e) => updateOfflineItemQty(it.key, e.target.value)}
+                                      style={checklistQtdInputStyle}
+                                      placeholder="—"
+                                      aria-label={`Quantidade ${it.codigo_interno}`}
+                                    />
+                                  </td>
+                                  <td style={tdStyle}>{pend ? 'Pendente' : 'Contado'}</td>
+                                  <td style={{ ...tdStyle, whiteSpace: 'normal' }}>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                                      <button
+                                        type="button"
+                                        style={{ ...buttonStyle, background: '#2a4d7a', fontSize: 12, padding: '6px 10px' }}
+                                        onClick={() => openChecklistEdit(it)}
+                                      >
+                                        Editar
+                                      </button>
+                                      <button
+                                        type="button"
+                                        style={{ ...buttonStyle, background: '#666', fontSize: 12, padding: '6px 10px' }}
+                                        onClick={() => handleLimparQuantidadeOffline(it.key)}
+                                      >
+                                        Limpar
+                                      </button>
+                                      <button
+                                        type="button"
+                                        style={{ ...buttonStyle, background: hasPhoto ? '#0b5' : '#444', fontSize: 12, padding: '6px 10px' }}
+                                        onClick={() => openPhotoModalForCodigo(it.codigo_interno)}
+                                        title={hasPhoto ? 'Ver/atualizar foto' : 'Anexar foto'}
+                                      >
+                                        {hasPhoto ? 'Foto (ok)' : 'Sem foto'}
+                                      </button>
+                                    </div>
+                                  </td>
+                                </>
+                              )}
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </>
             ) : null}
           </>
