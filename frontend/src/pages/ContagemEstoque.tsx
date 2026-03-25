@@ -360,6 +360,7 @@ export default function ContagemEstoque() {
   const [checklistError, setChecklistError] = useState('')
   const [finalizing, setFinalizing] = useState(false)
   const [finalizeProgress, setFinalizeProgress] = useState('')
+  const [startFreshNotice, setStartFreshNotice] = useState<string>('')
   const [checklistFilterCodigo, setChecklistFilterCodigo] = useState('')
   const [checklistFilterDescricao, setChecklistFilterDescricao] = useState('')
   const [checklistFilterPendentes, setChecklistFilterPendentes] = useState(false)
@@ -394,10 +395,12 @@ export default function ContagemEstoque() {
   useEffect(() => {
     const s = loadOfflineSession()
     if (s && s.status === 'aberta') {
-      setOfflineSession(s)
-      setContagemDiaYmd(s.data_contagem_ymd)
-      if (s.conferente_id) setConferenteId(s.conferente_id)
-      setChecklistListMode(s.listMode ?? 'todos')
+      // Painel começa "livre": descartamos a sessão em andamento e voltamos ao início.
+      clearOfflineSession()
+      setOfflineSession(null)
+      setContagemDiaYmd(toISODateLocal(new Date()))
+      setChecklistListMode('todos')
+      setStartFreshNotice('Sessão anterior descartada ao abrir a tela. Comece do zero.')
     }
   }, [])
 
@@ -1650,6 +1653,11 @@ export default function ContagemEstoque() {
         ) : null}
 
         {checklistError ? <div style={{ color: '#b00020', marginTop: 10 }}>{checklistError}</div> : null}
+        {startFreshNotice ? (
+          <div style={{ color: '#0a0', marginTop: 8, fontSize: 13 }}>
+            {startFreshNotice}
+          </div>
+        ) : null}
         {!conferenteId ? (
           <div style={{ color: 'var(--text, #888)', marginTop: 8, fontSize: 13 }}>
             Selecione um <strong>conferente</strong> acima para habilitar &quot;Carregar lista de produtos&quot;.
