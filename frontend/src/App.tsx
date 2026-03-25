@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import type React from 'react'
 import './App.css'
+import BaseProdutos from './pages/BaseProdutos'
 import ContagemEstoque from './pages/ContagemEstoque'
 import RelatorioContagem from './pages/RelatorioContagem'
 import logoUltrapao from './assets/logo-ultrapao.png'
 
-type View = 'home' | 'contagem' | 'relatorio' | 'todas' | 'inventario'
+type View = 'home' | 'contagem' | 'relatorio' | 'todas' | 'inventario' | 'baseDados'
 type Theme = 'dark' | 'light'
 
 export default function App() {
@@ -125,6 +126,13 @@ export default function App() {
             ) : null}
             <button
               type="button"
+              onClick={() => setView('baseDados')}
+              style={viewBtnStyle(view === 'baseDados')}
+            >
+              Base de dados
+            </button>
+            <button
+              type="button"
               onClick={() => setView('relatorio')}
               style={viewBtnStyle(view === 'relatorio')}
             >
@@ -150,6 +158,8 @@ export default function App() {
             <ContagemEstoque key="contagem" />
           ) : view === 'inventario' ? (
             <ContagemEstoque key="inventario" inventario />
+          ) : view === 'baseDados' ? (
+            <BaseProdutos key="baseDados" />
           ) : view === 'relatorio' ? (
             <RelatorioContagem key="relatorio" mode="periodo" />
           ) : (
