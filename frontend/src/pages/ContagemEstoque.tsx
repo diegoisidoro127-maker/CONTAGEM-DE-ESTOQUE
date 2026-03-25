@@ -851,6 +851,44 @@ export default function ContagemEstoque() {
     }
   }
 
+  function removePhotoFromPhotoModal() {
+    const codigo = photoTargetCodigo.trim()
+    if (!codigo) return
+    if (!offlineSession || offlineSession.status !== 'aberta') {
+      setPhotoUiError('Carregue a lista e abra uma sessão de contagem antes de remover a foto.')
+      return
+    }
+    const item = offlineSession.items.find((it) => it.codigo_interno.trim() === codigo)
+    const hadSaved = Boolean(String(item?.foto_base64 ?? '').trim())
+    const hadPreview = Boolean(photoPreviewBase64.trim())
+    if (!hadSaved && !hadPreview) return
+    if (!confirm('Remover a foto deste item da lista local?')) return
+    setPhotoUiError('')
+    setOfflineSession((prev) => {
+      if (!prev || prev.status !== 'aberta') return prev
+      return {
+        ...prev,
+        items: prev.items.map((it) =>
+          it.codigo_interno.trim() === codigo ? { ...it, foto_base64: '' } : it,
+        ),
+      }
+    })
+    setPhotoPreviewBase64('')
+  }
+
+  function removePhotoFromChecklistItem(it: OfflineChecklistItem) {
+    if (!offlineSession || offlineSession.status !== 'aberta') return
+    if (!String(it.foto_base64 ?? '').trim()) return
+    if (!confirm('Remover a foto deste produto da lista?')) return
+    setOfflineSession((prev) => {
+      if (!prev || prev.status !== 'aberta') return prev
+      return {
+        ...prev,
+        items: prev.items.map((row) => (row.key === it.key ? { ...row, foto_base64: '' } : row)),
+      }
+    })
+  }
+
   // Busca automática do produto pelo `codigo_interno`
   useEffect(() => {
     const codigo = codigoInterno.trim()
@@ -1627,6 +1665,30 @@ export default function ContagemEstoque() {
     }
   }
 
+  async function handlePreviewClearPhoto(id: string) {
+    const row = previewRows.find((r) => r.id === id)
+    if (!row?.foto_base64) return
+    if (!confirm('Remover a foto deste registro no banco de dados?')) return
+    setPreviewRowError('')
+    setPreviewRowActionLoading(true)
+    try {
+      const idsToUpdate = row.source_ids?.length ? row.source_ids : [id]
+      const { error } = await supabase
+        .from('contagens_estoque')
+        .update({ foto_base64: null })
+        .in('id', idsToUpdate)
+      if (error) throw error
+      setEditingPreviewId(null)
+      setEditingPreviewQuantidade('')
+      await loadPreview()
+      kickOutboxSyncNowWithRetry()
+    } catch (e: any) {
+      setPreviewRowError(`Erro ao remover foto: ${e?.message ? String(e.message) : 'verifique'}`)
+    } finally {
+      setPreviewRowActionLoading(false)
+    }
+  }
+
   async function handlePreviewSave(id: string) {
     const qtd = Number(editingPreviewQuantidade.replace(',', '.'))
     if (!Number.isFinite(qtd) || qtd < 0) {
@@ -1920,6 +1982,16 @@ export default function ContagemEstoque() {
                         >
                           Excluir
                         </button>
+                        {r.foto_base64 ? (
+                          <button
+                            type="button"
+                            style={{ ...buttonStyle, background: '#a85a00' }}
+                            onClick={() => handlePreviewClearPhoto(r.id)}
+                            disabled={previewRowActionLoading}
+                          >
+                            Remover foto
+                          </button>
+                        ) : null}
                       </>
                     )}
                   </div>
@@ -2113,6 +2185,16 @@ export default function ContagemEstoque() {
                           >
                             Excluir
                           </button>
+                          {r.foto_base64 ? (
+                            <button
+                              type="button"
+                              style={{ ...buttonStyle, background: '#a85a00' }}
+                              onClick={() => handlePreviewClearPhoto(r.id)}
+                              disabled={previewRowActionLoading}
+                            >
+                              Remover foto
+                            </button>
+                          ) : null}
                         </>
                       )}
                     </div>
@@ -2652,6 +2734,23 @@ export default function ContagemEstoque() {
                                   {hasPhoto ? 'Foto (ok)' : 'Sem foto'}
                                 </button>
                               </div>
+                              {hasPhoto ? (
+                                <button
+                                  type="button"
+                                  style={{
+                                    ...buttonStyle,
+                                    background: '#a85a00',
+                                    fontSize: 12,
+                                    padding: '8px 10px',
+                                    width: '100%',
+                                    marginTop: 8,
+                                    boxSizing: 'border-box',
+                                  }}
+                                  onClick={() => removePhotoFromChecklistItem(it)}
+                                >
+                                  Remover foto
+                                </button>
+                              ) : null}
                             </>
                           )}
                         </div>
@@ -2818,6 +2917,16 @@ export default function ContagemEstoque() {
                                       >
                                         {hasPhoto ? 'Foto (ok)' : 'Sem foto'}
                                       </button>
+                                      {hasPhoto ? (
+                                        <button
+                                          type="button"
+                                          style={{ ...buttonStyle, background: '#a85a00', fontSize: 12, padding: '6px 10px' }}
+                                          onClick={() => removePhotoFromChecklistItem(it)}
+                                          title="Remover foto anexada"
+                                        >
+                                          Remover foto
+                                        </button>
+                                      ) : null}
                                     </div>
                                   </td>
                                 </>
@@ -3565,6 +3674,24 @@ export default function ContagemEstoque() {
               >
                 Cancelar
               </button>
+              {offlineSession?.status === 'aberta' &&
+              photoTargetCodigo.trim() &&
+              (Boolean(
+                String(
+                  offlineSession.items.find((it) => it.codigo_interno.trim() === photoTargetCodigo.trim())?.foto_base64 ??
+                    '',
+                ).trim(),
+              ) ||
+                Boolean(photoPreviewBase64.trim())) ? (
+                <button
+                  type="button"
+                  style={{ ...buttonStyle, background: '#a85a00' }}
+                  onClick={() => removePhotoFromPhotoModal()}
+                  disabled={photoSaving}
+                >
+                  Remover foto
+                </button>
+              ) : null}
               <button
                 type="button"
                 style={{ ...buttonStyle, background: '#0b5' }}
