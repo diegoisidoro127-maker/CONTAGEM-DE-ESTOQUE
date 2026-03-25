@@ -254,13 +254,21 @@ function formatArmazemGroupLabel(contagem: number | null) {
   return formatContagemLabel(contagem)
 }
 
+function isUuid(value: string | null | undefined) {
+  if (!value) return false
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+}
+
 function mapRowToProductOption(row: Record<string, any>): ProductOption | null {
   const codigo = pickFirstCell(row, ['codigo_interno', 'codigo', 'CÓDIGO', 'cod_produto'])
   if (!codigo) return null
   const descricao =
     pickFirstCell(row, ['descricao', 'DESCRIÇÃO', 'descrição', 'desc_produto']) || 'Produto sem descrição'
+  // Só usar como produto_id no Supabase se for UUID real (nunca row_index/dataset_id numérico).
+  const rawId = row.id
+  const id = rawId != null && isUuid(String(rawId)) ? String(rawId) : codigo
   return {
-    id: String(row.id ?? row.row_index ?? row.dataset_id ?? codigo),
+    id,
     codigo,
     descricao,
     unidade_medida:
@@ -318,11 +326,6 @@ function dataContagemYmdFromIso(isoLike: string) {
   if (Number.isNaN(dt.getTime())) return ''
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`
-}
-
-function isUuid(value: string | null | undefined) {
-  if (!value) return false
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
 }
 
 function toISODateLocal(d: Date) {
@@ -1552,10 +1555,12 @@ export default function ContagemEstoque() {
           up_adicional = u
         }
         const catalog = productByCode.get(it.codigo_interno.trim())
+        const produtoId =
+          catalog?.id != null && isUuid(String(catalog.id)) ? String(catalog.id) : null
         rows.push({
           data_hora_contagem: dataHoraIso,
           conferente_id: offlineSession.conferente_id,
-          produto_id: catalog?.id ?? null,
+          produto_id: produtoId,
           codigo_interno: it.codigo_interno.trim(),
           descricao: it.descricao.trim(),
           unidade_medida:
