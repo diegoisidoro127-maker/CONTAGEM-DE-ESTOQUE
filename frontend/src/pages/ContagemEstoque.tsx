@@ -11,6 +11,7 @@ import {
   loadOfflineSession,
   type OfflineChecklistItem,
   type OfflineSession,
+  type OfflineSessionMode,
   type ChecklistListMode,
   saveOfflineSession,
   stableItemKey,
@@ -56,6 +57,8 @@ type ContagemPreviewRow = {
   ean: string | null
   dun: string | null
   foto_base64?: string | null
+  origem?: string | null
+  inventario_repeticao?: number | null
 }
 
 type ProductOption = {
@@ -340,7 +343,8 @@ function newSessionId() {
   return `sess-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`
 }
 
-export default function ContagemEstoque() {
+export default function ContagemEstoque({ inventario = false }: { inventario?: boolean }) {
+  const sessionMode: OfflineSessionMode = inventario ? 'inventario' : 'contagem'
   const sheetWebhookUrl = import.meta.env.VITE_SHEET_WEBHOOK_URL as string | undefined
   // Modo definitivo: usar SOMENTE outbox (evita escrita paralela e coluna duplicada).
   // Mantemos o envio direto desativado de forma fixa.
@@ -458,13 +462,14 @@ export default function ContagemEstoque() {
 
   useEffect(() => {
     try {
-      if (sessionStorage.getItem('contagem-checklist-collapsed') === '1') {
+      const ck = inventario ? 'inventario-checklist-collapsed' : 'contagem-checklist-collapsed'
+      if (sessionStorage.getItem(ck) === '1') {
         setChecklistListCollapsed(true)
       }
     } catch {
       /* ignore */
     }
-  }, [])
+  }, [inventario])
 
   useEffect(() => {
     if (codigoInterno.trim()) setBarcodeFotoHint('')
@@ -472,16 +477,16 @@ export default function ContagemEstoque() {
 
   // Restaura sessão offline aberta (persistência no navegador).
   useEffect(() => {
-    const s = loadOfflineSession()
+    const s = loadOfflineSession(sessionMode)
     if (s && s.status === 'aberta') {
       // Painel começa "livre": descartamos a sessão em andamento e voltamos ao início.
-      clearOfflineSession()
+      clearOfflineSession(sessionMode)
       setOfflineSession(null)
       setContagemDiaYmd(toISODateLocal(new Date()))
       setChecklistListMode('todos')
       setStartFreshNotice('Sessão anterior limpa ao abrir a tela. Comece do zero.')
     }
-  }, [])
+  }, [sessionMode])
 
   // Mobile: evita lista infinita na tela, trazendo só alguns itens por vez.
   useEffect(() => {
@@ -491,8 +496,8 @@ export default function ContagemEstoque() {
   // Persiste alterações da sessão aberta.
   useEffect(() => {
     if (!offlineSession || offlineSession.status !== 'aberta') return
-    saveOfflineSession(offlineSession)
-  }, [offlineSession])
+    saveOfflineSession(offlineSession, sessionMode)
+  }, [offlineSession, sessionMode])
 
   // O "dia civil" deve acompanhar o "data e hora do registro" quando não há sessão aberta.
   useEffect(() => {
@@ -862,7 +867,7 @@ export default function ContagemEstoque() {
             it.codigo_interno.trim() === codigo ? { ...it, foto_base64: photoPreviewBase64 } : it,
           ),
         }
-        saveOfflineSession(next)
+        saveOfflineSession(next, sessionMode)
         const hit = next.items.find((it) => it.codigo_interno.trim() === codigo)
         if (hit) flashChecklistRowSaved(hit.key)
         return next
@@ -899,7 +904,7 @@ export default function ContagemEstoque() {
           it.codigo_interno.trim() === codigo ? { ...it, foto_base64: '' } : it,
         ),
       }
-      saveOfflineSession(next)
+      saveOfflineSession(next, sessionMode)
       const hit = next.items.find((it) => it.codigo_interno.trim() === codigo)
       if (hit) flashChecklistRowSaved(hit.key)
       return next
@@ -917,7 +922,7 @@ export default function ContagemEstoque() {
         ...prev,
         items: prev.items.map((row) => (row.key === it.key ? { ...row, foto_base64: '' } : row)),
       }
-      saveOfflineSession(next)
+      saveOfflineSession(next, sessionMode)
       flashChecklistRowSaved(it.key)
       return next
     })
@@ -1064,7 +1069,7 @@ export default function ContagemEstoque() {
     const countedItems = offlineSession.items.filter((i) => String(i.quantidade_contada ?? '').trim() !== '').length
 
     if (formIdentityEmpty && countedItems > 0) {
-      saveOfflineSession(offlineSession)
+      saveOfflineSession(offlineSession, sessionMode)
       setSaveSuccess(
         `Lista salva na sessão local (${countedItems} produto(s) com quantidade). As alterações na coluna Qtd já eram gravadas ao digitar; use Finalizar contagem diária para enviar ao Supabase.`,
       )
@@ -1155,7 +1160,7 @@ export default function ContagemEstoque() {
         if (!prev || prev.status !== 'aberta') return prev
         const nextItems = prev.items.map((it, i) => (i === idx ? { ...it, ...itemPatch } : it))
         const next = { ...prev, items: nextItems }
-        saveOfflineSession(next)
+        saveOfflineSession(next, sessionMode)
         const row = nextItems[idx]
         if (row) flashChecklistRowSaved(row.key)
         return next
@@ -1192,19 +1197,39 @@ export default function ContagemEstoque() {
         ? dayOverride
         : `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
 
-    const { data, error } = await supabase
+    const previewSelect =
+      'id,data_hora_contagem,data_contagem,conferente_id,conferentes(nome),codigo_interno,descricao,unidade_medida,quantidade_up,up_adicional,lote,observacao,data_fabricacao,data_validade,ean,dun,foto_base64,origem,inventario_repeticao'
+    let { data, error } = await supabase
       .from('contagens_estoque')
-      .select(
-        'id,data_hora_contagem,data_contagem,conferente_id,conferentes(nome),codigo_interno,descricao,unidade_medida,quantidade_up,up_adicional,lote,observacao,data_fabricacao,data_validade,ean,dun,foto_base64',
-      )
+      .select(previewSelect)
       .eq('data_contagem', dayKey)
       .order('data_hora_contagem', { ascending: false })
       .limit(2000)
 
     if (error) {
-      setSaveError(`Erro ao carregar prévia: ${error.message}`)
-    } else {
-      const rawRows = (data ?? []).map((r: Record<string, any>) => {
+      const legacySelect =
+        'id,data_hora_contagem,data_contagem,conferente_id,conferentes(nome),codigo_interno,descricao,unidade_medida,quantidade_up,up_adicional,lote,observacao,data_fabricacao,data_validade,ean,dun,foto_base64'
+      const leg = await supabase
+        .from('contagens_estoque')
+        .select(legacySelect)
+        .eq('data_contagem', dayKey)
+        .order('data_hora_contagem', { ascending: false })
+        .limit(2000)
+      if (leg.error) {
+        setSaveError(`Erro ao carregar prévia: ${error.message}`)
+        setPreviewLoading(false)
+        return
+      }
+      data = leg.data
+      error = null
+    }
+
+    if (!error) {
+      const byOrigem = (r: Record<string, unknown>) => {
+        const o = r.origem != null ? String(r.origem) : ''
+        return inventario ? o === 'inventario' : o !== 'inventario'
+      }
+      const rawRows = (data ?? []).filter(byOrigem).map((r: Record<string, any>) => {
         const nomeJoin = conferenteNomeFromJoin(r)
         const cid = String(r.conferente_id ?? '')
         return {
@@ -1231,14 +1256,22 @@ export default function ContagemEstoque() {
           ean: r.ean != null ? String(r.ean) : null,
           dun: r.dun != null ? String(r.dun) : null,
           foto_base64: r.foto_base64 ?? null,
+          origem: r.origem != null ? String(r.origem) : null,
+          inventario_repeticao:
+            r.inventario_repeticao != null && r.inventario_repeticao !== ''
+              ? Number(r.inventario_repeticao)
+              : null,
         }
       }) as ContagemPreviewRow[]
 
       // Prévia agrupada: uma linha por dia + código + descrição, somando a quantidade.
+      // No inventário, mantém linhas separadas por 1ª/2ª/3ª contagem (origem + repeticao).
       const grouped = new Map<string, ContagemPreviewRow>()
       for (const row of rawRows) {
         const day = dayKey
-        const key = `${day}|${row.codigo_interno.trim().toLowerCase()}|${row.descricao.trim().toLowerCase()}`
+        const key = inventario
+          ? `${day}|${row.codigo_interno.trim().toLowerCase()}|${row.descricao.trim().toLowerCase()}|inv|${row.inventario_repeticao ?? ''}`
+          : `${day}|${row.codigo_interno.trim().toLowerCase()}|${row.descricao.trim().toLowerCase()}`
         const existing = grouped.get(key)
         if (!existing) {
           grouped.set(key, { ...row })
@@ -1265,6 +1298,7 @@ export default function ContagemEstoque() {
     }
     setPreviewLoading(false)
   }
+
 
   async function kickOutboxSync() {
     if (!enableOutboxKick) return
@@ -1368,9 +1402,10 @@ export default function ContagemEstoque() {
     }
     setChecklistLoading(true)
     try {
+      const listModeEfetivo: ChecklistListMode = inventario ? 'todos' : checklistListMode
       let itemsRaw = await fetchListaChecklistFromDb()
 
-      if (checklistListMode === 'armazem') {
+      if (listModeEfetivo === 'armazem') {
         const missing = itemsRaw.map((it) => it.codigo_interno).filter((codigo) => getArmazemContagem(codigo) === null)
         setArmazemMissingCodes(missing)
         if (missing.length > 0) {
@@ -1394,36 +1429,47 @@ export default function ContagemEstoque() {
         setArmazemMissingCodes([])
       }
 
-      const items: OfflineChecklistItem[] = itemsRaw.map((row, index) => {
+      const items: OfflineChecklistItem[] = []
+      itemsRaw.forEach((row, index) => {
         const p = productByCode.get(row.codigo_interno.trim())
-        return {
-          key: stableItemKey(row.codigo_interno, row.descricao, index),
-          codigo_interno: row.codigo_interno,
-          descricao: row.descricao,
-          quantidade_contada: '',
-          foto_base64: '',
-          up_quantidade: '',
-          lote: '',
-          observacao: '',
-          data_fabricacao: p?.data_fabricacao ? toDateInputValue(p.data_fabricacao) : '',
-          data_validade: p?.data_validade ? toDateInputValue(p.data_validade) : '',
-          unidade_medida: p?.unidade_medida ?? null,
-          ean: p?.ean ?? null,
-          dun: p?.dun ?? null,
-        }
+        const repeticoes = inventario ? ([1, 2, 3] as const) : ([1] as const)
+        repeticoes.forEach((rep) => {
+          const idx = inventario ? index * 3 + (rep - 1) : index
+          items.push({
+            key: stableItemKey(row.codigo_interno, row.descricao, idx),
+            codigo_interno: row.codigo_interno,
+            descricao: row.descricao,
+            inventario_repeticao: inventario ? rep : undefined,
+            quantidade_contada: '',
+            foto_base64: '',
+            up_quantidade: '',
+            lote: '',
+            observacao: '',
+            data_fabricacao: p?.data_fabricacao ? toDateInputValue(p.data_fabricacao) : '',
+            data_validade: p?.data_validade ? toDateInputValue(p.data_validade) : '',
+            unidade_medida: p?.unidade_medida ?? null,
+            ean: p?.ean ?? null,
+            dun: p?.dun ?? null,
+          })
+        })
       })
       const sess: OfflineSession = {
         sessionId: newSessionId(),
         data_contagem_ymd: contagemDiaYmd,
         conferente_id: conferenteId,
         status: 'aberta',
-        listMode: checklistListMode,
+        listMode: listModeEfetivo,
+        context: sessionMode,
         items,
         updatedAt: new Date().toISOString(),
       }
       setOfflineSession(sess)
-      saveOfflineSession(sess)
-      setSaveSuccess(`Lista carregada: ${items.length} itens. Preencha as quantidades e finalize quando terminar.`)
+      saveOfflineSession(sess, sessionMode)
+      setSaveSuccess(
+        inventario
+          ? `Lista de inventário: ${items.length} linhas (${itemsRaw.length} produtos × 3 contagens). Preencha as quantidades e finalize.`
+          : `Lista carregada: ${items.length} itens. Preencha as quantidades e finalize quando terminar.`,
+      )
       setSaveError('')
     } catch (e: any) {
       setChecklistError(e?.message ? String(e.message) : 'Erro ao carregar lista.')
@@ -1434,13 +1480,13 @@ export default function ContagemEstoque() {
 
   function handleDescartarSessaoLocal() {
     if (!offlineSession || offlineSession.status !== 'aberta') {
-      clearOfflineSession()
+      clearOfflineSession(sessionMode)
       setOfflineSession(null)
       setChecklistListMode('todos')
       return
     }
     if (!confirm('Limpar a sessão local? As quantidades não finalizadas serão perdidas.')) return
-    clearOfflineSession()
+    clearOfflineSession(sessionMode)
     setOfflineSession(null)
     setChecklistError('')
     setChecklistListMode('todos')
@@ -1453,7 +1499,7 @@ export default function ContagemEstoque() {
         ...prev,
         items: prev.items.map((it) => (it.key === key ? { ...it, quantidade_contada: quantidade } : it)),
       }
-      saveOfflineSession(next)
+      saveOfflineSession(next, sessionMode)
       return next
     })
     flashChecklistRowSaved(key)
@@ -1485,7 +1531,7 @@ export default function ContagemEstoque() {
         ...prev,
         items: prev.items.map((it) => (it.key === key ? { ...it, ...patch } : it)),
       }
-      saveOfflineSession(next)
+      saveOfflineSession(next, sessionMode)
       return next
     })
     flashChecklistRowSaved(key)
@@ -1495,7 +1541,8 @@ export default function ContagemEstoque() {
     setChecklistListCollapsed((prev) => {
       const next = !prev
       try {
-        sessionStorage.setItem('contagem-checklist-collapsed', next ? '1' : '0')
+        const ck = inventario ? 'inventario-checklist-collapsed' : 'contagem-checklist-collapsed'
+        sessionStorage.setItem(ck, next ? '1' : '0')
       } catch {
         /* ignore */
       }
@@ -1604,13 +1651,17 @@ export default function ContagemEstoque() {
       for (const it of itemsSnapshot) {
         const q = Number(String(it.quantidade_contada).replace(',', '.'))
         if (!Number.isFinite(q) || q < 0) {
-          setChecklistError(`Quantidade inválida para ${it.codigo_interno}.`)
+          setChecklistError(
+            `Quantidade inválida para ${it.codigo_interno}${it.inventario_repeticao ? ` (${it.inventario_repeticao}ª contagem)` : ''}.`,
+          )
           return
         }
         const dfRaw = String(it.data_fabricacao ?? '').trim()
         const dvRaw = String(it.data_validade ?? '').trim()
         if (dfRaw && dvRaw && dvRaw < dfRaw) {
-          setChecklistError(`Datas inválidas para ${it.codigo_interno}: vencimento antes da fabricação.`)
+          setChecklistError(
+            `Datas inválidas para ${it.codigo_interno}${it.inventario_repeticao ? ` (${it.inventario_repeticao}ª contagem)` : ''}: vencimento antes da fabricação.`,
+          )
           return
         }
         const upRaw = String(it.up_quantidade ?? '').trim()
@@ -1618,7 +1669,9 @@ export default function ContagemEstoque() {
         if (upRaw !== '') {
           const u = Number(upRaw.replace(',', '.'))
           if (!Number.isFinite(u) || u < 0) {
-            setChecklistError(`UP inválido para ${it.codigo_interno}.`)
+            setChecklistError(
+              `UP inválido para ${it.codigo_interno}${it.inventario_repeticao ? ` (${it.inventario_repeticao}ª contagem)` : ''}.`,
+            )
             return
           }
           up_adicional = u
@@ -1626,7 +1679,8 @@ export default function ContagemEstoque() {
         const catalog = productByCode.get(it.codigo_interno.trim())
         const produtoId =
           catalog?.id != null && isUuid(String(catalog.id)) ? String(catalog.id) : null
-        rows.push({
+        const rowPayload: Record<string, unknown> = {
+          data_contagem: ymd,
           data_hora_contagem: dataHoraIso,
           conferente_id: offlineSession.conferente_id,
           produto_id: produtoId,
@@ -1648,26 +1702,39 @@ export default function ContagemEstoque() {
           data_validade: dvRaw === '' ? null : dvRaw,
           ean: it.ean != null && String(it.ean).trim() !== '' ? String(it.ean).trim() : null,
           dun: it.dun != null && String(it.dun).trim() !== '' ? String(it.dun).trim() : null,
-        })
+        }
+        if (inventario) {
+          rowPayload.origem = 'inventario'
+          rowPayload.inventario_repeticao = it.inventario_repeticao ?? null
+        }
+        rows.push(rowPayload)
       }
 
       setFinalizeProgress('Conectando ao banco...')
-      const { error: delErr } = await supabase
+      let delQ = supabase
         .from('contagens_estoque')
         .delete()
         .eq('data_contagem', ymd)
         .eq('conferente_id', offlineSession.conferente_id)
+      if (inventario) {
+        delQ = delQ.eq('origem', 'inventario')
+      }
+      const { error: delErr } = await delQ
 
       if (delErr) {
         const startIso = `${ymd}T00:00:00`
         const endIso = `${ymd}T23:59:59`
         setFinalizeProgress('Limpando registros antigos (fallback)...')
-        const { error: del2 } = await supabase
+        let del2q = supabase
           .from('contagens_estoque')
           .delete()
           .eq('conferente_id', offlineSession.conferente_id)
           .gte('data_hora_contagem', startIso)
           .lte('data_hora_contagem', endIso)
+        if (inventario) {
+          del2q = del2q.eq('origem', 'inventario')
+        }
+        const { error: del2 } = await del2q
         if (del2) throw del2
       }
 
@@ -1679,10 +1746,14 @@ export default function ContagemEstoque() {
         if (insErr) throw insErr
       }
 
-      clearOfflineSession()
+      clearOfflineSession(sessionMode)
       setOfflineSession(null)
       setChecklistListMode('todos')
-      setSaveSuccess(`Contagem do dia ${ymd} finalizada: ${rows.length} registro(s) gravados no banco.`)
+      setSaveSuccess(
+        inventario
+          ? `Inventário do dia ${ymd} finalizado: ${rows.length} registro(s) gravados.`
+          : `Contagem do dia ${ymd} finalizada: ${rows.length} registro(s) gravados no banco.`,
+      )
       setFinalizeProgress('Concluído: registros salvos com sucesso.')
       await loadPreview(ymd)
     } catch (e: any) {
@@ -2479,7 +2550,7 @@ export default function ContagemEstoque() {
 
   return (
     <div style={{ padding: isMobile ? 10 : 16, maxWidth: 1200, margin: '0 auto', textAlign: 'left' }}>
-      <h2>Contagem de Estoque</h2>
+      <h2>{inventario ? 'Inventário físico' : 'Contagem de Estoque'}</h2>
 
       <section
         style={{
@@ -2490,11 +2561,26 @@ export default function ContagemEstoque() {
           background: 'var(--panel-bg, rgba(0,0,0,.04))',
         }}
       >
-        <h3 style={{ margin: '0 0 10px', fontSize: 18 }}>Contagem diária (offline → banco)</h3>
+        <h3 style={{ margin: '0 0 10px', fontSize: 18 }}>
+          {inventario ? 'Inventário (offline → banco)' : 'Contagem diária (offline → banco)'}
+        </h3>
         <p style={{ margin: '0 0 12px', fontSize: 13, color: 'var(--text, #555)' }}>
-          Carregue a lista a partir da tabela <strong>public.&quot;Todos os Produtos&quot;</strong> (codigo_interno + descricao), preencha as quantidades no app
-          (salvo no navegador) e clique em <strong>Finalizar contagem diária</strong> para gravar em{' '}
-          <strong>contagens_estoque</strong>.
+          {inventario ? (
+            <>
+              <strong>Inventário:</strong> cada produto aparece <strong>três vezes</strong> na lista (1ª, 2ª e 3ª contagem).
+              Carregue a lista a partir de <strong>Todos os Produtos</strong>, preencha as quantidades e use{' '}
+              <strong>Finalizar inventário</strong> para gravar em <code style={{ fontSize: 12 }}>contagens_estoque</code>{' '}
+              (campos <code style={{ fontSize: 12 }}>origem=inventario</code> e repetição). Execute o SQL em{' '}
+              <code style={{ fontSize: 12 }}>supabase/sql/alter_contagens_estoque_origem_inventario.sql</code> se ainda não
+              aplicou no banco.
+            </>
+          ) : (
+            <>
+              Carregue a lista a partir da tabela <strong>public.&quot;Todos os Produtos&quot;</strong> (codigo_interno + descricao), preencha as quantidades no app
+              (salvo no navegador) e clique em <strong>Finalizar contagem diária</strong> para gravar em{' '}
+              <strong>contagens_estoque</strong>.
+            </>
+          )}
         </p>
 
         <div
@@ -2630,7 +2716,7 @@ export default function ContagemEstoque() {
                 value={checklistListMode}
                 onChange={(e) => setChecklistListMode(e.target.value as ChecklistListMode)}
                 style={inputStyle}
-                disabled={!!offlineSession && offlineSession.status === 'aberta'}
+                disabled={inventario || (!!offlineSession && offlineSession.status === 'aberta')}
               >
                 <option value="todos">Todos os Produtos (cadastro)</option>
                 <option value="armazem">Armazém (dividida por contagem 1-4)</option>
@@ -2666,7 +2752,7 @@ export default function ContagemEstoque() {
               }
               onClick={() => void handleFinalizarContagemDiaria()}
             >
-              {finalizing ? 'Finalizando…' : 'Finalizar contagem diária'}
+              {finalizing ? 'Finalizando…' : inventario ? 'Finalizar inventário' : 'Finalizar contagem diária'}
             </button>
           </div>
         </div>
@@ -2868,7 +2954,14 @@ export default function ContagemEstoque() {
                               <div style={{ fontSize: 11, color: 'var(--text, #666)', marginBottom: 4 }}>
                                 Status: <strong style={{ color: pend ? '#a60' : '#0a0' }}>{pend ? 'Pendente' : 'Contado'}</strong>
                               </div>
-                              <div style={{ fontSize: 12, fontWeight: 800, fontFamily: 'monospace' }}>{it.codigo_interno}</div>
+                              <div style={{ fontSize: 12, fontWeight: 800, fontFamily: 'monospace' }}>
+                                {it.codigo_interno}
+                                {it.inventario_repeticao ? (
+                                  <span style={{ marginLeft: 8, fontSize: 11, color: '#0a7', fontWeight: 700 }}>
+                                    ({it.inventario_repeticao}ª contagem)
+                                  </span>
+                                ) : null}
+                              </div>
                               <div style={{ fontSize: 12, whiteSpace: 'normal', color: 'var(--text, #111)', marginTop: 2 }}>{it.descricao}</div>
 
                               <label style={{ ...labelStyle, marginTop: 8, gap: 4 }}>
@@ -3062,7 +3155,14 @@ export default function ContagemEstoque() {
                                 </>
                               ) : (
                                 <>
-                                  <td style={tdStyle}>{it.codigo_interno}</td>
+                                  <td style={tdStyle}>
+                                    {it.codigo_interno}
+                                    {it.inventario_repeticao ? (
+                                      <span style={{ marginLeft: 6, fontSize: 11, color: '#0a7', fontWeight: 700 }}>
+                                        ({it.inventario_repeticao}ª)
+                                      </span>
+                                    ) : null}
+                                  </td>
                                   <td style={{ ...tdStyle, whiteSpace: 'normal', maxWidth: 420 }}>{it.descricao}</td>
                                   <td style={tdStyle}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -3073,7 +3173,7 @@ export default function ContagemEstoque() {
                                         onChange={(e) => updateOfflineItemQty(it.key, e.target.value)}
                                         style={checklistQtdInputStyle}
                                         placeholder="—"
-                                        aria-label={`Quantidade ${it.codigo_interno}`}
+                                        aria-label={`Quantidade ${it.codigo_interno}${it.inventario_repeticao ? ` ${it.inventario_repeticao}ª` : ''}`}
                                       />
                                       {checklistSavedFlashKey === it.key ? (
                                         <span style={{ fontSize: 11, color: '#0a0', fontWeight: 700 }}>Salvo</span>
@@ -3643,7 +3743,7 @@ export default function ContagemEstoque() {
             digitar. Você também pode clicar em <strong>Salvar na lista</strong> com a lista preenchida (sem usar o
             formulário) para confirmar tudo no armazenamento local. Com código ou descrição abaixo, o mesmo botão grava
             também lote, UP e observação na linha escolhida. Para enviar ao Supabase, use{' '}
-            <strong>Finalizar contagem diária</strong>.
+            <strong>{inventario ? 'Finalizar inventário' : 'Finalizar contagem diária'}</strong>.
           </p>
         ) : null}
 
@@ -3671,13 +3771,22 @@ export default function ContagemEstoque() {
       </form>
 
       <div style={{ marginTop: 26 }}>
-        <h3>Prévia — o que já está no banco (Supabase)</h3>
+        <h3>{inventario ? 'Prévia do inventário (Supabase)' : 'Prévia — o que já está no banco (Supabase)'}</h3>
         <div style={{ color: 'var(--text, #555)', fontSize: 13, marginTop: 6, maxWidth: 720 }}>
-          A lista da contagem diária fica <strong>só no navegador</strong> até você clicar em{' '}
-          <strong>Finalizar contagem diária</strong> — aí os registros são enviados para a tabela{' '}
-          <code style={{ fontSize: 12 }}>contagens_estoque</code>. Esta prévia mostra exatamente o que já foi gravado
-          no banco (por dia civil). Após finalizar, a prévia é atualizada automaticamente; use{' '}
-          <strong>Atualizar prévia</strong> para buscar de novo (por exemplo, outro dia ou depois de editar no banco).
+          {inventario ? (
+            <>
+              Registros com <code style={{ fontSize: 12 }}>origem=inventario</code> no dia consultado. Três linhas por
+              produto quando as três contagens foram gravadas.
+            </>
+          ) : (
+            <>
+              A lista da contagem diária fica <strong>só no navegador</strong> até você clicar em{' '}
+              <strong>Finalizar contagem diária</strong> — aí os registros são enviados para a tabela{' '}
+              <code style={{ fontSize: 12 }}>contagens_estoque</code>. Esta prévia mostra exatamente o que já foi gravado
+              no banco (por dia civil). Após finalizar, a prévia é atualizada automaticamente; use{' '}
+              <strong>Atualizar prévia</strong> para buscar de novo (por exemplo, outro dia ou depois de editar no banco).
+            </>
+          )}
         </div>
         <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginTop: 10 }}>
           <button

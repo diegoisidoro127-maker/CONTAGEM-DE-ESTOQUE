@@ -1,4 +1,7 @@
 export const OFFLINE_CONTAGEM_STORAGE_KEY = 'contagem-offline-session-v1'
+export const OFFLINE_INVENTARIO_STORAGE_KEY = 'inventario-offline-session-v1'
+
+export type OfflineSessionMode = 'contagem' | 'inventario'
 
 export type OfflineChecklistItem = {
   /** Chave estável na sessão */
@@ -19,6 +22,8 @@ export type OfflineChecklistItem = {
   unidade_medida?: string | null
   ean?: string | null
   dun?: string | null
+  /** No inventário: 1ª, 2ª e 3ª linha do mesmo produto (três contagens). */
+  inventario_repeticao?: 1 | 2 | 3
 }
 
 export type ChecklistListMode = 'todos' | 'armazem'
@@ -32,15 +37,22 @@ export type OfflineSession = {
   listMode?: ChecklistListMode
   items: OfflineChecklistItem[]
   updatedAt: string
+  /** Fluxo que criou a sessão (persistência em chave separada). */
+  context?: OfflineSessionMode
 }
+
 
 export function stableItemKey(codigo: string, descricao: string, index: number) {
   return `${index}:${codigo.trim().toLowerCase()}:${descricao.trim().toLowerCase()}`
 }
 
-export function loadOfflineSession(): OfflineSession | null {
+function storageKey(mode: OfflineSessionMode) {
+  return mode === 'inventario' ? OFFLINE_INVENTARIO_STORAGE_KEY : OFFLINE_CONTAGEM_STORAGE_KEY
+}
+
+export function loadOfflineSession(mode: OfflineSessionMode = 'contagem'): OfflineSession | null {
   try {
-    const raw = localStorage.getItem(OFFLINE_CONTAGEM_STORAGE_KEY)
+    const raw = localStorage.getItem(storageKey(mode))
     if (!raw) return null
     const s = JSON.parse(raw) as OfflineSession
     if (!s || !Array.isArray(s.items)) return null
@@ -51,13 +63,13 @@ export function loadOfflineSession(): OfflineSession | null {
   }
 }
 
-export function saveOfflineSession(s: OfflineSession) {
-  const next = { ...s, updatedAt: new Date().toISOString() }
-  localStorage.setItem(OFFLINE_CONTAGEM_STORAGE_KEY, JSON.stringify(next))
+export function saveOfflineSession(s: OfflineSession, mode: OfflineSessionMode = 'contagem') {
+  const next = { ...s, updatedAt: new Date().toISOString(), context: mode }
+  localStorage.setItem(storageKey(mode), JSON.stringify(next))
 }
 
-export function clearOfflineSession() {
-  localStorage.removeItem(OFFLINE_CONTAGEM_STORAGE_KEY)
+export function clearOfflineSession(mode: OfflineSessionMode = 'contagem') {
+  localStorage.removeItem(storageKey(mode))
 }
 
 export function countPendingItems(items: OfflineChecklistItem[]) {

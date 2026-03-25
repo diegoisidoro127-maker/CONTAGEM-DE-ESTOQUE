@@ -53,8 +53,7 @@ export default function App() {
               maxWidth: 420,
             }}
           >
-            Escolha <strong>Contagem diária</strong> para registrar no painel com abas, ou{' '}
-            <strong>Inventário</strong> (em breve).
+            Escolha <strong>Contagem diária</strong> ou <strong>Inventário</strong> (mesmas abas do painel; no inventário cada produto aparece três vezes na lista).
           </p>
 
           <div
@@ -90,31 +89,6 @@ export default function App() {
             {theme === 'dark' ? 'Tema claro' : 'Tema escuro'}
           </button>
         </div>
-      ) : view === 'inventario' ? (
-        <div
-          style={{
-            minHeight: '100svh',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: 24,
-            textAlign: 'center',
-          }}
-        >
-          <img
-            src={logoUltrapao}
-            alt="Ultra Pão Alimentos"
-            style={{ width: 72, height: 'auto', borderRadius: 8, marginBottom: 16, opacity: 0.9 }}
-          />
-          <h2 style={{ margin: '0 0 10px', fontSize: 22, color: 'var(--text-h)' }}>Inventário</h2>
-          <p style={{ margin: '0 0 24px', fontSize: 14, color: 'var(--text)', maxWidth: 380 }}>
-            Este módulo será configurado em seguida. Por enquanto, use <strong>Contagem diária</strong> no início.
-          </p>
-          <button type="button" onClick={() => setView('home')} style={homePrimaryBtnStyle}>
-            Voltar ao início
-          </button>
-        </div>
       ) : (
         <>
           <header
@@ -140,6 +114,13 @@ export default function App() {
             </button>
             <button
               type="button"
+              onClick={() => setView('inventario')}
+              style={viewBtnStyle(view === 'inventario')}
+            >
+              Inventário
+            </button>
+            <button
+              type="button"
               onClick={() => setView('relatorio')}
               style={viewBtnStyle(view === 'relatorio')}
             >
@@ -162,7 +143,9 @@ export default function App() {
           </header>
 
           {view === 'contagem' ? (
-            <ContagemEstoque />
+            <ContagemEstoque key="contagem" />
+          ) : view === 'inventario' ? (
+            <ContagemEstoque key="inventario" inventario />
           ) : view === 'relatorio' ? (
             <RelatorioContagem key="relatorio" mode="periodo" />
           ) : (
