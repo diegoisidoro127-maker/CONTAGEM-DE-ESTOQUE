@@ -347,6 +347,7 @@ export default function ContagemEstoque() {
   const [barcodeTipoLeitura, setBarcodeTipoLeitura] = useState<'DUN' | 'EAN' | null>(null)
   const [barcodeCameraOpen, setBarcodeCameraOpen] = useState(false)
   const [barcodeCameraError, setBarcodeCameraError] = useState('')
+  const [barcodeFotoHint, setBarcodeFotoHint] = useState('')
   const barcodeVideoRef = useRef<HTMLVideoElement | null>(null)
 
   // Foto do produto (captura de câmera).
@@ -414,6 +415,10 @@ export default function ContagemEstoque() {
       /* ignore */
     }
   }, [])
+
+  useEffect(() => {
+    if (codigoInterno.trim()) setBarcodeFotoHint('')
+  }, [codigoInterno])
 
   // Restaura sessão offline aberta (persistência no navegador).
   useEffect(() => {
@@ -2448,10 +2453,14 @@ export default function ContagemEstoque() {
         <p style={{ margin: 0, fontSize: 13, color: 'var(--text, #666)' }}>
           Conferente da contagem: use o seletor na seção <strong>Contagem diária</strong> acima.
         </p>
-        <label style={labelStyle}>
-          Leitura de código de barras (DUN/EAN)
+        {/* Não usar <label> envolvendo input+botões: em mobile o toque pode ir para o input em vez do botão. */}
+        <div style={labelStyle}>
+          <label htmlFor="barcode-leitura-input" style={{ display: 'block' }}>
+            Leitura de código de barras (DUN/EAN)
+          </label>
           <div style={{ display: 'flex', gap: 8, alignItems: 'stretch' }}>
             <input
+              id="barcode-leitura-input"
               value={barcodeLeitura}
               onChange={(e) => setBarcodeLeitura(e.target.value)}
               onKeyDown={(e) => {
@@ -2468,8 +2477,11 @@ export default function ContagemEstoque() {
             />
             <button
               type="button"
-              style={{ ...buttonStyle, background: '#444', fontSize: 13, whiteSpace: 'nowrap' }}
-              onClick={() => setBarcodeCameraOpen(true)}
+              style={{ ...buttonStyle, background: '#444', fontSize: 13, whiteSpace: 'nowrap', touchAction: 'manipulation' }}
+              onClick={() => {
+                setBarcodeFotoHint('')
+                setBarcodeCameraOpen(true)
+              }}
               disabled={productOptionsLoading}
               title="Ler código de barras pela câmera (quando suportado)"
               aria-label="Ler código de barras (câmera/scan)"
@@ -2497,9 +2509,17 @@ export default function ContagemEstoque() {
             </button>
             <button
               type="button"
-              style={{ ...buttonStyle, background: '#444', fontSize: 13, whiteSpace: 'nowrap' }}
-              onClick={() => openPhotoModalForCodigo(codigoInterno)}
-              disabled={!codigoInterno.trim() || productOptionsLoading}
+              style={{ ...buttonStyle, background: '#444', fontSize: 13, whiteSpace: 'nowrap', touchAction: 'manipulation' }}
+              onClick={() => {
+                if (productOptionsLoading) return
+                if (!codigoInterno.trim()) {
+                  setBarcodeFotoHint('Informe o código do produto antes de tirar foto.')
+                  return
+                }
+                setBarcodeFotoHint('')
+                openPhotoModalForCodigo(codigoInterno)
+              }}
+              disabled={productOptionsLoading}
               title="Registrar foto do produto"
               aria-label="Registrar foto (câmera)"
             >
@@ -2518,7 +2538,8 @@ export default function ContagemEstoque() {
             </div>
           ) : null}
           {barcodeCameraError ? <div style={{ marginTop: 6, fontSize: 12, color: '#b00020' }}>{barcodeCameraError}</div> : null}
-        </label>
+          {barcodeFotoHint ? <div style={{ marginTop: 6, fontSize: 12, color: '#b00020' }}>{barcodeFotoHint}</div> : null}
+        </div>
 
         <label style={labelStyle}>
           Código do produto
