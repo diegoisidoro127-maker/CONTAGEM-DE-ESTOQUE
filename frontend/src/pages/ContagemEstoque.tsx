@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 /** Fila serial: um POST por vez para o webhook do Sheets (evita colunas duplicadas no servidor). */
 let sheetWebhookQueue = Promise.resolve(true as boolean)
@@ -52,6 +52,8 @@ type ProductOption = {
   data_validade?: string | null
   ean?: string | null
   dun?: string | null
+  foto_base64?: string | null
+  foto_url?: string | null
 }
 
 function pickFirstString(row: Record<string, any>, keys: string[]) {
@@ -256,6 +258,8 @@ function mapRowToProductOption(row: Record<string, any>): ProductOption | null {
     data_validade: row.data_validade ?? null,
     ean: (row.ean ?? row.EAN) as string | null,
     dun: (row.dun ?? row.DUN) as string | null,
+    foto_base64: (row.foto_base64 ?? row.FOTO_BASE64 ?? row.fotoBase64) as string | null,
+    foto_url: (row.foto_url ?? row.fotoUrl ?? row.foto_url_base ?? row.FOTO_URL) as string | null,
   }
 }
 
@@ -338,6 +342,22 @@ export default function ContagemEstoque() {
   const [descricaoListOpen, setDescricaoListOpen] = useState(false)
   const codigoWrapRef = useRef<HTMLDivElement>(null)
   const descricaoWrapRef = useRef<HTMLDivElement>(null)
+
+  // Leitura de código de barras (DUN/EAN) via bipador (keyboard) ou câmera (opcional).
+  const [barcodeLeitura, setBarcodeLeitura] = useState('')
+  const [barcodeTipoLeitura, setBarcodeTipoLeitura] = useState<'DUN' | 'EAN' | null>(null)
+  const [barcodeCameraOpen, setBarcodeCameraOpen] = useState(false)
+  const [barcodeCameraError, setBarcodeCameraError] = useState('')
+  const barcodeVideoRef = useRef<HTMLVideoElement | null>(null)
+
+  // Foto do produto (captura de câmera).
+  const [photoCameraOpen, setPhotoCameraOpen] = useState(false)
+  const [photoTargetCodigo, setPhotoTargetCodigo] = useState<string>('')
+  const [photoPreviewBase64, setPhotoPreviewBase64] = useState<string>('')
+  const [photoSaving, setPhotoSaving] = useState(false)
+  const [photoUiError, setPhotoUiError] = useState('')
+  const photoVideoRef = useRef<HTMLVideoElement | null>(null)
+  const photoCanvasRef = useRef<HTMLCanvasElement | null>(null)
 
   const [lote, setLote] = useState('')
   const [dataFabricacao, setDataFabricacao] = useState('')
@@ -489,6 +509,24 @@ export default function ContagemEstoque() {
     return map
   }, [productOptions])
 
+  const productByEan = useMemo(() => {
+    const map = new Map<string, ProductOption>()
+    for (const p of productOptions) {
+      if (!p.ean) continue
+      if (!map.has(p.ean)) map.set(p.ean, p)
+    }
+    return map
+  }, [productOptions])
+
+  const productByDun = useMemo(() => {
+    const map = new Map<string, ProductOption>()
+    for (const p of productOptions) {
+      if (!p.dun) continue
+      if (!map.has(p.dun)) map.set(p.dun, p)
+    }
+    return map
+  }, [productOptions])
+
   const SUGGEST_LIMIT = 400
   const codigoSuggestions = useMemo(() => {
     const q = codigoInterno.trim().toLowerCase()
@@ -534,6 +572,200 @@ export default function ContagemEstoque() {
     setDataVencimento(toDateInputValue(p.data_validade))
     setProdutoError('')
     return true
+  }
+
+  const applyProductByBarcode = useCallback(
+    (barcode: string) => {
+      const code = barcode.trim()
+      if (!code) return false
+
+      const pDun = productByDun.get(code)
+      if (pDun) {
+        setBarcodeTipoLeitura('DUN')
+        setCodigoInterno(pDun.codigo)
+        applyProductByCode(pDun.codigo)
+        setProdutoError('')
+        return true
+      }
+
+      const pEan = productByEan.get(code)
+      if (pEan) {
+        setBarcodeTipoLeitura('EAN')
+        setCodigoInterno(pEan.codigo)
+        applyProductByCode(pEan.codigo)
+        setProdutoError('')
+        return true
+      }
+
+      // Fallback: se o bipador estiver enviando o próprio código interno.
+      const pCode = productByCode.get(code)
+      if (pCode) {
+        setBarcodeTipoLeitura(null)
+        setCodigoInterno(pCode.codigo)
+        applyProductByCode(pCode.codigo)
+        setProdutoError('')
+        return true
+      }
+
+      setProdutoError('Código de barras não encontrado (DUN/EAN).')
+      return false
+    },
+    [productByDun, productByEan, productByCode],
+  )
+
+  useEffect(() => {
+    if (!barcodeCameraOpen) return
+    let stream: MediaStream | null = null
+    let detector: any = null
+    let stopped = false
+    let intervalId: number | null = null
+
+    async function start() {
+      try {
+        setBarcodeCameraError('')
+
+        const supportsBarcodeDetector = typeof (window as any).BarcodeDetector === 'function'
+        if (!supportsBarcodeDetector) {
+          setBarcodeCameraError(
+            'Seu navegador não suporta leitura por câmera (BarcodeDetector). Use o bipador ou digite o código.',
+          )
+          return
+        }
+
+        const formats = ['ean_13', 'ean_8', 'upc_a', 'code_128', 'code_39']
+        detector = new (window as any).BarcodeDetector({ formats })
+
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' } },
+          audio: false,
+        })
+
+        if (!barcodeVideoRef.current) return
+        barcodeVideoRef.current.srcObject = stream
+        await barcodeVideoRef.current.play()
+
+        intervalId = window.setInterval(async () => {
+          if (stopped || !detector || !barcodeVideoRef.current) return
+          try {
+            const barcodes = await detector.detect(barcodeVideoRef.current)
+            if (barcodes && barcodes.length) {
+              const rawValue = barcodes[0].rawValue
+              if (rawValue && applyProductByBarcode(rawValue)) {
+                setBarcodeCameraOpen(false)
+                setBarcodeLeitura('')
+                setBarcodeCameraError('')
+              }
+            }
+          } catch {
+            // ignora frame falho
+          }
+        }, 450)
+      } catch (e: any) {
+        setBarcodeCameraError(e?.message ? String(e.message) : 'Erro ao abrir câmera.')
+      }
+    }
+
+    void start()
+
+    return () => {
+      stopped = true
+      if (intervalId) window.clearInterval(intervalId)
+      if (stream) stream.getTracks().forEach((t) => t.stop())
+    }
+  }, [barcodeCameraOpen, applyProductByBarcode])
+
+  function openPhotoModalForCodigo(codigo: string) {
+    const code = codigo.trim()
+    if (!code) return
+    setPhotoTargetCodigo(code)
+    setPhotoUiError('')
+    setPhotoSaving(false)
+    const p = productByCode.get(code)
+    setPhotoPreviewBase64((p?.foto_base64 ?? '') || '')
+    setPhotoCameraOpen(true)
+  }
+
+  useEffect(() => {
+    if (!photoCameraOpen) return
+    let stream: MediaStream | null = null
+    let stopped = false
+
+    async function start() {
+      try {
+        setPhotoUiError('')
+        setPhotoSaving(false)
+        const facing: MediaTrackConstraints['facingMode'] = 'environment'
+
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: facing },
+          audio: false,
+        })
+
+        if (!photoVideoRef.current) return
+        photoVideoRef.current.srcObject = stream
+        await photoVideoRef.current.play()
+      } catch (e: any) {
+        if (stopped) return
+        setPhotoUiError(e?.message ? String(e.message) : 'Erro ao abrir câmera.')
+      }
+    }
+
+    void start()
+
+    return () => {
+      stopped = true
+      if (stream) stream.getTracks().forEach((t) => t.stop())
+    }
+  }, [photoCameraOpen])
+
+  function capturePhotoToBase64() {
+    const video = photoVideoRef.current
+    const canvas = photoCanvasRef.current
+    if (!video || !canvas) return
+
+    const width = video.videoWidth || 800
+    const height = video.videoHeight || 600
+    canvas.width = width
+    canvas.height = height
+
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+
+    ctx.drawImage(video, 0, 0, width, height)
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.85)
+    const base64 = dataUrl.split(',')[1] ?? ''
+    setPhotoPreviewBase64(base64)
+  }
+
+  async function savePhotoToDb() {
+    const codigo = photoTargetCodigo.trim()
+    if (!codigo) return
+    if (!photoPreviewBase64.trim()) {
+      setPhotoUiError('Tire uma foto antes de salvar.')
+      return
+    }
+    setPhotoSaving(true)
+    setPhotoUiError('')
+
+    try {
+      const { error } = await supabase
+        .from(TABELA_PRODUTOS)
+        .update({ foto_base64: photoPreviewBase64 })
+        .eq('codigo_interno', codigo)
+
+      if (error) throw error
+
+      setProductOptions((prev) =>
+        prev.map((p) => (p.codigo === codigo ? { ...p, foto_base64: photoPreviewBase64, foto_url: p.foto_url } : p)),
+      )
+      setPhotoCameraOpen(false)
+      setPhotoTargetCodigo('')
+      setPhotoSaving(false)
+      setPhotoUiError('')
+    } catch (e: any) {
+      setPhotoUiError(e?.message ? String(e.message) : 'Erro ao salvar foto no banco.')
+      setPhotoSaving(false)
+    }
   }
 
   // Busca automática do produto pelo `codigo_interno`
@@ -1764,6 +1996,8 @@ export default function ContagemEstoque() {
                           )
                         }
                         const it = item as OfflineChecklistItem
+                        const p = productByCode.get(it.codigo_interno)
+                        const hasPhoto = Boolean(p?.foto_base64 || p?.foto_url)
                         const pend = String(it.quantidade_contada ?? '').trim() === ''
                         const isEditing = checklistEditingKey === it.key && checklistEditDraft
                         return (
@@ -1867,6 +2101,14 @@ export default function ContagemEstoque() {
                                       onClick={() => handleLimparQuantidadeOffline(it.key)}
                                     >
                                       Limpar
+                                    </button>
+                                    <button
+                                      type="button"
+                                      style={{ ...buttonStyle, background: hasPhoto ? '#0b5' : '#444', fontSize: 12, padding: '6px 10px' }}
+                                      onClick={() => openPhotoModalForCodigo(it.codigo_interno)}
+                                      title={hasPhoto ? 'Ver/atualizar foto' : 'Anexar foto'}
+                                    >
+                                      {hasPhoto ? 'Foto (ok)' : 'Sem foto'}
                                     </button>
                                   </div>
                                 </td>
@@ -1994,6 +2236,51 @@ export default function ContagemEstoque() {
             />
           </label>
         </div>
+
+        <label style={labelStyle}>
+          Leitura de código de barras (DUN/EAN)
+          <div style={{ display: 'flex', gap: 8, alignItems: 'stretch' }}>
+            <input
+              value={barcodeLeitura}
+              onChange={(e) => setBarcodeLeitura(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  const ok = applyProductByBarcode(barcodeLeitura)
+                  if (ok) setBarcodeLeitura('')
+                }
+              }}
+              style={{ ...inputStyle, flex: 1 }}
+              placeholder="Bipe aqui (DUN/caixa ou EAN/pacote-unidade)"
+              inputMode="numeric"
+              disabled={productOptionsLoading}
+            />
+            <button
+              type="button"
+              style={{ ...buttonStyle, background: '#444', fontSize: 13, whiteSpace: 'nowrap' }}
+              onClick={() => setBarcodeCameraOpen(true)}
+              disabled={productOptionsLoading}
+              title="Ler código de barras pela câmera (quando suportado)"
+            >
+              Ler
+            </button>
+            <button
+              type="button"
+              style={{ ...buttonStyle, background: '#444', fontSize: 13, whiteSpace: 'nowrap' }}
+              onClick={() => openPhotoModalForCodigo(codigoInterno)}
+              disabled={!codigoInterno.trim() || productOptionsLoading}
+              title="Registrar foto do produto"
+            >
+              Foto
+            </button>
+          </div>
+          {barcodeTipoLeitura ? (
+            <div style={{ marginTop: 6, fontSize: 12, color: 'var(--text, #555)' }}>
+              Detetado: <strong>{barcodeTipoLeitura === 'DUN' ? 'CAIXA (DUN)' : 'PACOTE/UNIDADE (EAN)'}</strong>
+            </div>
+          ) : null}
+          {barcodeCameraError ? <div style={{ marginTop: 6, fontSize: 12, color: '#b00020' }}>{barcodeCameraError}</div> : null}
+        </label>
 
         <label style={labelStyle}>
           Código do produto
@@ -2349,6 +2636,134 @@ export default function ContagemEstoque() {
           </div>
         )}
       </div>
+
+      {barcodeCameraOpen ? (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,.6)',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            padding: 16,
+            zIndex: 99999,
+          }}
+        >
+          <div
+            style={{
+              width: 'min(980px, 100%)',
+              background: 'var(--panel-bg, #fff)',
+              border: '1px solid var(--border, #ccc)',
+              borderRadius: 12,
+              padding: 16,
+              color: 'var(--text, #111)',
+            }}
+          >
+            <h3 style={{ margin: '0 0 10px' }}>Leitor de código de barras</h3>
+            {barcodeCameraError ? <div style={{ color: '#b00020', fontSize: 13, marginBottom: 10 }}>{barcodeCameraError}</div> : null}
+            <video ref={barcodeVideoRef} style={{ width: '100%', maxHeight: 420, background: '#000' }} playsInline muted />
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 12, flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                style={{ ...buttonStyle, background: '#666' }}
+                onClick={() => {
+                  setBarcodeCameraOpen(false)
+                  setBarcodeCameraError('')
+                }}
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {photoCameraOpen ? (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,.6)',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            padding: 16,
+            zIndex: 99999,
+          }}
+        >
+          <div
+            style={{
+              width: 'min(980px, 100%)',
+              background: 'var(--panel-bg, #fff)',
+              border: '1px solid var(--border, #ccc)',
+              borderRadius: 12,
+              padding: 16,
+              color: 'var(--text, #111)',
+            }}
+          >
+            <h3 style={{ margin: '0 0 10px' }}>Foto do produto</h3>
+            <div style={{ fontSize: 13, color: 'var(--text, #555)', marginBottom: 10 }}>
+              Código: <span style={{ fontFamily: 'monospace' }}>{photoTargetCodigo || '—'}</span>
+            </div>
+            {photoUiError ? <div style={{ color: '#b00020', fontSize: 13, marginBottom: 10 }}>{photoUiError}</div> : null}
+
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 280px', gap: 12, alignItems: 'start' }}>
+              <div>
+                <video ref={photoVideoRef} style={{ width: '100%', maxHeight: 420, background: '#000' }} playsInline muted />
+                <canvas ref={photoCanvasRef} style={{ display: 'none' }} />
+                <div style={{ display: 'flex', gap: 10, marginTop: 12, flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    style={{ ...buttonStyle, background: '#2a4d7a' }}
+                    onClick={() => capturePhotoToBase64()}
+                    disabled={photoSaving}
+                  >
+                    Tirar foto
+                  </button>
+                </div>
+              </div>
+
+              <div style={{ border: '1px solid var(--border, #ccc)', borderRadius: 12, padding: 10 }}>
+                <div style={{ fontSize: 12, color: 'var(--text, #666)', marginBottom: 8 }}>Prévia</div>
+                {photoPreviewBase64 ? (
+                  <img
+                    src={`data:image/jpeg;base64,${photoPreviewBase64}`}
+                    style={{ width: '100%', borderRadius: 10, border: '1px solid #eee', background: '#fafafa' }}
+                    alt="Prévia foto"
+                  />
+                ) : (
+                  <div style={{ fontSize: 13, color: 'var(--text, #888)' }}>Sem foto anexada</div>
+                )}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 14, flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                style={{ ...buttonStyle, background: '#666' }}
+                onClick={() => {
+                  setPhotoCameraOpen(false)
+                  setPhotoTargetCodigo('')
+                  setPhotoUiError('')
+                  setPhotoSaving(false)
+                }}
+                disabled={photoSaving}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                style={{ ...buttonStyle, background: '#0b5' }}
+                onClick={() => void savePhotoToDb()}
+                disabled={photoSaving}
+              >
+                {photoSaving ? 'Salvando...' : 'Salvar foto'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }
