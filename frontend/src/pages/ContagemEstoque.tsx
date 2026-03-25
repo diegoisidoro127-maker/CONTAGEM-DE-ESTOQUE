@@ -865,15 +865,34 @@ export default function ContagemEstoque() {
       // Formato do input é YYYY-MM-DD, então comparação lexicográfica funciona como data.
       return dataVencimento >= dataFabricacao
     })()
+    const descricaoFinal = (descricaoInput.trim() || produto?.descricao || '').trim()
+    const codigoFinal = (() => {
+      const code = codigoInterno.trim()
+      if (code) return code
+      if (!descricaoFinal) return ''
+      if (offlineSession?.status !== 'aberta') return ''
+      const descNorm = descricaoFinal.toLowerCase()
+      const matches = offlineSession.items.filter((it) => it.descricao.trim().toLowerCase() === descNorm)
+      return matches.length === 1 ? matches[0].codigo_interno.trim() : ''
+    })()
 
     return (
       Boolean(conferenteId) &&
-      codigoInterno.trim().length > 0 &&
-      (descricaoInput.trim().length > 0 || Boolean(produto?.descricao)) &&
+      codigoFinal.length > 0 &&
+      descricaoFinal.length > 0 &&
       datasOk &&
       !saving
     )
-  }, [conferenteId, codigoInterno, descricaoInput, produto?.descricao, saving, dataFabricacao, dataVencimento])
+  }, [
+    conferenteId,
+    codigoInterno,
+    descricaoInput,
+    produto?.descricao,
+    saving,
+    dataFabricacao,
+    dataVencimento,
+    offlineSession,
+  ])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -884,11 +903,27 @@ export default function ContagemEstoque() {
       setSaveError('Selecione um conferente.')
       return
     }
-    if (!codigoInterno.trim()) {
-      setSaveError('Informe o código do produto.')
+    const descricaoFinal = (descricaoInput.trim() || produto?.descricao || '').trim()
+    const codeFromInput = codigoInterno.trim()
+    const codeFinal = (() => {
+      if (codeFromInput) return codeFromInput
+      if (!descricaoFinal || offlineSession?.status !== 'aberta') return ''
+      const descNorm = descricaoFinal.toLowerCase()
+      const matches = offlineSession.items.filter((it) => it.descricao.trim().toLowerCase() === descNorm)
+      return matches.length === 1 ? matches[0].codigo_interno.trim() : ''
+    })()
+    if (!codeFinal) {
+      if (!descricaoFinal) {
+        setSaveError('Informe o código do produto.')
+      } else if (offlineSession?.status !== 'aberta') {
+        setSaveError('Carregue a lista de produtos (sessão diária) antes de "Salvar na lista".')
+      } else {
+        setSaveError(
+          'Não foi possível identificar o código pelo texto da descrição. Informe o código do produto.',
+        )
+      }
       return
     }
-    const descricaoFinal = (descricaoInput.trim() || produto?.descricao || '').trim()
     if (!descricaoFinal) {
       setSaveError('Informe a descrição do produto.')
       return
@@ -912,7 +947,7 @@ export default function ContagemEstoque() {
 
     setSaving(true)
     try {
-      const code = codigoInterno.trim()
+      const code = codeFinal
       const descNorm = descricaoFinal.trim().toLowerCase()
       const idx = offlineSession.items.findIndex(
         (it) => it.codigo_interno.trim() === code && it.descricao.trim().toLowerCase() === descNorm,
@@ -936,6 +971,7 @@ export default function ContagemEstoque() {
         `Quantidade ${qtd} gravada na lista local (offline). Clique em "Finalizar contagem diária" para salvar no banco.`,
       )
       setSaveError('')
+      if (!codeFromInput) setCodigoInterno(code)
       setLote('')
       setDataFabricacao('')
       setDataVencimento('')
