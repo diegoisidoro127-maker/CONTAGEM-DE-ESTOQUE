@@ -1582,6 +1582,169 @@ export default function ContagemEstoque() {
       return codigoOk && descricaoOk && dataOk && loteOk && obsOk
     })
 
+    if (isMobile) {
+      return (
+        <div style={{ overflowX: 'hidden', marginTop: 16 }}>
+          {previewRowError ? <div style={{ color: '#b00020', marginBottom: 8 }}>{previewRowError}</div> : null}
+
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            <input
+              value={previewFilterCodigo}
+              onChange={(e) => setPreviewFilterCodigo(e.target.value)}
+              placeholder="Filtrar código"
+              style={{ padding: '8px 10px', border: '1px solid #ccc', borderRadius: 8, flex: '1 1 160px' }}
+            />
+            <input
+              value={previewFilterDescricao}
+              onChange={(e) => setPreviewFilterDescricao(e.target.value)}
+              placeholder="Filtrar descrição"
+              style={{ padding: '8px 10px', border: '1px solid #ccc', borderRadius: 8, flex: '1 1 200px' }}
+            />
+            <input
+              type="date"
+              value={previewFilterData}
+              onChange={(e) => setPreviewFilterData(e.target.value)}
+              style={{ padding: '8px 10px', border: '1px solid #ccc', borderRadius: 8, flex: '1 1 160px' }}
+            />
+            <input
+              value={previewFilterLote}
+              onChange={(e) => setPreviewFilterLote(e.target.value)}
+              placeholder="Filtrar lote"
+              style={{ padding: '8px 10px', border: '1px solid #ccc', borderRadius: 8, flex: '1 1 140px' }}
+            />
+            <input
+              value={previewFilterObs}
+              onChange={(e) => setPreviewFilterObs(e.target.value)}
+              placeholder="Filtrar obs"
+              style={{ padding: '8px 10px', border: '1px solid #ccc', borderRadius: 8, flex: '1 1 140px' }}
+            />
+          </div>
+
+          {filteredRows.length === 0 ? (
+            <div style={{ marginTop: 12, fontSize: 13, color: 'var(--text, #888)' }}>
+              Nenhum registro encontrado com os filtros atuais.
+            </div>
+          ) : null}
+
+          <div style={{ display: 'grid', gap: 12, marginTop: 14 }}>
+            {filteredRows.map((r) => {
+              return (
+                <div
+                  key={r.id}
+                  style={{
+                    border: '1px solid var(--border, #ccc)',
+                    borderRadius: 12,
+                    padding: 12,
+                    background: 'rgba(255, 255, 255, 0.02)',
+                  }}
+                >
+                  <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 12, color: 'var(--text, #888)' }}>Código</div>
+                      <div style={{ fontSize: 13, fontWeight: 800, fontFamily: 'monospace' }}>{r.codigo_interno}</div>
+
+                      <div style={{ fontSize: 13, color: 'var(--text, #111)', marginTop: 2 }}>{r.descricao}</div>
+
+                      <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text, #555)' }}>
+                        Data: {formatDateBRFromIso(r.data_hora_contagem)}
+                      </div>
+
+                      <div style={{ marginTop: 6, fontSize: 12, color: 'var(--text, #555)' }}>
+                        Qtd:
+                        {editingPreviewId === r.id ? (
+                          <input
+                            type="number"
+                            step="0.001"
+                            value={editingPreviewQuantidade}
+                            onChange={(e) => setEditingPreviewQuantidade(e.target.value)}
+                            style={{
+                              marginLeft: 8,
+                              padding: '8px 10px',
+                              border: '1px solid #ccc',
+                              borderRadius: 8,
+                              width: 110,
+                              boxSizing: 'border-box',
+                            }}
+                          />
+                        ) : (
+                          <span style={{ marginLeft: 8 }}>{r.quantidade_up}</span>
+                        )}
+                      </div>
+
+                      <div style={{ marginTop: 6, fontSize: 12, color: 'var(--text, #555)' }}>Lote: {r.lote ?? ''}</div>
+                      <div style={{ marginTop: 4, fontSize: 12, color: 'var(--text, #555)' }}>Obs: {r.observacao ?? ''}</div>
+                    </div>
+
+                    <div style={{ width: 86, flexShrink: 0 }}>
+                      {r.foto_base64 ? (
+                        <img
+                          src={`data:image/jpeg;base64,${r.foto_base64}`}
+                          alt="Foto do produto"
+                          style={{ width: 86, height: 64, objectFit: 'cover', borderRadius: 10, border: '1px solid #eee' }}
+                        />
+                      ) : (
+                        <div style={{ color: 'var(--text, #888)', fontSize: 12 }}>Sem foto</div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    {editingPreviewId === r.id ? (
+                      <>
+                        <button
+                          type="button"
+                          style={buttonStyle}
+                          onClick={() => handlePreviewSave(r.id)}
+                          disabled={previewRowActionLoading}
+                        >
+                          Salvar
+                        </button>
+                        <button
+                          type="button"
+                          style={{ ...buttonStyle, background: '#444' }}
+                          onClick={() => {
+                            setEditingPreviewId(null)
+                            setEditingPreviewQuantidade('')
+                            setPreviewRowError('')
+                          }}
+                          disabled={previewRowActionLoading}
+                        >
+                          Cancelar
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          style={buttonStyle}
+                          onClick={() => {
+                            setEditingPreviewId(r.id)
+                            setEditingPreviewQuantidade(String(r.quantidade_up))
+                            setPreviewRowError('')
+                          }}
+                          disabled={previewRowActionLoading}
+                        >
+                          Editar
+                        </button>
+                        <button
+                          type="button"
+                          style={{ ...buttonStyle, background: '#8a0000' }}
+                          onClick={() => handlePreviewDelete(r.id)}
+                          disabled={previewRowActionLoading}
+                        >
+                          Excluir
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )
+    }
+
     return (
       <div style={{ overflowX: 'auto', marginTop: 16 }}>
         {previewRowError ? <div style={{ color: '#b00020', marginBottom: 8 }}>{previewRowError}</div> : null}
