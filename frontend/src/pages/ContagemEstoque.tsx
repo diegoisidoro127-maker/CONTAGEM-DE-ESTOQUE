@@ -555,7 +555,7 @@ export default function ContagemEstoque() {
     return () => document.removeEventListener('mousedown', onDocDown)
   }, [])
 
-  function applyProductByCode(codigo: string) {
+  function applyProductByCode(codigo: string, opts?: { updateBarcodeLeitura?: boolean }) {
     const p = productByCode.get(codigo)
     if (!p) return false
     setProduto({
@@ -572,6 +572,10 @@ export default function ContagemEstoque() {
     setDataFabricacao(toDateInputValue(p.data_fabricacao))
     setDataVencimento(toDateInputValue(p.data_validade))
     setProdutoError('')
+    if (opts?.updateBarcodeLeitura !== false) {
+      setBarcodeLeitura(codigo)
+      setBarcodeTipoLeitura(null)
+    }
     return true
   }
 
@@ -584,7 +588,8 @@ export default function ContagemEstoque() {
       if (pDun) {
         setBarcodeTipoLeitura('DUN')
         setCodigoInterno(pDun.codigo)
-        applyProductByCode(pDun.codigo)
+        applyProductByCode(pDun.codigo, { updateBarcodeLeitura: false })
+        setBarcodeLeitura(code)
         setProdutoError('')
         return true
       }
@@ -593,7 +598,8 @@ export default function ContagemEstoque() {
       if (pEan) {
         setBarcodeTipoLeitura('EAN')
         setCodigoInterno(pEan.codigo)
-        applyProductByCode(pEan.codigo)
+        applyProductByCode(pEan.codigo, { updateBarcodeLeitura: false })
+        setBarcodeLeitura(code)
         setProdutoError('')
         return true
       }
@@ -603,7 +609,8 @@ export default function ContagemEstoque() {
       if (pCode) {
         setBarcodeTipoLeitura(null)
         setCodigoInterno(pCode.codigo)
-        applyProductByCode(pCode.codigo)
+        applyProductByCode(pCode.codigo, { updateBarcodeLeitura: false })
+        setBarcodeLeitura(code)
         setProdutoError('')
         return true
       }
@@ -653,7 +660,6 @@ export default function ContagemEstoque() {
               const rawValue = barcodes[0].rawValue
               if (rawValue && applyProductByBarcode(rawValue)) {
                 setBarcodeCameraOpen(false)
-                setBarcodeLeitura('')
                 setBarcodeCameraError('')
               }
             }
@@ -2426,7 +2432,7 @@ export default function ContagemEstoque() {
                 if (e.key === 'Enter') {
                   e.preventDefault()
                   const ok = applyProductByBarcode(barcodeLeitura)
-                  if (ok) setBarcodeLeitura('')
+                  // mantemos o valor para visualização rápida
                 }
               }}
               style={{ ...inputStyle, flex: 1 }}
@@ -2440,8 +2446,28 @@ export default function ContagemEstoque() {
               onClick={() => setBarcodeCameraOpen(true)}
               disabled={productOptionsLoading}
               title="Ler código de barras pela câmera (quando suportado)"
+              aria-label="Ler código de barras (câmera)"
             >
-              Ler
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                  <path d="M4 6H6" stroke="white" strokeWidth="2" strokeLinecap="round"/>
+                  <path d="M4 10H6" stroke="white" strokeWidth="2" strokeLinecap="round"/>
+                  <path d="M4 14H6" stroke="white" strokeWidth="2" strokeLinecap="round"/>
+                  <path d="M4 18H6" stroke="white" strokeWidth="2" strokeLinecap="round"/>
+                  <path d="M8 6H10" stroke="white" strokeWidth="2" strokeLinecap="round"/>
+                  <path d="M8 10H10" stroke="white" strokeWidth="2" strokeLinecap="round"/>
+                  <path d="M8 14H10" stroke="white" strokeWidth="2" strokeLinecap="round"/>
+                  <path d="M8 18H10" stroke="white" strokeWidth="2" strokeLinecap="round"/>
+                  <path d="M14 6H16" stroke="white" strokeWidth="2" strokeLinecap="round"/>
+                  <path d="M14 10H16" stroke="white" strokeWidth="2" strokeLinecap="round"/>
+                  <path d="M14 14H16" stroke="white" strokeWidth="2" strokeLinecap="round"/>
+                  <path d="M14 18H16" stroke="white" strokeWidth="2" strokeLinecap="round"/>
+                  <path d="M18 6H20" stroke="white" strokeWidth="2" strokeLinecap="round"/>
+                  <path d="M18 10H20" stroke="white" strokeWidth="2" strokeLinecap="round"/>
+                  <path d="M18 14H20" stroke="white" strokeWidth="2" strokeLinecap="round"/>
+                  <path d="M18 18H20" stroke="white" strokeWidth="2" strokeLinecap="round"/>
+                </svg>
+              </span>
             </button>
             <button
               type="button"
@@ -2449,8 +2475,15 @@ export default function ContagemEstoque() {
               onClick={() => openPhotoModalForCodigo(codigoInterno)}
               disabled={!codigoInterno.trim() || productOptionsLoading}
               title="Registrar foto do produto"
+              aria-label="Registrar foto (câmera)"
             >
-              Foto
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                  <path d="M9 7H7.5C6.12 7 5 8.12 5 9.5V16.5C5 17.88 6.12 19 7.5 19H16.5C17.88 19 19 17.88 19 16.5V9.5C19 8.12 17.88 7 16.5 7H15" stroke="white" strokeWidth="2" strokeLinecap="round"/>
+                  <path d="M9 7L10.2 5.8C10.6 5.4 11.13 5.2 11.67 5.2H12.33C12.87 5.2 13.4 5.4 13.8 5.8L15 7" stroke="white" strokeWidth="2" strokeLinecap="round"/>
+                  <path d="M12 17C14.2091 17 16 15.2091 16 13C16 10.7909 14.2091 9 12 9C9.79086 9 8 10.7909 8 13C8 15.2091 9.79086 17 12 17Z" stroke="white" strokeWidth="2" strokeLinecap="round"/>
+                </svg>
+              </span>
             </button>
           </div>
           {barcodeTipoLeitura ? (
