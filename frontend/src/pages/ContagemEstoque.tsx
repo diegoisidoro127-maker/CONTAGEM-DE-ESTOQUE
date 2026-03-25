@@ -397,6 +397,11 @@ export default function ContagemEstoque() {
   const [confirmFinalizeMissingOpen, setConfirmFinalizeMissingOpen] = useState(false)
   const [missingItemsForFinalize, setMissingItemsForFinalize] = useState<OfflineChecklistItem[]>([])
 
+  const dataHoraContagem = useMemo(() => {
+    const elapsed = Date.now() - clockRealStartMs
+    return toDatetimeLocalValue(new Date(clockBaseMs + elapsed))
+  }, [clockBaseMs, clockRealStartMs, clockTick])
+
   useEffect(() => {
     const id = setInterval(() => setClockTick((v) => v + 1), 1000)
     return () => clearInterval(id)
@@ -453,11 +458,6 @@ export default function ContagemEstoque() {
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
   }, [])
-
-  const dataHoraContagem = useMemo(() => {
-    const elapsed = Date.now() - clockRealStartMs
-    return toDatetimeLocalValue(new Date(clockBaseMs + elapsed))
-  }, [clockBaseMs, clockRealStartMs, clockTick])
 
   useEffect(() => {
     ;(async () => {
