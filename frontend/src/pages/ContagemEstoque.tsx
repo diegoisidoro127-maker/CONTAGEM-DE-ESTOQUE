@@ -1020,12 +1020,16 @@ export default function ContagemEstoque() {
     })()
     if (!codeFinal) {
       if (!descricaoFinal) {
-        setSaveError('Informe o código do produto.')
+        setSaveError(
+          offlineSession?.status === 'aberta'
+            ? 'Este botão usa o formulário abaixo: informe código ou descrição do produto. As quantidades digitadas na tabela da lista acima já ficam salvas na sessão — ao terminar tudo, use Finalizar contagem diária.'
+            : 'Informe o código do produto.',
+        )
       } else if (offlineSession?.status !== 'aberta') {
         setSaveError('Carregue a lista de produtos (sessão diária) antes de "Salvar na lista".')
       } else {
         setSaveError(
-          'Não foi possível identificar o código pelo texto da descrição. Informe o código do produto.',
+          'Não foi possível identificar o código pelo texto da descrição (há mais de um produto com texto parecido ou não há correspondência). Informe o código do produto.',
         )
       }
       return
@@ -3446,11 +3450,40 @@ export default function ContagemEstoque() {
           </label>
         </div>
 
-        <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginTop: 4 }}>
-          <button type="submit" disabled={saving} style={buttonStyle}>
+        {offlineSession?.status === 'aberta' ? (
+          <p
+            style={{
+              margin: '12px 0 0',
+              fontSize: 13,
+              color: 'var(--text, #666)',
+              maxWidth: 900,
+              lineHeight: 1.45,
+            }}
+          >
+            <strong>Lista acima:</strong> cada quantidade na coluna <strong>Qtd</strong> já é gravada na sessão local ao
+            digitar — não precisa clicar aqui só por causa da quantidade. O botão abaixo serve para aplicar{' '}
+            <strong>neste formulário</strong> (código ou descrição) a quantidade, lote, UP, observação, etc. num produto
+            da lista. Para gravar tudo no Supabase, use <strong>Finalizar contagem diária</strong>.
+          </p>
+        ) : null}
+
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginTop: 4, flexWrap: 'wrap' }}>
+          <button
+            type="submit"
+            disabled={saving || !canSubmit}
+            title={
+              !canSubmit && offlineSession?.status === 'aberta'
+                ? 'Preencha código ou descrição do produto neste bloco, ou use só a tabela e Finalizar.'
+                : undefined
+            }
+            style={{
+              ...buttonStyle,
+              ...(saving || !canSubmit ? { opacity: 0.5, cursor: 'not-allowed' } : {}),
+            }}
+          >
             {saving ? 'Gravando…' : 'Salvar na lista (offline)'}
           </button>
-          {saveError ? <div style={{ color: '#b00020' }}>{saveError}</div> : null}
+          {saveError ? <div style={{ color: '#b00020', maxWidth: 640 }}>{saveError}</div> : null}
           {saveSuccess ? <div style={{ color: '#0f7a0f' }}>{saveSuccess}</div> : null}
         </div>
       </form>
