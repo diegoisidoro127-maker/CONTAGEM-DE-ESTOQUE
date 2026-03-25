@@ -1205,7 +1205,7 @@ export default function ContagemEstoque() {
       setChecklistListMode('todos')
       return
     }
-    if (!confirm('Descartar a sessão local? As quantidades não finalizadas serão perdidas.')) return
+    if (!confirm('Limpar a sessão local? As quantidades não finalizadas serão perdidas.')) return
     clearOfflineSession()
     setOfflineSession(null)
     setChecklistError('')
@@ -1772,7 +1772,7 @@ export default function ContagemEstoque() {
   const carregarListaDisabled = checklistLoading || finalizing || !conferenteId
 
   return (
-    <div style={{ padding: isMobile ? 10 : 16, maxWidth: 1200, margin: '0 auto' }}>
+    <div style={{ padding: isMobile ? 10 : 16, maxWidth: 1200, margin: '0 auto', textAlign: 'left' }}>
       <h2>Contagem de Estoque</h2>
 
       <section
@@ -1947,7 +1947,7 @@ export default function ContagemEstoque() {
               disabled={finalizing}
               onClick={() => handleDescartarSessaoLocal()}
             >
-              Descartar sessão local
+              Limpar sessão local
             </button>
             <button
               type="button"
@@ -2049,18 +2049,18 @@ export default function ContagemEstoque() {
                   </label>
                 </div>
                 {isMobile ? (
-                  <div style={{ marginTop: 10, display: 'grid', gap: 10 }}>
+                  <div style={{ marginTop: 8, display: 'grid', gap: 8 }}>
                     {checklistDisplayItems.map((item) => {
                       if ('kind' in item && item.kind === 'header') {
                         return (
                           <div
                             key={item.key}
                             style={{
-                              padding: '10px 10px',
+                              padding: '8px 8px',
                               fontWeight: 800,
-                              fontSize: 12,
+                              fontSize: 11,
                               border: '1px solid #444',
-                              borderRadius: 10,
+                              borderRadius: 8,
                               background: 'rgba(255, 255, 255, .04)',
                               color: 'var(--text, #111)',
                             }}
@@ -2076,10 +2076,10 @@ export default function ContagemEstoque() {
                       const isEditing = checklistEditingKey === it.key && checklistEditDraft
 
                       return (
-                        <div key={it.key} style={{ border: '1px solid var(--border, #ccc)', borderRadius: 12, padding: 12 }}>
+                        <div key={it.key} style={{ border: '1px solid var(--border, #ccc)', borderRadius: 10, padding: 8 }}>
                           {isEditing && checklistEditDraft ? (
                             <>
-                              <div style={{ display: 'grid', gap: 10 }}>
+                              <div style={{ display: 'grid', gap: 8 }}>
                                 <label style={{ ...labelStyle }}>
                                   Código
                                   <input
@@ -2089,7 +2089,7 @@ export default function ContagemEstoque() {
                                         d ? { ...d, codigo_interno: e.target.value } : d,
                                       )
                                     }
-                                    style={{ ...inputStyle, minWidth: 0 }}
+                                    style={{ ...inputStyle, minWidth: 0, padding: '8px 10px', fontSize: 13 }}
                                   />
                                 </label>
                                 <label style={{ ...labelStyle }}>
@@ -2102,7 +2102,7 @@ export default function ContagemEstoque() {
                                       )
                                     }
                                     rows={2}
-                                    style={{ ...inputStyle, resize: 'vertical', minHeight: 48 }}
+                                    style={{ ...inputStyle, resize: 'vertical', minHeight: 42, padding: '8px 10px', fontSize: 13 }}
                                   />
                                 </label>
                                 <label style={{ ...labelStyle }}>
@@ -2116,22 +2116,22 @@ export default function ContagemEstoque() {
                                         d ? { ...d, quantidade_contada: e.target.value } : d,
                                       )
                                     }
-                                    style={inputStyle}
+                                    style={{ ...inputStyle, padding: '8px 10px', fontSize: 13 }}
                                     placeholder="—"
                                   />
                                 </label>
                               </div>
-                              <div style={{ marginTop: 10, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                              <div style={{ marginTop: 8, display: 'grid', gap: 8, gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
                                 <button
                                   type="button"
-                                  style={{ ...buttonStyle, background: '#0b5', fontSize: 13, flex: '1 1 160px' }}
+                                  style={{ ...buttonStyle, background: '#0b5', fontSize: 12, padding: '8px 10px' }}
                                   onClick={() => saveChecklistEdit()}
                                 >
                                   Salvar
                                 </button>
                                 <button
                                   type="button"
-                                  style={{ ...buttonStyle, background: '#666', fontSize: 13, flex: '1 1 160px' }}
+                                  style={{ ...buttonStyle, background: '#666', fontSize: 12, padding: '8px 10px' }}
                                   onClick={() => cancelChecklistEdit()}
                                 >
                                   Cancelar
@@ -2140,35 +2140,35 @@ export default function ContagemEstoque() {
                             </>
                           ) : (
                             <>
-                              <div style={{ fontSize: 12, color: 'var(--text, #666)', marginBottom: 6 }}>
+                              <div style={{ fontSize: 11, color: 'var(--text, #666)', marginBottom: 4 }}>
                                 Status: <strong style={{ color: pend ? '#a60' : '#0a0' }}>{pend ? 'Pendente' : 'Contado'}</strong>
                               </div>
-                              <div style={{ fontSize: 13, fontWeight: 800, fontFamily: 'monospace' }}>{it.codigo_interno}</div>
-                              <div style={{ fontSize: 13, whiteSpace: 'normal', color: 'var(--text, #111)', marginTop: 4 }}>{it.descricao}</div>
+                              <div style={{ fontSize: 12, fontWeight: 800, fontFamily: 'monospace' }}>{it.codigo_interno}</div>
+                              <div style={{ fontSize: 12, whiteSpace: 'normal', color: 'var(--text, #111)', marginTop: 2 }}>{it.descricao}</div>
 
-                              <label style={{ ...labelStyle, marginTop: 10 }}>
+                              <label style={{ ...labelStyle, marginTop: 8, gap: 4 }}>
                                 Qtd
                                 <input
                                   type="text"
                                   inputMode="decimal"
                                   value={it.quantidade_contada}
                                   onChange={(e) => updateOfflineItemQty(it.key, e.target.value)}
-                                  style={inputStyle}
+                                  style={{ ...inputStyle, padding: '8px 10px', fontSize: 13 }}
                                   placeholder="—"
                                 />
                               </label>
 
-                              <div style={{ marginTop: 10, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                              <div style={{ marginTop: 8, display: 'grid', gap: 8, gridTemplateColumns: 'repeat(3, minmax(0, 1fr))' }}>
                                 <button
                                   type="button"
-                                  style={{ ...buttonStyle, background: '#2a4d7a', fontSize: 13, flex: '1 1 160px' }}
+                                  style={{ ...buttonStyle, background: '#2a4d7a', fontSize: 12, padding: '8px 8px' }}
                                   onClick={() => openChecklistEdit(it)}
                                 >
                                   Editar
                                 </button>
                                 <button
                                   type="button"
-                                  style={{ ...buttonStyle, background: '#666', fontSize: 13, flex: '1 1 160px' }}
+                                  style={{ ...buttonStyle, background: '#666', fontSize: 12, padding: '8px 8px' }}
                                   onClick={() => handleLimparQuantidadeOffline(it.key)}
                                 >
                                   Limpar
@@ -2178,8 +2178,8 @@ export default function ContagemEstoque() {
                                   style={{
                                     ...buttonStyle,
                                     background: hasPhoto ? '#0b5' : '#444',
-                                    fontSize: 13,
-                                    flex: '1 1 160px',
+                                    fontSize: 12,
+                                    padding: '8px 8px',
                                   }}
                                   onClick={() => openPhotoModalForCodigo(it.codigo_interno)}
                                   title={hasPhoto ? 'Ver/atualizar foto' : 'Anexar foto'}
