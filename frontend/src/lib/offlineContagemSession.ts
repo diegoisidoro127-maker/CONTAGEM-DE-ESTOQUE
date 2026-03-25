@@ -9,6 +9,16 @@ export type OfflineChecklistItem = {
   quantidade_contada: string
   /** Foto anexada pelo usuário (base64). */
   foto_base64?: string
+  /** Campo UP do formulário (texto para edição; vazio = sem valor). */
+  up_quantidade?: string
+  lote?: string
+  observacao?: string
+  /** YYYY-MM-DD ou vazio */
+  data_fabricacao?: string
+  data_validade?: string
+  unidade_medida?: string | null
+  ean?: string | null
+  dun?: string | null
 }
 
 export type ChecklistListMode = 'todos' | 'armazem'

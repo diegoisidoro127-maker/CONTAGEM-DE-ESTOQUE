@@ -14,6 +14,7 @@ type ContagemRow = {
   unidade_medida: string | null
 
   quantidade_up: number
+  up_adicional?: number | null
   lote: string | null
   observacao: string | null
 
@@ -96,6 +97,7 @@ export default function RelatorioContagem({ mode = 'periodo' }: RelatorioContage
         descricao,
         unidade_medida,
         quantidade_up,
+        up_adicional,
         lote,
         observacao,
         data_fabricacao,
@@ -187,6 +189,7 @@ export default function RelatorioContagem({ mode = 'periodo' }: RelatorioContage
             data_validade: null,
             ean: null,
             dun: null,
+            up_adicional: null,
           }))
 
           setRows(mapped as unknown as ContagemRow[])
@@ -351,20 +354,21 @@ export default function RelatorioContagem({ mode = 'periodo' }: RelatorioContage
 
         {rows.length ? (
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 1200 }}>
+            <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 1280 }}>
               <thead>
                 <tr>
-                  <th style={thStyle}>Data (dia)</th>
-                  <th style={thStyle}>Data/hora</th>
+                  <th style={thStyle}>Dia da contagem</th>
+                  <th style={thStyle}>Data e hora do registro</th>
                   <th style={thStyle}>Conferente</th>
-                  <th style={thStyle}>Código</th>
+                  <th style={thStyle}>Código do produto</th>
                   <th style={thStyle}>Descrição</th>
-                  <th style={thStyle}>Un.</th>
-                  <th style={thStyle}>Qtd (up)</th>
+                  <th style={thStyle}>Unidade de medida</th>
+                  <th style={thStyle}>Quantidade contada</th>
+                  <th style={thStyle}>UP</th>
                   <th style={thStyle}>Lote</th>
-                  <th style={thStyle}>Obs</th>
-                  <th style={thStyle}>Fabric.</th>
-                  <th style={thStyle}>Validade</th>
+                  <th style={thStyle}>Observação</th>
+                  <th style={thStyle}>Data de fabricação</th>
+                  <th style={thStyle}>Data de vencimento</th>
                   <th style={thStyle}>EAN</th>
                   <th style={thStyle}>DUN</th>
                   <th style={thStyle}>Ações</th>
@@ -398,6 +402,7 @@ export default function RelatorioContagem({ mode = 'periodo' }: RelatorioContage
                         r.quantidade_up
                       )}
                     </td>
+                    <td style={tdStyle}>{r.up_adicional ?? ''}</td>
                     <td style={tdStyle}>{r.lote ?? ''}</td>
                     <td style={tdStyle}>{r.observacao ?? ''}</td>
                     <td style={tdStyle}>{r.data_fabricacao ? formatDateBR(r.data_fabricacao) : ''}</td>

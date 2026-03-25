@@ -89,6 +89,10 @@ alter table public.contagens_estoque
 alter table public.contagens_estoque
   add column if not exists dun text;
 
+-- UP adicional (formulário), separado de quantidade_up
+alter table public.contagens_estoque
+  add column if not exists up_adicional numeric(18,3);
+
 create index if not exists idx_contagens_estoque_conferente
   on public.contagens_estoque(conferente_id);
 

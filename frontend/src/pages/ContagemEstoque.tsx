@@ -35,12 +35,24 @@ type Produto = {
 type ContagemPreviewRow = {
   id: string
   source_ids: string[]
+  /** YYYY-MM-DD (dia civil da contagem; alinhado ao relatório / Excel) */
+  data_contagem: string
   data_hora_contagem: string
+  conferente_id: string
+  conferente_nome: string
   codigo_interno: string
   descricao: string
+  unidade_medida: string | null
+  /** Mesmo valor persistido em `quantidade_up` no banco (rótulo na UI: Quantidade contada). */
   quantidade_up: number
+  /** Campo UP do formulário (`up_adicional` no banco). */
+  quantidade_up_secundaria: number | null
   lote: string | null
   observacao: string | null
+  data_fabricacao: string | null
+  data_validade: string | null
+  ean: string | null
+  dun: string | null
   foto_base64?: string | null
 }
 
@@ -274,6 +286,26 @@ function formatDateBRFromIso(isoLike: string) {
   if (Number.isNaN(dt.getTime())) return isoLike
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${pad(dt.getDate())}/${pad(dt.getMonth() + 1)}/${dt.getFullYear()}`
+}
+
+function formatDateTimeBRFromIso(isoLike: string) {
+  const dt = new Date(isoLike)
+  if (Number.isNaN(dt.getTime())) return isoLike
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${pad(dt.getDate())}/${pad(dt.getMonth() + 1)}/${dt.getFullYear()} ${pad(dt.getHours())}:${pad(dt.getMinutes())}`
+}
+
+function formatDateBRFromYmd(ymd: string) {
+  const [y, m, d] = String(ymd).split('-')
+  if (!y || !m || !d) return ymd
+  return `${d}/${m}/${y}`
+}
+
+function conferenteNomeFromJoin(row: Record<string, unknown>): string {
+  const c = row.conferentes as { nome?: string } | Array<{ nome?: string }> | null | undefined
+  if (!c) return ''
+  if (Array.isArray(c)) return String(c[0]?.nome ?? '')
+  return String(c.nome ?? '')
 }
 
 /**
@@ -993,10 +1025,35 @@ export default function ContagemEstoque() {
         return
       }
 
+      const upStr = quantidadeUp.trim()
+      if (upStr !== '') {
+        const u = Number(upStr.replace(',', '.'))
+        if (!Number.isFinite(u) || u < 0) {
+          setSaveError('UP inválido.')
+          setSaving(false)
+          return
+        }
+      }
+
+      const catalog =
+        productByCode.get(codeFinal.trim()) ?? productByDescricao.get(descricaoFinal.trim().toLowerCase())
+
       const qtdStr = String(qtd)
+      const itemPatch: Pick<OfflineChecklistItem, 'quantidade_contada'> & Partial<OfflineChecklistItem> = {
+        quantidade_contada: qtdStr,
+        up_quantidade: upStr,
+        lote: lote.trim(),
+        observacao: observacao.trim(),
+        data_fabricacao: dataFabricacao.trim(),
+        data_validade: dataVencimento.trim(),
+        unidade_medida: catalog?.unidade_medida ?? produto?.unidade_medida ?? null,
+        ean: catalog?.ean ?? produto?.ean ?? null,
+        dun: catalog?.dun ?? produto?.dun ?? null,
+      }
+
       setOfflineSession((prev) => {
         if (!prev || prev.status !== 'aberta') return prev
-        const nextItems = prev.items.map((it, i) => (i === idx ? { ...it, quantidade_contada: qtdStr } : it))
+        const nextItems = prev.items.map((it, i) => (i === idx ? { ...it, ...itemPatch } : it))
         return { ...prev, items: nextItems }
       })
 
@@ -1033,7 +1090,9 @@ export default function ContagemEstoque() {
 
     const { data, error } = await supabase
       .from('contagens_estoque')
-      .select('id,data_hora_contagem,codigo_interno,descricao,quantidade_up,lote,observacao,foto_base64')
+      .select(
+        'id,data_hora_contagem,data_contagem,conferente_id,conferentes(nome),codigo_interno,descricao,unidade_medida,quantidade_up,up_adicional,lote,observacao,data_fabricacao,data_validade,ean,dun,foto_base64',
+      )
       .eq('data_contagem', dayKey)
       .order('data_hora_contagem', { ascending: false })
       .limit(2000)
@@ -1041,22 +1100,39 @@ export default function ContagemEstoque() {
     if (error) {
       setSaveError(`Erro ao carregar prévia: ${error.message}`)
     } else {
-      const rawRows = (data ?? []).map((r: any) => ({
-        id: String(r.id),
-        source_ids: [String(r.id)],
-        data_hora_contagem: String(r.data_hora_contagem ?? ''),
-        codigo_interno: String(r.codigo_interno ?? ''),
-        descricao: String(r.descricao ?? ''),
-        quantidade_up: Number(r.quantidade_up ?? 0),
-        lote: r.lote ?? null,
-        observacao: r.observacao ?? null,
-        foto_base64: r.foto_base64 ?? null,
-      })) as ContagemPreviewRow[]
+      const rawRows = (data ?? []).map((r: Record<string, any>) => {
+        const nomeJoin = conferenteNomeFromJoin(r)
+        const cid = String(r.conferente_id ?? '')
+        return {
+          id: String(r.id),
+          source_ids: [String(r.id)],
+          data_contagem: r.data_contagem != null ? String(r.data_contagem) : dayKey,
+          data_hora_contagem: String(r.data_hora_contagem ?? ''),
+          conferente_id: cid,
+          conferente_nome: nomeJoin.trim() || cid,
+          codigo_interno: String(r.codigo_interno ?? ''),
+          descricao: String(r.descricao ?? ''),
+          unidade_medida: r.unidade_medida ?? null,
+          quantidade_up: Number(r.quantidade_up ?? 0),
+          quantidade_up_secundaria: (() => {
+            const v = r.up_adicional
+            if (v === null || v === undefined || v === '') return null
+            const n = Number(v)
+            return Number.isFinite(n) ? n : null
+          })(),
+          lote: r.lote ?? null,
+          observacao: r.observacao ?? null,
+          data_fabricacao: r.data_fabricacao ?? null,
+          data_validade: r.data_validade ?? null,
+          ean: r.ean != null ? String(r.ean) : null,
+          dun: r.dun != null ? String(r.dun) : null,
+          foto_base64: r.foto_base64 ?? null,
+        }
+      }) as ContagemPreviewRow[]
 
       // Prévia agrupada: uma linha por dia + código + descrição, somando a quantidade.
       const grouped = new Map<string, ContagemPreviewRow>()
       for (const row of rawRows) {
-        // Como filtramos por data_contagem (dia civil), a chave do dia deve usar dayKey diretamente.
         const day = dayKey
         const key = `${day}|${row.codigo_interno.trim().toLowerCase()}|${row.descricao.trim().toLowerCase()}`
         const existing = grouped.get(key)
@@ -1069,6 +1145,16 @@ export default function ContagemEstoque() {
         if (!existing.foto_base64 && row.foto_base64) existing.foto_base64 = row.foto_base64
         if (!existing.lote && row.lote) existing.lote = row.lote
         if (!existing.observacao && row.observacao) existing.observacao = row.observacao
+        if (!existing.unidade_medida && row.unidade_medida) existing.unidade_medida = row.unidade_medida
+        if (!existing.data_fabricacao && row.data_fabricacao) existing.data_fabricacao = row.data_fabricacao
+        if (!existing.data_validade && row.data_validade) existing.data_validade = row.data_validade
+        if (!existing.ean && row.ean) existing.ean = row.ean
+        if (!existing.dun && row.dun) existing.dun = row.dun
+        const av = row.quantidade_up_secundaria
+        if (av != null && Number.isFinite(av)) {
+          const ev = existing.quantidade_up_secundaria
+          existing.quantidade_up_secundaria = (ev != null && Number.isFinite(ev) ? ev : 0) + av
+        }
       }
 
       setPreviewRows(Array.from(grouped.values()))
@@ -1204,13 +1290,24 @@ export default function ContagemEstoque() {
         setArmazemMissingCodes([])
       }
 
-      const items: OfflineChecklistItem[] = itemsRaw.map((row, index) => ({
-        key: stableItemKey(row.codigo_interno, row.descricao, index),
-        codigo_interno: row.codigo_interno,
-        descricao: row.descricao,
-        quantidade_contada: '',
-        foto_base64: '',
-      }))
+      const items: OfflineChecklistItem[] = itemsRaw.map((row, index) => {
+        const p = productByCode.get(row.codigo_interno.trim())
+        return {
+          key: stableItemKey(row.codigo_interno, row.descricao, index),
+          codigo_interno: row.codigo_interno,
+          descricao: row.descricao,
+          quantidade_contada: '',
+          foto_base64: '',
+          up_quantidade: '',
+          lote: '',
+          observacao: '',
+          data_fabricacao: p?.data_fabricacao ? toDateInputValue(p.data_fabricacao) : '',
+          data_validade: p?.data_validade ? toDateInputValue(p.data_validade) : '',
+          unidade_medida: p?.unidade_medida ?? null,
+          ean: p?.ean ?? null,
+          dun: p?.dun ?? null,
+        }
+      })
       const sess: OfflineSession = {
         sessionId: newSessionId(),
         data_contagem_ymd: contagemDiaYmd,
@@ -1261,7 +1358,19 @@ export default function ContagemEstoque() {
 
   function updateOfflineItemFields(
     key: string,
-    patch: Partial<Pick<OfflineChecklistItem, 'codigo_interno' | 'descricao' | 'quantidade_contada'>>,
+    patch: Partial<
+      Pick<
+        OfflineChecklistItem,
+        | 'codigo_interno'
+        | 'descricao'
+        | 'quantidade_contada'
+        | 'unidade_medida'
+        | 'ean'
+        | 'dun'
+        | 'data_fabricacao'
+        | 'data_validade'
+      >
+    >,
   ) {
     setOfflineSession((prev) => {
       if (!prev || prev.status !== 'aberta') return prev
@@ -1320,10 +1429,20 @@ export default function ContagemEstoque() {
       return
     }
     setChecklistError('')
+    const p = productByCode.get(cod)
     updateOfflineItemFields(checklistEditingKey, {
       codigo_interno: cod,
       descricao: desc,
       quantidade_contada: checklistEditDraft.quantidade_contada.trim(),
+      ...(p
+        ? {
+            unidade_medida: p.unidade_medida ?? null,
+            ean: p.ean ?? null,
+            dun: p.dun ?? null,
+            data_fabricacao: p.data_fabricacao ? toDateInputValue(p.data_fabricacao) : '',
+            data_validade: p.data_validade ? toDateInputValue(p.data_validade) : '',
+          }
+        : {}),
     })
     cancelChecklistEdit()
   }
@@ -1378,17 +1497,45 @@ export default function ContagemEstoque() {
           setChecklistError(`Quantidade inválida para ${it.codigo_interno}.`)
           return
         }
+        const dfRaw = String(it.data_fabricacao ?? '').trim()
+        const dvRaw = String(it.data_validade ?? '').trim()
+        if (dfRaw && dvRaw && dvRaw < dfRaw) {
+          setChecklistError(`Datas inválidas para ${it.codigo_interno}: vencimento antes da fabricação.`)
+          return
+        }
+        const upRaw = String(it.up_quantidade ?? '').trim()
+        let up_adicional: number | null = null
+        if (upRaw !== '') {
+          const u = Number(upRaw.replace(',', '.'))
+          if (!Number.isFinite(u) || u < 0) {
+            setChecklistError(`UP inválido para ${it.codigo_interno}.`)
+            return
+          }
+          up_adicional = u
+        }
+        const catalog = productByCode.get(it.codigo_interno.trim())
         rows.push({
           data_hora_contagem: dataHoraIso,
           conferente_id: offlineSession.conferente_id,
-          produto_id: null,
+          produto_id: catalog?.id ?? null,
           codigo_interno: it.codigo_interno.trim(),
           descricao: it.descricao.trim(),
-          unidade_medida: null,
+          unidade_medida:
+            it.unidade_medida != null && String(it.unidade_medida).trim() !== ''
+              ? String(it.unidade_medida).trim()
+              : null,
           quantidade_up: q,
-          foto_base64: it.foto_base64 ?? null,
-          lote: null,
-          observacao: null,
+          up_adicional,
+          foto_base64:
+            it.foto_base64 !== undefined && String(it.foto_base64 ?? '').trim() !== ''
+              ? String(it.foto_base64)
+              : null,
+          lote: String(it.lote ?? '').trim() || null,
+          observacao: String(it.observacao ?? '').trim() || null,
+          data_fabricacao: dfRaw === '' ? null : dfRaw,
+          data_validade: dvRaw === '' ? null : dvRaw,
+          ean: it.ean != null && String(it.ean).trim() !== '' ? String(it.ean).trim() : null,
+          dun: it.dun != null && String(it.dun).trim() !== '' ? String(it.dun).trim() : null,
         })
       }
 
@@ -1440,6 +1587,7 @@ export default function ContagemEstoque() {
   const [previewRowError, setPreviewRowError] = useState('')
   const [previewFilterCodigo, setPreviewFilterCodigo] = useState('')
   const [previewFilterDescricao, setPreviewFilterDescricao] = useState('')
+  const [previewFilterConferente, setPreviewFilterConferente] = useState('')
   const [previewFilterData, setPreviewFilterData] = useState('')
   const [previewFilterLote, setPreviewFilterLote] = useState('')
   const [previewFilterObs, setPreviewFilterObs] = useState('')
@@ -1573,13 +1721,19 @@ export default function ContagemEstoque() {
       const descricaoOk =
         !previewFilterDescricao.trim() ||
         r.descricao.toLowerCase().includes(previewFilterDescricao.trim().toLowerCase())
+      const confOk =
+        !previewFilterConferente.trim() ||
+        r.conferente_nome.toLowerCase().includes(previewFilterConferente.trim().toLowerCase()) ||
+        r.conferente_id.toLowerCase().includes(previewFilterConferente.trim().toLowerCase())
       const dataOk =
-        !previewFilterData || dataContagemYmdFromIso(String(r.data_hora_contagem)) === previewFilterData
+        !previewFilterData ||
+        r.data_contagem === previewFilterData ||
+        dataContagemYmdFromIso(String(r.data_hora_contagem)) === previewFilterData
       const loteOk =
         !previewFilterLote.trim() || String(r.lote ?? '').toLowerCase().includes(previewFilterLote.trim().toLowerCase())
       const obsOk =
         !previewFilterObs.trim() || String(r.observacao ?? '').toLowerCase().includes(previewFilterObs.trim().toLowerCase())
-      return codigoOk && descricaoOk && dataOk && loteOk && obsOk
+      return codigoOk && descricaoOk && confOk && dataOk && loteOk && obsOk
     })
 
     if (isMobile) {
@@ -1588,6 +1742,12 @@ export default function ContagemEstoque() {
           {previewRowError ? <div style={{ color: '#b00020', marginBottom: 8 }}>{previewRowError}</div> : null}
 
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            <input
+              value={previewFilterConferente}
+              onChange={(e) => setPreviewFilterConferente(e.target.value)}
+              placeholder="Filtrar conferente"
+              style={{ padding: '8px 10px', border: '1px solid #ccc', borderRadius: 8, flex: '1 1 180px' }}
+            />
             <input
               value={previewFilterCodigo}
               onChange={(e) => setPreviewFilterCodigo(e.target.value)}
@@ -1615,7 +1775,7 @@ export default function ContagemEstoque() {
             <input
               value={previewFilterObs}
               onChange={(e) => setPreviewFilterObs(e.target.value)}
-              placeholder="Filtrar obs"
+              placeholder="Filtrar observação"
               style={{ padding: '8px 10px', border: '1px solid #ccc', borderRadius: 8, flex: '1 1 140px' }}
             />
           </div>
@@ -1640,17 +1800,26 @@ export default function ContagemEstoque() {
                 >
                   <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 12, color: 'var(--text, #888)' }}>Código</div>
+                      <div style={{ fontSize: 12, color: 'var(--text, #888)' }}>Conferente</div>
+                      <div style={{ fontSize: 13, fontWeight: 600 }}>{r.conferente_nome}</div>
+
+                      <div style={{ fontSize: 12, color: 'var(--text, #888)', marginTop: 8 }}>Dia da contagem</div>
+                      <div style={{ fontSize: 13 }}>{formatDateBRFromYmd(r.data_contagem)}</div>
+
+                      <div style={{ fontSize: 12, color: 'var(--text, #888)', marginTop: 8 }}>Data e hora do registro</div>
+                      <div style={{ fontSize: 13 }}>{formatDateTimeBRFromIso(r.data_hora_contagem)}</div>
+
+                      <div style={{ fontSize: 12, color: 'var(--text, #888)', marginTop: 8 }}>Código do produto</div>
                       <div style={{ fontSize: 13, fontWeight: 800, fontFamily: 'monospace' }}>{r.codigo_interno}</div>
 
-                      <div style={{ fontSize: 13, color: 'var(--text, #111)', marginTop: 2 }}>{r.descricao}</div>
+                      <div style={{ fontSize: 12, color: 'var(--text, #888)', marginTop: 8 }}>Descrição</div>
+                      <div style={{ fontSize: 13, color: 'var(--text, #111)' }}>{r.descricao}</div>
+
+                      <div style={{ fontSize: 12, color: 'var(--text, #888)', marginTop: 8 }}>Unidade de medida</div>
+                      <div style={{ fontSize: 13 }}>{r.unidade_medida ?? '—'}</div>
 
                       <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text, #555)' }}>
-                        Data: {formatDateBRFromIso(r.data_hora_contagem)}
-                      </div>
-
-                      <div style={{ marginTop: 6, fontSize: 12, color: 'var(--text, #555)' }}>
-                        Qtd:
+                        Quantidade contada:
                         {editingPreviewId === r.id ? (
                           <input
                             type="number"
@@ -1671,8 +1840,25 @@ export default function ContagemEstoque() {
                         )}
                       </div>
 
-                      <div style={{ marginTop: 6, fontSize: 12, color: 'var(--text, #555)' }}>Lote: {r.lote ?? ''}</div>
-                      <div style={{ marginTop: 4, fontSize: 12, color: 'var(--text, #555)' }}>Obs: {r.observacao ?? ''}</div>
+                      <div style={{ marginTop: 6, fontSize: 12, color: 'var(--text, #555)' }}>
+                        UP: {r.quantidade_up_secundaria != null ? r.quantidade_up_secundaria : '—'}
+                      </div>
+
+                      <div style={{ marginTop: 6, fontSize: 12, color: 'var(--text, #555)' }}>
+                        Data de fabricação:{' '}
+                        {r.data_fabricacao ? formatDateBRFromYmd(String(r.data_fabricacao).slice(0, 10)) : '—'}
+                      </div>
+                      <div style={{ marginTop: 4, fontSize: 12, color: 'var(--text, #555)' }}>
+                        Data de vencimento:{' '}
+                        {r.data_validade ? formatDateBRFromYmd(String(r.data_validade).slice(0, 10)) : '—'}
+                      </div>
+
+                      <div style={{ marginTop: 6, fontSize: 12, color: 'var(--text, #555)' }}>Lote: {r.lote ?? '—'}</div>
+                      <div style={{ marginTop: 4, fontSize: 12, color: 'var(--text, #555)' }}>
+                        Observação: {r.observacao ?? '—'}
+                      </div>
+                      <div style={{ marginTop: 4, fontSize: 12, color: 'var(--text, #555)' }}>EAN: {r.ean ?? '—'}</div>
+                      <div style={{ marginTop: 4, fontSize: 12, color: 'var(--text, #555)' }}>DUN: {r.dun ?? '—'}</div>
                     </div>
 
                     <div style={{ width: 86, flexShrink: 0 }}>
@@ -1752,21 +1938,46 @@ export default function ContagemEstoque() {
           style={{
             borderCollapse: 'collapse',
             width: '100%',
-            minWidth: isMobile ? 820 : 1100,
+            minWidth: isMobile ? 820 : 1980,
           }}
         >
           <thead>
             <tr>
-              <th style={thStyle}>Código</th>
+              <th style={thStyle}>Conferente</th>
+              <th style={thStyle}>Dia da contagem</th>
+              <th style={thStyle}>Data e hora do registro</th>
+              <th style={thStyle}>Código do produto</th>
               <th style={thStyle}>Descrição</th>
-              <th style={thStyle}>Data (dd/mm/aaaa)</th>
+              <th style={thStyle}>Unidade de medida</th>
+              <th style={thStyle}>Quantidade contada</th>
               <th style={thStyle}>UP</th>
+              <th style={thStyle}>Data de fabricação</th>
+              <th style={thStyle}>Data de vencimento</th>
               <th style={thStyle}>Lote</th>
               <th style={thStyle}>Observação</th>
+              <th style={thStyle}>EAN</th>
+              <th style={thStyle}>DUN</th>
               <th style={thStyle}>Foto</th>
               <th style={thStyle}>Ações</th>
             </tr>
             <tr>
+              <th style={{ ...thStyle, fontWeight: 400, fontSize: 12, background: '#f3f4f6' }}>
+                <input
+                  value={previewFilterConferente}
+                  onChange={(e) => setPreviewFilterConferente(e.target.value)}
+                  placeholder="filtrar"
+                  style={{ padding: '6px 8px', border: '1px solid #ccc', borderRadius: 6, width: '100%', minWidth: 100 }}
+                />
+              </th>
+              <th style={{ ...thStyle, fontWeight: 400, fontSize: 12, background: '#f3f4f6' }}>
+                <input
+                  type="date"
+                  value={previewFilterData}
+                  onChange={(e) => setPreviewFilterData(e.target.value)}
+                  style={{ padding: '6px 8px', border: '1px solid #ccc', borderRadius: 6, width: '100%' }}
+                />
+              </th>
+              <th style={{ ...thStyle, fontWeight: 400, fontSize: 12, background: '#f3f4f6' }} />
               <th style={{ ...thStyle, fontWeight: 400, fontSize: 12, background: '#f3f4f6' }}>
                 <input
                   value={previewFilterCodigo}
@@ -1783,17 +1994,11 @@ export default function ContagemEstoque() {
                   style={{ padding: '6px 8px', border: '1px solid #ccc', borderRadius: 6, width: '100%' }}
                 />
               </th>
-              <th style={{ ...thStyle, fontWeight: 400, fontSize: 12, background: '#f3f4f6' }}>
-                <input
-                  type="date"
-                  value={previewFilterData}
-                  onChange={(e) => setPreviewFilterData(e.target.value)}
-                  style={{ padding: '6px 8px', border: '1px solid #ccc', borderRadius: 6, width: '100%' }}
-                />
-              </th>
-              <th style={{ ...thStyle, fontWeight: 400, fontSize: 12, background: '#f3f4f6' }}>
-                {/* Excel tem filtro por coluna; aqui fica em branco por ser campo numérico editado em célula */}
-              </th>
+              <th style={{ ...thStyle, fontWeight: 400, fontSize: 12, background: '#f3f4f6' }} />
+              <th style={{ ...thStyle, fontWeight: 400, fontSize: 12, background: '#f3f4f6' }} />
+              <th style={{ ...thStyle, fontWeight: 400, fontSize: 12, background: '#f3f4f6' }} />
+              <th style={{ ...thStyle, fontWeight: 400, fontSize: 12, background: '#f3f4f6' }} />
+              <th style={{ ...thStyle, fontWeight: 400, fontSize: 12, background: '#f3f4f6' }} />
               <th style={{ ...thStyle, fontWeight: 400, fontSize: 12, background: '#f3f4f6' }}>
                 <input
                   value={previewFilterLote}
@@ -1810,9 +2015,9 @@ export default function ContagemEstoque() {
                   style={{ padding: '6px 8px', border: '1px solid #ccc', borderRadius: 6, width: '100%' }}
                 />
               </th>
-              <th style={{ ...thStyle, fontWeight: 400, fontSize: 12, background: '#f3f4f6' }}>
-                {/* Sem filtro por imagem */}
-              </th>
+              <th style={{ ...thStyle, fontWeight: 400, fontSize: 12, background: '#f3f4f6' }} />
+              <th style={{ ...thStyle, fontWeight: 400, fontSize: 12, background: '#f3f4f6' }} />
+              <th style={{ ...thStyle, fontWeight: 400, fontSize: 12, background: '#f3f4f6' }} />
               <th style={{ ...thStyle, fontWeight: 400, fontSize: 12, background: '#f3f4f6' }} />
             </tr>
           </thead>
@@ -1820,9 +2025,12 @@ export default function ContagemEstoque() {
             {filteredRows.map((r) => {
               return (
                 <tr key={r.id}>
+                  <td style={tdStyle}>{r.conferente_nome}</td>
+                  <td style={tdStyle}>{formatDateBRFromYmd(r.data_contagem)}</td>
+                  <td style={tdStyle}>{formatDateTimeBRFromIso(r.data_hora_contagem)}</td>
                   <td style={tdStyle}>{r.codigo_interno}</td>
                   <td style={tdStyle}>{r.descricao}</td>
-                  <td style={tdStyle}>{formatDateBRFromIso(r.data_hora_contagem)}</td>
+                  <td style={tdStyle}>{r.unidade_medida ?? ''}</td>
                   <td style={tdStyle}>
                     {editingPreviewId === r.id ? (
                       <input
@@ -1836,8 +2044,17 @@ export default function ContagemEstoque() {
                       r.quantidade_up
                     )}
                   </td>
+                  <td style={tdStyle}>{r.quantidade_up_secundaria != null ? r.quantidade_up_secundaria : ''}</td>
+                  <td style={tdStyle}>
+                    {r.data_fabricacao ? formatDateBRFromYmd(String(r.data_fabricacao).slice(0, 10)) : ''}
+                  </td>
+                  <td style={tdStyle}>
+                    {r.data_validade ? formatDateBRFromYmd(String(r.data_validade).slice(0, 10)) : ''}
+                  </td>
                   <td style={tdStyle}>{r.lote ?? ''}</td>
                   <td style={tdStyle}>{r.observacao ?? ''}</td>
+                  <td style={tdStyle}>{r.ean ?? ''}</td>
+                  <td style={tdStyle}>{r.dun ?? ''}</td>
                   <td style={tdStyle}>
                     {r.foto_base64 ? (
                       <img
@@ -3162,24 +3379,45 @@ export default function ContagemEstoque() {
             background: 'rgba(0,0,0,.6)',
             display: 'flex',
             justifyContent: 'center',
-            alignItems: 'center',
-            padding: 16,
+            alignItems: isMobile ? 'flex-start' : 'center',
+            overflowY: 'auto',
+            overflowX: 'hidden',
+            WebkitOverflowScrolling: 'touch',
+            boxSizing: 'border-box',
+            padding: isMobile ? 'max(10px, env(safe-area-inset-top)) 12px 12px' : 16,
             zIndex: 99999,
           }}
         >
           <div
             style={{
-              width: 'min(980px, 100%)',
+              width: '100%',
+              maxWidth: 'min(980px, calc(100vw - 24px))',
+              minWidth: 0,
+              boxSizing: 'border-box',
               background: 'var(--panel-bg, #fff)',
               border: '1px solid var(--border, #ccc)',
               borderRadius: 12,
-              padding: 16,
+              padding: isMobile ? 12 : 16,
               color: 'var(--text, #111)',
+              margin: isMobile ? '0 auto 12px' : undefined,
             }}
           >
-            <h3 style={{ margin: '0 0 10px' }}>Leitor de código de barras</h3>
+            <h3 style={{ margin: '0 0 10px', fontSize: isMobile ? 17 : undefined }}>Leitor de código de barras</h3>
             {barcodeCameraError ? <div style={{ color: '#b00020', fontSize: 13, marginBottom: 10 }}>{barcodeCameraError}</div> : null}
-            <video ref={barcodeVideoRef} style={{ width: '100%', maxHeight: 420, background: '#000' }} playsInline muted />
+            <video
+              ref={barcodeVideoRef}
+              style={{
+                width: '100%',
+                maxWidth: '100%',
+                display: 'block',
+                maxHeight: isMobile ? 320 : 420,
+                height: 'auto',
+                objectFit: 'contain',
+                background: '#000',
+              }}
+              playsInline
+              muted
+            />
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 12, flexWrap: 'wrap' }}>
               <button
                 type="button"
@@ -3204,30 +3442,60 @@ export default function ContagemEstoque() {
             background: 'rgba(0,0,0,.6)',
             display: 'flex',
             justifyContent: 'center',
-            alignItems: 'center',
-            padding: 16,
+            alignItems: isMobile ? 'flex-start' : 'center',
+            overflowY: 'auto',
+            overflowX: 'hidden',
+            WebkitOverflowScrolling: 'touch',
+            boxSizing: 'border-box',
+            padding: isMobile ? 'max(10px, env(safe-area-inset-top)) 12px 12px' : 16,
             zIndex: 99999,
           }}
         >
           <div
             style={{
-              width: 'min(980px, 100%)',
+              width: '100%',
+              maxWidth: 'min(980px, calc(100vw - 24px))',
+              minWidth: 0,
+              boxSizing: 'border-box',
               background: 'var(--panel-bg, #fff)',
               border: '1px solid var(--border, #ccc)',
               borderRadius: 12,
-              padding: 16,
+              padding: isMobile ? 12 : 16,
               color: 'var(--text, #111)',
+              margin: isMobile ? '0 auto 12px' : undefined,
             }}
           >
-            <h3 style={{ margin: '0 0 10px' }}>Foto do produto</h3>
-            <div style={{ fontSize: 13, color: 'var(--text, #555)', marginBottom: 10 }}>
+            <h3 style={{ margin: '0 0 10px', fontSize: isMobile ? 17 : undefined }}>Foto do produto</h3>
+            <div style={{ fontSize: 13, color: 'var(--text, #555)', marginBottom: 10, wordBreak: 'break-word' }}>
               Código: <span style={{ fontFamily: 'monospace' }}>{photoTargetCodigo || '—'}</span>
             </div>
             {photoUiError ? <div style={{ color: '#b00020', fontSize: 13, marginBottom: 10 }}>{photoUiError}</div> : null}
 
-            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 280px', gap: 12, alignItems: 'start' }}>
-              <div>
-                <video ref={photoVideoRef} style={{ width: '100%', maxHeight: 420, background: '#000' }} playsInline muted />
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'minmax(0, 1fr) minmax(0, 280px)',
+                gap: 12,
+                alignItems: 'start',
+                width: '100%',
+                minWidth: 0,
+              }}
+            >
+              <div style={{ minWidth: 0, maxWidth: '100%' }}>
+                <video
+                  ref={photoVideoRef}
+                  style={{
+                    width: '100%',
+                    maxWidth: '100%',
+                    display: 'block',
+                    maxHeight: isMobile ? 320 : 420,
+                    height: 'auto',
+                    objectFit: 'contain',
+                    background: '#000',
+                  }}
+                  playsInline
+                  muted
+                />
                 <canvas ref={photoCanvasRef} style={{ display: 'none' }} />
                 <div style={{ display: 'flex', gap: 10, marginTop: 12, flexWrap: 'wrap' }}>
                   <button
@@ -3241,16 +3509,44 @@ export default function ContagemEstoque() {
                 </div>
               </div>
 
-              <div style={{ border: '1px solid var(--border, #ccc)', borderRadius: 12, padding: 10 }}>
+              <div
+                style={{
+                  border: '1px solid var(--border, #ccc)',
+                  borderRadius: 12,
+                  padding: 10,
+                  minWidth: 0,
+                  maxWidth: '100%',
+                  boxSizing: 'border-box',
+                }}
+              >
                 <div style={{ fontSize: 12, color: 'var(--text, #666)', marginBottom: 8 }}>Prévia</div>
                 {photoPreviewBase64 ? (
                   <img
                     src={`data:image/jpeg;base64,${photoPreviewBase64}`}
-                    style={{ width: '100%', borderRadius: 10, border: '1px solid #eee', background: '#fafafa' }}
+                    style={{
+                      width: '100%',
+                      maxWidth: '100%',
+                      height: 'auto',
+                      display: 'block',
+                      borderRadius: 10,
+                      border: '1px solid #eee',
+                      background: '#fafafa',
+                      objectFit: 'contain',
+                    }}
                     alt="Prévia foto"
                   />
                 ) : (
-                  <div style={{ fontSize: 13, color: 'var(--text, #888)' }}>Sem foto anexada</div>
+                  <div
+                    style={{
+                      fontSize: 13,
+                      color: 'var(--text, #888)',
+                      minHeight: isMobile ? 80 : undefined,
+                      display: 'flex',
+                      alignItems: 'center',
+                    }}
+                  >
+                    Sem foto anexada
+                  </div>
                 )}
               </div>
             </div>
