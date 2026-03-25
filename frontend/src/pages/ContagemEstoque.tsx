@@ -2438,7 +2438,7 @@ export default function ContagemEstoque() {
               onClick={() => setBarcodeCameraOpen(true)}
               disabled={productOptionsLoading}
               title="Ler código de barras pela câmera (quando suportado)"
-              aria-label="Ler código de barras (câmera)"
+              aria-label="Ler código de barras (câmera/scan)"
             >
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
