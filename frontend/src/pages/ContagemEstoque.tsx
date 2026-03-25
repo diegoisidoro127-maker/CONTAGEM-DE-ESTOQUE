@@ -256,8 +256,8 @@ function mapRowToProductOption(row: Record<string, any>): ProductOption | null {
       pickFirstString(row, ['unidade_medida', 'unidade', 'UNIDADE', 'und']) || null,
     data_fabricacao: row.data_fabricacao ?? null,
     data_validade: row.data_validade ?? null,
-    ean: (row.ean ?? row.EAN) as string | null,
-    dun: (row.dun ?? row.DUN) as string | null,
+    ean: row.ean != null ? String(row.ean) : row.EAN != null ? String(row.EAN) : null,
+    dun: row.dun != null ? String(row.dun) : row.DUN != null ? String(row.DUN) : null,
     foto_base64: (row.foto_base64 ?? row.FOTO_BASE64 ?? row.fotoBase64) as string | null,
     foto_url: (row.foto_url ?? row.fotoUrl ?? row.foto_url_base ?? row.FOTO_URL) as string | null,
   }
