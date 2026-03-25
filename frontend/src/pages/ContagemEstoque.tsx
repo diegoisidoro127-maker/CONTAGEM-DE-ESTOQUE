@@ -480,31 +480,55 @@ export default function ContagemEstoque() {
   useEffect(() => {
     ;(async () => {
       setProductOptionsLoading(true)
+      setProdutoError('')
       let loaded: ProductOption[] = []
       let lastLoadError: string | null = null
+      let rawRowCount = 0
 
-      const { data, error } = await supabase.from(TABELA_PRODUTOS).select('*').limit(15000)
+      try {
+        try {
+          const { data, error } = await supabase.from(TABELA_PRODUTOS).select('*').limit(15000)
+          rawRowCount = data?.length ?? 0
 
-      if (error) {
-        lastLoadError = error.message ?? 'erro ao carregar produtos'
-      } else if (data?.length) {
-        loaded = (data as Array<Record<string, any>>)
-          .map((row) => mapRowToProductOption(row))
-          .filter(Boolean) as ProductOption[]
-        loaded.sort((a, b) => a.codigo.localeCompare(b.codigo, 'pt-BR'))
-      }
+          if (error) {
+            lastLoadError = error.message ?? 'erro ao carregar produtos'
+          } else if (data?.length) {
+            loaded = (data as Array<Record<string, any>>)
+              .map((row) => mapRowToProductOption(row))
+              .filter(Boolean) as ProductOption[]
+            loaded.sort((a, b) => a.codigo.localeCompare(b.codigo, 'pt-BR'))
+          }
+        } catch (e: any) {
+          lastLoadError =
+            e?.message != null
+              ? String(e.message)
+              : 'Falha ao consultar o Supabase. Confira VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY no deploy (Render) e recarregue a página.'
+        }
 
-      // remove duplicados por código
-      const byCode = new Map<string, ProductOption>()
-      for (const p of loaded) {
-        if (!byCode.has(p.codigo)) byCode.set(p.codigo, p)
+        // remove duplicados por código
+        const byCode = new Map<string, ProductOption>()
+        for (const p of loaded) {
+          if (!byCode.has(p.codigo)) byCode.set(p.codigo, p)
+        }
+        const normalized = Array.from(byCode.values())
+        setProductOptions(normalized)
+
+        if (!normalized.length) {
+          if (lastLoadError) {
+            setProdutoError(`Erro ao carregar produtos da base: ${lastLoadError}`)
+          } else if (rawRowCount === 0) {
+            setProdutoError(
+              `Nenhuma linha retornada de "${TABELA_PRODUTOS}". Confira políticas RLS (SELECT para o papel anon), se a tabela tem dados e o nome exato no Supabase.`,
+            )
+          } else {
+            setProdutoError(
+              `A tabela retornou ${rawRowCount} linha(s), mas nenhuma com código válido (esperado codigo_interno ou colunas equivalentes). Revise o cadastro.`,
+            )
+          }
+        }
+      } finally {
+        setProductOptionsLoading(false)
       }
-      const normalized = Array.from(byCode.values())
-      setProductOptions(normalized)
-      if (!normalized.length && lastLoadError) {
-        setProdutoError(`Erro ao carregar produtos da base: ${lastLoadError}`)
-      }
-      setProductOptionsLoading(false)
     })()
   }, [])
 
@@ -1973,6 +1997,23 @@ export default function ContagemEstoque() {
         ) : null}
 
         {checklistError ? <div style={{ color: '#b00020', marginTop: 10 }}>{checklistError}</div> : null}
+        {!productOptionsLoading && productOptions.length === 0 && produtoError ? (
+          <div
+            role="alert"
+            style={{
+              marginTop: 10,
+              padding: '10px 12px',
+              borderRadius: 8,
+              border: '1px solid #c62828',
+              background: 'rgba(198, 40, 40, 0.08)',
+              color: '#b00020',
+              fontSize: 13,
+              textAlign: 'left',
+            }}
+          >
+            <strong>Catálogo de produtos:</strong> {produtoError}
+          </div>
+        ) : null}
         {startFreshNotice ? (
           <div style={{ color: '#0a0', marginTop: 8, fontSize: 13, textAlign: 'left' }}>
             {startFreshNotice}
@@ -2786,7 +2827,7 @@ export default function ContagemEstoque() {
                 ) : null}
               </div>
             </label>
-            {produtoError ? (
+            {produtoError && (productOptions.length > 0 || productOptionsLoading) ? (
               <div style={{ color: '#b00020', fontSize: 13, marginTop: 6 }}>{produtoError}</div>
             ) : null}
             {produtoLoading ? (
