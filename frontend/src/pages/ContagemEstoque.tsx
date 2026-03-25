@@ -41,6 +41,7 @@ type ContagemPreviewRow = {
   quantidade_up: number
   lote: string | null
   observacao: string | null
+  foto_base64?: string | null
 }
 
 type ProductOption = {
@@ -680,8 +681,8 @@ export default function ContagemEstoque() {
     setPhotoTargetCodigo(code)
     setPhotoUiError('')
     setPhotoSaving(false)
-    const p = productByCode.get(code)
-    setPhotoPreviewBase64((p?.foto_base64 ?? '') || '')
+    const item = offlineSession?.items.find((it) => it.codigo_interno.trim() === code)
+    setPhotoPreviewBase64((item?.foto_base64 ?? '') || '')
     setPhotoCameraOpen(true)
   }
 
@@ -748,16 +749,23 @@ export default function ContagemEstoque() {
     setPhotoUiError('')
 
     try {
-      const { error } = await supabase
-        .from(TABELA_PRODUTOS)
-        .update({ foto_base64: photoPreviewBase64 })
-        .eq('codigo_interno', codigo)
+      // Foto deve ficar ligada ao registro de contagem; enquanto você conta, salvamos na sessão offline.
+      if (!offlineSession || offlineSession.status !== 'aberta') {
+        setPhotoUiError('Carregue a lista e abra uma sessão de contagem antes de salvar foto.')
+        setPhotoSaving(false)
+        return
+      }
 
-      if (error) throw error
+      setOfflineSession((prev) => {
+        if (!prev || prev.status !== 'aberta') return prev
+        return {
+          ...prev,
+          items: prev.items.map((it) =>
+            it.codigo_interno.trim() === codigo ? { ...it, foto_base64: photoPreviewBase64 } : it,
+          ),
+        }
+      })
 
-      setProductOptions((prev) =>
-        prev.map((p) => (p.codigo === codigo ? { ...p, foto_base64: photoPreviewBase64, foto_url: p.foto_url } : p)),
-      )
       setPhotoCameraOpen(false)
       setPhotoTargetCodigo('')
       setPhotoSaving(false)
@@ -946,7 +954,7 @@ export default function ContagemEstoque() {
 
     const { data, error } = await supabase
       .from('contagens_estoque')
-      .select('id,data_hora_contagem,codigo_interno,descricao,quantidade_up,lote,observacao')
+      .select('id,data_hora_contagem,codigo_interno,descricao,quantidade_up,lote,observacao,foto_base64')
       .eq('data_contagem', dayKey)
       .order('data_hora_contagem', { ascending: false })
       .limit(2000)
@@ -963,6 +971,7 @@ export default function ContagemEstoque() {
         quantidade_up: Number(r.quantidade_up ?? 0),
         lote: r.lote ?? null,
         observacao: r.observacao ?? null,
+        foto_base64: r.foto_base64 ?? null,
       })) as ContagemPreviewRow[]
 
       // Prévia agrupada: uma linha por dia + código + descrição, somando a quantidade.
@@ -978,6 +987,7 @@ export default function ContagemEstoque() {
         }
         existing.quantidade_up += Number(row.quantidade_up ?? 0)
         existing.source_ids = existing.source_ids.concat(row.source_ids)
+        if (!existing.foto_base64 && row.foto_base64) existing.foto_base64 = row.foto_base64
         if (!existing.lote && row.lote) existing.lote = row.lote
         if (!existing.observacao && row.observacao) existing.observacao = row.observacao
       }
@@ -1120,6 +1130,7 @@ export default function ContagemEstoque() {
         codigo_interno: row.codigo_interno,
         descricao: row.descricao,
         quantidade_contada: '',
+        foto_base64: '',
       }))
       const sess: OfflineSession = {
         sessionId: newSessionId(),
@@ -1296,6 +1307,7 @@ export default function ContagemEstoque() {
           descricao: it.descricao.trim(),
           unidade_medida: null,
           quantidade_up: q,
+          foto_base64: it.foto_base64 ?? null,
           lote: null,
           observacao: null,
         })
@@ -1503,6 +1515,7 @@ export default function ContagemEstoque() {
               <th style={thStyle}>UP</th>
               <th style={thStyle}>Lote</th>
               <th style={thStyle}>Observação</th>
+              <th style={thStyle}>Foto</th>
               <th style={thStyle}>Ações</th>
             </tr>
             <tr>
@@ -1549,6 +1562,9 @@ export default function ContagemEstoque() {
                   style={{ padding: '6px 8px', border: '1px solid #ccc', borderRadius: 6, width: '100%' }}
                 />
               </th>
+              <th style={{ ...thStyle, fontWeight: 400, fontSize: 12, background: '#f3f4f6' }}>
+                {/* Sem filtro por imagem */}
+              </th>
               <th style={{ ...thStyle, fontWeight: 400, fontSize: 12, background: '#f3f4f6' }} />
             </tr>
           </thead>
@@ -1574,6 +1590,17 @@ export default function ContagemEstoque() {
                   </td>
                   <td style={tdStyle}>{r.lote ?? ''}</td>
                   <td style={tdStyle}>{r.observacao ?? ''}</td>
+                  <td style={tdStyle}>
+                    {r.foto_base64 ? (
+                      <img
+                        src={`data:image/jpeg;base64,${r.foto_base64}`}
+                        alt="Foto do produto"
+                        style={{ maxWidth: 60, maxHeight: 45, objectFit: 'cover', borderRadius: 8 }}
+                      />
+                    ) : (
+                      <span style={{ color: 'var(--text, #888)', fontSize: 12 }}>Sem foto anexada</span>
+                    )}
+                  </td>
                   <td style={tdStyle}>
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                       {editingPreviewId === r.id ? (
@@ -1996,8 +2023,7 @@ export default function ContagemEstoque() {
                           )
                         }
                         const it = item as OfflineChecklistItem
-                        const p = productByCode.get(it.codigo_interno)
-                        const hasPhoto = Boolean(p?.foto_base64 || p?.foto_url)
+                        const hasPhoto = Boolean(String(it.foto_base64 ?? '').trim())
                         const pend = String(it.quantidade_contada ?? '').trim() === ''
                         const isEditing = checklistEditingKey === it.key && checklistEditDraft
                         return (

@@ -7,6 +7,8 @@ export type OfflineChecklistItem = {
   descricao: string
   /** Texto do usuário; vazio = pendente */
   quantidade_contada: string
+  /** Foto anexada pelo usuário (base64). */
+  foto_base64?: string
 }
 
 export type ChecklistListMode = 'todos' | 'armazem'
