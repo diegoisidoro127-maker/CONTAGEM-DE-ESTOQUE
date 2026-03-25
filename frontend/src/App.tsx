@@ -105,20 +105,24 @@ export default function App() {
             <button type="button" onClick={() => setView('home')} style={viewBtnStyle(false)}>
               Início
             </button>
-            <button
-              type="button"
-              onClick={() => setView('contagem')}
-              style={viewBtnStyle(view === 'contagem')}
-            >
-              Contagem
-            </button>
-            <button
-              type="button"
-              onClick={() => setView('inventario')}
-              style={viewBtnStyle(view === 'inventario')}
-            >
-              Inventário
-            </button>
+            {view !== 'inventario' ? (
+              <button
+                type="button"
+                onClick={() => setView('contagem')}
+                style={viewBtnStyle(view === 'contagem')}
+              >
+                Contagem
+              </button>
+            ) : null}
+            {view !== 'contagem' ? (
+              <button
+                type="button"
+                onClick={() => setView('inventario')}
+                style={viewBtnStyle(view === 'inventario')}
+              >
+                Inventário
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={() => setView('relatorio')}
