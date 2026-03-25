@@ -64,6 +64,14 @@ function diaContagemLabel(r: ContagemRow) {
   return formatDateBR(ymd)
 }
 
+/** Monta data URL para exibição (base64 puro ou já com prefixo). */
+function fotoDataUrl(b64: string | null | undefined): string | null {
+  const s = String(b64 ?? '').trim()
+  if (!s) return null
+  if (s.startsWith('data:')) return s
+  return `data:image/jpeg;base64,${s}`
+}
+
 /** Paginação (15 + “Mostrar tudo”) vale para Relatório completo e Todas as contagens — mesmo componente. */
 const RELATORIO_PAGE_SIZE = 15
 
@@ -92,6 +100,7 @@ export default function RelatorioContagem({ mode = 'periodo' }: RelatorioContage
   const [relatorioPage, setRelatorioPage] = useState(1)
   const [relatorioShowAll, setRelatorioShowAll] = useState(false)
   const prevLoadingRef = useRef(false)
+  const [photoModal, setPhotoModal] = useState<{ src: string; title: string } | null>(null)
 
   const dateRangeText = useMemo(() => {
     if (allTime) return 'Todas as datas'
@@ -114,6 +123,15 @@ export default function RelatorioContagem({ mode = 'periodo' }: RelatorioContage
     }
     prevLoadingRef.current = loading
   }, [loading])
+
+  useEffect(() => {
+    if (!photoModal) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setPhotoModal(null)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [photoModal])
 
   async function load() {
     setLoading(true)
@@ -334,6 +352,12 @@ export default function RelatorioContagem({ mode = 'periodo' }: RelatorioContage
     opacity: disabled ? 0.5 : 1,
   })
 
+  function openFotoModal(r: ContagemRow) {
+    const src = fotoDataUrl(r.foto_base64)
+    if (!src) return
+    setPhotoModal({ src, title: `${r.codigo_interno} — ${r.descricao}` })
+  }
+
   const relatorioPagination = (
     <div
       style={{
@@ -520,7 +544,9 @@ export default function RelatorioContagem({ mode = 'periodo' }: RelatorioContage
                 </tr>
               </thead>
               <tbody>
-                {displayRows.map((r) => (
+                {displayRows.map((r) => {
+                  const fotoSrc = fotoDataUrl(r.foto_base64)
+                  return (
                   <tr key={r.id}>
                     <td style={tdStyle}>{conferenteNome(r)}</td>
                     <td style={tdStyle}>{diaContagemLabel(r)}</td>
@@ -553,14 +579,47 @@ export default function RelatorioContagem({ mode = 'periodo' }: RelatorioContage
                     <td style={tdStyle}>{r.ean ?? ''}</td>
                     <td style={tdStyle}>{r.dun ?? ''}</td>
                     <td style={tdStyle}>
-                      {r.foto_base64 ? (
-                        <img
-                          src={`data:image/jpeg;base64,${r.foto_base64}`}
-                          alt=""
-                          style={{ maxWidth: 60, maxHeight: 45, objectFit: 'cover', borderRadius: 8 }}
-                        />
+                      {fotoSrc ? (
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 8,
+                            flexWrap: 'wrap',
+                          }}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => openFotoModal(r)}
+                            style={{
+                              padding: 0,
+                              border: '1px solid var(--border, #555)',
+                              borderRadius: 8,
+                              background: 'transparent',
+                              cursor: 'pointer',
+                              lineHeight: 0,
+                            }}
+                            title="Ver foto em tamanho grande"
+                            aria-label="Ver foto em tamanho grande"
+                          >
+                            <img
+                              src={fotoSrc}
+                              alt=""
+                              style={{
+                                maxWidth: 56,
+                                maxHeight: 42,
+                                objectFit: 'cover',
+                                borderRadius: 6,
+                                display: 'block',
+                              }}
+                            />
+                          </button>
+                          <button type="button" onClick={() => openFotoModal(r)} style={miniBtnStyle}>
+                            Ver foto
+                          </button>
+                        </div>
                       ) : (
-                        <span style={{ color: '#888', fontSize: 12 }}>Sem foto</span>
+                        <span style={{ color: 'var(--text-muted, #888)', fontSize: 12 }}>Sem foto</span>
                       )}
                     </td>
                     <td style={tdStyle}>
@@ -611,7 +670,8 @@ export default function RelatorioContagem({ mode = 'periodo' }: RelatorioContage
                       )}
                     </td>
                   </tr>
-                ))}
+                  )
+                })}
               </tbody>
             </table>
             {totalRel > 0 ? relatorioPagination : null}
@@ -620,6 +680,62 @@ export default function RelatorioContagem({ mode = 'periodo' }: RelatorioContage
           !loading ? <div style={{ marginTop: 8 }}>Sem dados no período.</div> : null
         )}
       </div>
+
+      {photoModal ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Foto da contagem"
+          onClick={() => setPhotoModal(null)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 9999,
+            background: 'rgba(0,0,0,0.88)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              maxWidth: 'min(96vw, 1200px)',
+              maxHeight: '92vh',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 12,
+              alignItems: 'center',
+            }}
+          >
+            <div
+              style={{
+                color: '#eee',
+                fontSize: 14,
+                textAlign: 'center',
+                maxWidth: '100%',
+                lineHeight: 1.35,
+              }}
+            >
+              {photoModal.title}
+            </div>
+            <img
+              src={photoModal.src}
+              alt=""
+              style={{
+                maxWidth: '100%',
+                maxHeight: 'calc(92vh - 96px)',
+                objectFit: 'contain',
+                borderRadius: 8,
+              }}
+            />
+            <button type="button" onClick={() => setPhotoModal(null)} style={{ ...miniBtnStyle, padding: '10px 20px' }}>
+              Fechar
+            </button>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }

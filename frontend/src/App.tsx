@@ -126,13 +126,6 @@ export default function App() {
             ) : null}
             <button
               type="button"
-              onClick={() => setView('baseDados')}
-              style={viewBtnStyle(view === 'baseDados')}
-            >
-              Base de dados
-            </button>
-            <button
-              type="button"
               onClick={() => setView('relatorio')}
               style={viewBtnStyle(view === 'relatorio')}
             >
@@ -144,6 +137,13 @@ export default function App() {
               style={viewBtnStyle(view === 'todas')}
             >
               Todas as contagens
+            </button>
+            <button
+              type="button"
+              onClick={() => setView('baseDados')}
+              style={viewBtnStyle(view === 'baseDados')}
+            >
+              Base de dados
             </button>
             <button
               type="button"
