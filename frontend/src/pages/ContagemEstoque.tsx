@@ -83,11 +83,8 @@ function pickFirstCell(row: Record<string, any>, keys: string[]): string {
 /** Cadastro existente no Supabase (não criar tabela nova no app). */
 const TABELA_PRODUTOS = 'Todos os Produtos'
 
-/** Alguns códigos da tabela não devem entrar na checklist do app. */
-const CHECKLIST_EXCLUIR_CODIGOS = new Set<string>([
-  // Você pediu para retirar este produto.
-  '01.06.0027',
-])
+/** Alguns códigos da tabela não devem entrar na checklist do app (lista vazia = nenhum). */
+const CHECKLIST_EXCLUIR_CODIGOS = new Set<string>([])
 
 /**
  * Ordem do armazém dividida em 4 rotas/contagens.
@@ -185,6 +182,7 @@ const ARMAZEM_CONTAGEM_CODES = {
     '01.06.0022',
     '01.06.0024',
     '01.06.0030',
+    '01.06.0027',
     '02.04.0005',
   ],
   4: [
@@ -426,7 +424,7 @@ export default function ContagemEstoque() {
       setOfflineSession(null)
       setContagemDiaYmd(toISODateLocal(new Date()))
       setChecklistListMode('todos')
-      setStartFreshNotice('Sessão anterior descartada ao abrir a tela. Comece do zero.')
+      setStartFreshNotice('Sessão anterior limpa ao abrir a tela. Comece do zero.')
     }
   }, [])
 
@@ -1971,7 +1969,7 @@ export default function ContagemEstoque() {
 
         {checklistError ? <div style={{ color: '#b00020', marginTop: 10 }}>{checklistError}</div> : null}
         {startFreshNotice ? (
-          <div style={{ color: '#0a0', marginTop: 8, fontSize: 13 }}>
+          <div style={{ color: '#0a0', marginTop: 8, fontSize: 13, textAlign: 'left' }}>
             {startFreshNotice}
           </div>
         ) : null}
