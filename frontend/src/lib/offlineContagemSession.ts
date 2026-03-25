@@ -9,11 +9,15 @@ export type OfflineChecklistItem = {
   quantidade_contada: string
 }
 
+export type ChecklistListMode = 'todos' | 'armazem'
+
 export type OfflineSession = {
   sessionId: string
   data_contagem_ymd: string
   conferente_id: string
   status: 'aberta' | 'finalizada'
+  /** Como a lista foi carregada (ordem do cadastro vs ordem dividida por contagem). */
+  listMode?: ChecklistListMode
   items: OfflineChecklistItem[]
   updatedAt: string
 }

@@ -11,6 +11,7 @@ import {
   loadOfflineSession,
   type OfflineChecklistItem,
   type OfflineSession,
+  type ChecklistListMode,
   saveOfflineSession,
   stableItemKey,
 } from '../lib/offlineContagemSession'
@@ -78,6 +79,161 @@ function pickFirstCell(row: Record<string, any>, keys: string[]): string {
 
 /** Cadastro existente no Supabase (não criar tabela nova no app). */
 const TABELA_PRODUTOS = 'Todos os Produtos'
+
+/**
+ * Ordem do armazém dividida em 4 rotas/contagens.
+ * A lista abaixo define SOMENTE a divisão (grupo) e a ordem relativa de exibição.
+ * A quantidade no app começa vazia (o usuário preenche).
+ */
+const ARMAZEM_CONTAGEM_CODES = {
+  1: [
+    '01.01.0001',
+    '01.01.0002',
+    '01.02.0001',
+    '01.02.0003',
+    '01.02.0005',
+    '01.02.0007',
+    '01.04.0008',
+    '01.04.0009',
+    '01.04.0019',
+    '01.04.0020',
+    '01.04.0021',
+    '01.04.0022',
+    '01.10.0005',
+    '01.10.0003',
+    '01.10.0004',
+    '01.10.0006',
+    '01.02.0009',
+    '01.02.0011',
+    '01.04.0005',
+    '01.04.0006',
+    '01.03.0019',
+    '01.04.0001',
+    '01.04.0002',
+    '02.04.0001',
+    '02.01.0005',
+    '02.01.0004',
+    '01.10.0013',
+    '01.10.0014',
+    '01.04.0057',
+    '01.04.0066',
+  ],
+  2: [
+    '01.04.0024',
+    '01.09.0007',
+    '01.09.0008',
+    '01.09.0009',
+    '01.09.0010',
+    '01.09.0011',
+    '01.09.0012',
+    '01.06.0001',
+    '01.06.0002',
+    '01.06.0059',
+    '02.03.0001',
+    '02.02.0028',
+    '02.03.0038',
+    '02.03.0039',
+    '02.03.0042',
+    '02.03.0043',
+    '02.06.0001',
+    '02.06.0002',
+    '02.02.0029',
+    '02.02.0045',
+    '02.06.0003',
+    '02.03.0041',
+    '02.03.0013',
+    '02.01.0006',
+    '02.02.0037',
+    '02.03.0054',
+    '02.02.0038',
+  ],
+  3: [
+    '02.01.0007',
+    '02.02.0034',
+    '02.02.0033',
+    '02.02.0031',
+    '02.02.0036',
+    '02.02.0035',
+    '02.02.0032',
+    '01.04.0014',
+    '01.04.0025',
+    '01.04.0026',
+    '01.04.0054',
+    '01.04.0055',
+    '02.04.0002',
+    '02.04.0003',
+    '02.04.0004',
+    '02.04.0007',
+    '02.04.0008',
+    '02.04.0012',
+    '02.04.0013',
+    '02.04.0014',
+    '02.04.0018',
+    '02.04.0019',
+    '02.04.0021',
+    '02.04.0023',
+    '01.06.0058',
+    '01.06.0022',
+    '01.06.0024',
+    '01.06.0030',
+    '02.04.0005',
+  ],
+  4: [
+    '02.03.1003',
+    '02.03.1004',
+    '02.03.1005',
+    '02.03.1006',
+    '02.03.1007',
+    '02.03.1008',
+    '02.03.1009',
+    '02.03.1010',
+    '02.03.1011',
+    '02.03.1012',
+    '02.03.1013',
+    '02.03.1014',
+    '02.03.1015',
+    '02.03.1016',
+    '02.03.1017',
+    '01.04.0058',
+    '01.04.0062',
+    '01.04.0059',
+    '01.04.0060',
+    '01.04.0061',
+  ],
+} as const satisfies Record<number, string[]>
+
+const ARMAZEM_POS_BY_CODIGO = (() => {
+  const m = new Map<string, { contagem: number; pos: number }>()
+  for (const contagemStr of Object.keys(ARMAZEM_CONTAGEM_CODES)) {
+    const contagem = Number(contagemStr)
+    const codes = (ARMAZEM_CONTAGEM_CODES as any)[contagemStr] as string[]
+    codes.forEach((codigo, pos) => {
+      m.set(codigo, { contagem, pos })
+    })
+  }
+  return m
+})()
+
+function getArmazemContagem(codigo: string): number | null {
+  return ARMAZEM_POS_BY_CODIGO.get(codigo)?.contagem ?? null
+}
+
+function getArmazemPos(codigo: string): number {
+  return ARMAZEM_POS_BY_CODIGO.get(codigo)?.pos ?? Number.MAX_SAFE_INTEGER
+}
+
+function formatContagemLabel(contagem: number) {
+  if (contagem === 1) return '1° CONTAGEM'
+  if (contagem === 2) return '2° CONTAGEM'
+  if (contagem === 3) return '3° CONTAGEM'
+  if (contagem === 4) return '4° CONTAGEM'
+  return `${contagem}° CONTAGEM`
+}
+
+function formatArmazemGroupLabel(contagem: number | null) {
+  if (!contagem) return 'OUTROS'
+  return formatContagemLabel(contagem)
+}
 
 function mapRowToProductOption(row: Record<string, any>): ProductOption | null {
   const codigo = pickFirstCell(row, ['codigo_interno', 'codigo', 'CÓDIGO', 'cod_produto'])
@@ -201,12 +357,14 @@ export default function ContagemEstoque() {
   const [checklistFilterDescricao, setChecklistFilterDescricao] = useState('')
   const [checklistFilterPendentes, setChecklistFilterPendentes] = useState(false)
   const [checklistListCollapsed, setChecklistListCollapsed] = useState(false)
+  const [checklistListMode, setChecklistListMode] = useState<ChecklistListMode>('todos')
   const [checklistEditingKey, setChecklistEditingKey] = useState<string | null>(null)
   const [checklistEditDraft, setChecklistEditDraft] = useState<{
     codigo_interno: string
     descricao: string
     quantidade_contada: string
   } | null>(null)
+  const [armazemMissingCodes, setArmazemMissingCodes] = useState<string[]>([])
 
   useEffect(() => {
     const id = setInterval(() => setClockTick((v) => v + 1), 1000)
@@ -230,6 +388,7 @@ export default function ContagemEstoque() {
       setOfflineSession(s)
       setContagemDiaYmd(s.data_contagem_ymd)
       if (s.conferente_id) setConferenteId(s.conferente_id)
+      setChecklistListMode(s.listMode ?? 'todos')
     }
   }, [])
 
@@ -685,7 +844,27 @@ export default function ContagemEstoque() {
     }
     setChecklistLoading(true)
     try {
-      const itemsRaw = await fetchListaChecklistFromDb()
+      let itemsRaw = await fetchListaChecklistFromDb()
+
+      if (checklistListMode === 'armazem') {
+        const missing = itemsRaw
+          .map((it) => it.codigo_interno)
+          .filter((codigo) => getArmazemContagem(codigo) === null)
+        setArmazemMissingCodes(missing)
+
+        itemsRaw = itemsRaw.slice().sort((a, b) => {
+          const ga = getArmazemContagem(a.codigo_interno) ?? 999
+          const gb = getArmazemContagem(b.codigo_interno) ?? 999
+          if (ga !== gb) return ga - gb
+          const pa = getArmazemPos(a.codigo_interno)
+          const pb = getArmazemPos(b.codigo_interno)
+          if (pa !== pb) return pa - pb
+          return a.codigo_interno.localeCompare(b.codigo_interno, 'pt-BR')
+        })
+      } else {
+        setArmazemMissingCodes([])
+      }
+
       const items: OfflineChecklistItem[] = itemsRaw.map((row, index) => ({
         key: stableItemKey(row.codigo_interno, row.descricao, index),
         codigo_interno: row.codigo_interno,
@@ -697,6 +876,7 @@ export default function ContagemEstoque() {
         data_contagem_ymd: contagemDiaYmd,
         conferente_id: conferenteId,
         status: 'aberta',
+        listMode: checklistListMode,
         items,
         updatedAt: new Date().toISOString(),
       }
@@ -715,12 +895,14 @@ export default function ContagemEstoque() {
     if (!offlineSession || offlineSession.status !== 'aberta') {
       clearOfflineSession()
       setOfflineSession(null)
+      setChecklistListMode('todos')
       return
     }
     if (!confirm('Descartar a sessão local? As quantidades não finalizadas serão perdidas.')) return
     clearOfflineSession()
     setOfflineSession(null)
     setChecklistError('')
+    setChecklistListMode('todos')
   }
 
   function updateOfflineItemQty(key: string, quantidade: string) {
@@ -886,6 +1068,7 @@ export default function ContagemEstoque() {
 
       clearOfflineSession()
       setOfflineSession(null)
+      setChecklistListMode('todos')
       setSaveSuccess(`Contagem do dia ${ymd} finalizada: ${rows.length} registro(s) gravados no banco.`)
       await loadPreview(ymd)
     } catch (e: any) {
@@ -1205,6 +1388,35 @@ export default function ContagemEstoque() {
         })
       : []
 
+  type ChecklistDisplayHeader = {
+    kind: 'header'
+    key: string
+    contagem: number | null
+  }
+  type ChecklistDisplayItem = ChecklistDisplayHeader | OfflineChecklistItem
+
+  const checklistDisplayItems: ChecklistDisplayItem[] =
+    offlineSession?.status === 'aberta' && offlineSession.listMode === 'armazem'
+      ? (() => {
+          const out: ChecklistDisplayItem[] = []
+          let lastContagem: number | null = null
+          let hdrSeq = 0
+          for (const it of filteredChecklistItems) {
+            const contagem = getArmazemContagem(it.codigo_interno)
+            if (contagem !== lastContagem) {
+              out.push({
+                kind: 'header',
+                key: `hdr-${contagem ?? 'outros'}-${hdrSeq++}`,
+                contagem,
+              })
+              lastContagem = contagem
+            }
+            out.push(it)
+          }
+          return out
+        })()
+      : filteredChecklistItems
+
   const carregarListaDisabled = checklistLoading || finalizing || !conferenteId
 
   return (
@@ -1348,6 +1560,18 @@ export default function ContagemEstoque() {
             />
           </label>
           <div style={{ gridColumn: isMobile ? 'auto' : 'span 9', display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13, minWidth: 260 }}>
+              Tipo de lista
+              <select
+                value={checklistListMode}
+                onChange={(e) => setChecklistListMode(e.target.value as ChecklistListMode)}
+                style={inputStyle}
+                disabled={!!offlineSession && offlineSession.status === 'aberta'}
+              >
+                <option value="todos">Todos os Produtos (cadastro)</option>
+                <option value="armazem">Armazém (dividida por contagem 1-4)</option>
+              </select>
+            </label>
             <button
               type="button"
               style={{
@@ -1409,6 +1633,12 @@ export default function ContagemEstoque() {
                 ) : (
                   <span style={{ color: '#0a0', marginLeft: 8 }}>Todos preenchidos — pode finalizar.</span>
                 )}
+                {offlineSession.listMode === 'armazem' && armazemMissingCodes.length > 0 ? (
+                  <div style={{ marginTop: 6, fontSize: 12, color: '#a60' }}>
+                    Aviso: {armazemMissingCodes.length} código(s) não mapeado(s) em 1-4 contagens e ficarão em <strong>OUTROS</strong>. Primeiro(s):{' '}
+                    <span style={{ fontFamily: 'monospace' }}>{armazemMissingCodes.slice(0, 8).join(', ')}</span>
+                  </div>
+                ) : null}
                 {checklistListCollapsed ? (
                   <span style={{ marginLeft: 8, fontSize: 12, color: 'var(--text, #888)' }}>
                     Lista minimizada — use o botão ao lado para ver filtros e quantidades.
@@ -1463,7 +1693,27 @@ export default function ContagemEstoque() {
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredChecklistItems.map((it) => {
+                      {checklistDisplayItems.map((item) => {
+                        if ('kind' in item && item.kind === 'header') {
+                          return (
+                            <tr key={item.key}>
+                              <td
+                                colSpan={5}
+                                style={{
+                                  padding: '10px 8px',
+                                  fontWeight: 800,
+                                  fontSize: 12,
+                                  borderBottom: '1px solid #444',
+                                  background: 'rgba(255, 255, 255, .04)',
+                                  color: 'var(--text, #111)',
+                                }}
+                              >
+                                {formatArmazemGroupLabel(item.contagem)}
+                              </td>
+                            </tr>
+                          )
+                        }
+                        const it = item as OfflineChecklistItem
                         const pend = String(it.quantidade_contada ?? '').trim() === ''
                         const isEditing = checklistEditingKey === it.key && checklistEditDraft
                         return (
