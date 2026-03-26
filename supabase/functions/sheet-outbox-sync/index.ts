@@ -31,6 +31,17 @@ const supabase = createClient(supabaseUrl, serviceRoleKey)
 const batchSize = Number(Deno.env.get('OUTBOX_BATCH_SIZE') ?? '20')
 const maxAttempts = Number(Deno.env.get('OUTBOX_MAX_ATTEMPTS') ?? '5')
 
+/**
+ * Mantém zero explícito para o Apps Script não tratar como "vazio".
+ * Retorna string numérica ("0", "12.5", etc) para evitar checagem falsy de number.
+ */
+function quantidadeAsText(v: number | null | undefined): string {
+  if (v == null || !Number.isFinite(v)) return '0'
+  const n = Number(v)
+  if (Object.is(n, -0)) return '0'
+  return String(n)
+}
+
 function incomingRequestUrl(req: Request): URL {
   const raw = req.url
   if (raw.startsWith('http://') || raw.startsWith('https://')) return new URL(raw)
@@ -205,7 +216,10 @@ Deno.serve(async (req) => {
         data_contagem: r.data_contagem,
         codigo_interno: r.codigo_interno,
         descricao: r.descricao,
+        // Campo legado (numérico) mantido por compatibilidade.
         quantidade_contada: r.event_type === 'upsert' ? (r.quantidade_contada ?? 0) : undefined,
+        // Campo textual para preservar "0" de forma inequívoca no receptor.
+        quantidade_contada_text: r.event_type === 'upsert' ? quantidadeAsText(r.quantidade_contada) : undefined,
       })),
     }
 

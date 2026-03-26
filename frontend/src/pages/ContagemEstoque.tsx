@@ -1920,6 +1920,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
           codigo_interno: row.codigo_interno,
           descricao: row.descricao,
           quantidade_contada: qtd,
+          quantidade_contada_text: String(qtd),
           aba: 'CONTAGEM DE ESTOQUE FISICA',
         })
       }
@@ -3340,8 +3341,11 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
                   e.preventDefault()
-                  const ok = applyProductByBarcode(barcodeLeitura)
-                  // mantemos o valor para visualização rápida
+                  // Usa o valor atual do input no momento do Enter (bipador),
+                  // evitando pegar estado atrasado e perder o último dígito.
+                  const scanned = e.currentTarget.value
+                  setBarcodeLeitura(scanned)
+                  applyProductByBarcode(scanned)
                 }
               }}
               style={{ ...inputStyle, flex: 1 }}
