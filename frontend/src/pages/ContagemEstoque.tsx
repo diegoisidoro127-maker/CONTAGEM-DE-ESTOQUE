@@ -673,8 +673,16 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     setDataVencimento(toDateInputValue(p.data_validade))
     setProdutoError('')
     if (opts?.updateBarcodeLeitura !== false) {
-      setBarcodeLeitura(codigo)
-      setBarcodeTipoLeitura(null)
+      const um = String(p.unidade_medida ?? '')
+        .trim()
+        .toLowerCase()
+      const isCaixa = um.includes('cx') || um.includes('caixa')
+      // Regra: caixa -> DUN; pacote/unidade -> EAN.
+      // Fallback: se faltar o preferido, usa o outro; por último, código interno.
+      const preferred = isCaixa ? (p.dun ?? p.ean ?? p.codigo) : (p.ean ?? p.dun ?? p.codigo)
+      const tipo: 'DUN' | 'EAN' | null = preferred === p.dun ? 'DUN' : preferred === p.ean ? 'EAN' : null
+      setBarcodeLeitura(String(preferred))
+      setBarcodeTipoLeitura(tipo)
     }
     return true
   }
