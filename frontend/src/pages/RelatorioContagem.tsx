@@ -308,9 +308,10 @@ export default function RelatorioContagem({ mode = 'periodo' }: RelatorioContage
   }
 
   function exportToExcel() {
-    if (!rows.length) return
+    if (!displayRows.length) return
 
-    const sheetRows = rows.map((r) => ({
+    // Exporta na mesma ordem que está visível na lista (displayRows).
+    const sheetRows = displayRows.map((r) => ({
       Conferente: conferenteNome(r),
       'Dia da contagem': diaContagemLabel(r),
       'Data e hora do registro': formatDateTimeBR(r.data_hora_contagem),

@@ -3051,9 +3051,9 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                     <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 720 }}>
                       <thead>
                         <tr>
-                          <th style={thStyle}>Código</th>
+                          <th style={thStyle}>Código do produto</th>
                           <th style={thStyle}>Descrição</th>
-                          <th style={thStyle}>Qtd na lista</th>
+                          <th style={thStyle}>Quantidade contada</th>
                           <th style={thStyle}>Status</th>
                           <th style={thStyle}>Ações</th>
                         </tr>
@@ -3273,7 +3273,9 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
                     <tr>
-                      <th style={{ textAlign: 'left', padding: 8, borderBottom: '1px solid #ddd', fontSize: 12 }}>Código</th>
+                      <th style={{ textAlign: 'left', padding: 8, borderBottom: '1px solid #ddd', fontSize: 12 }}>
+                        Código do produto
+                      </th>
                       <th style={{ textAlign: 'left', padding: 8, borderBottom: '1px solid #ddd', fontSize: 12 }}>Descrição</th>
                     </tr>
                   </thead>
