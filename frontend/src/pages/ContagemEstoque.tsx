@@ -3363,6 +3363,20 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
             />
             <button
               type="button"
+              style={{ ...buttonStyle, background: '#555', fontSize: 13, whiteSpace: 'nowrap', touchAction: 'manipulation' }}
+              onClick={() => {
+                setBarcodeLeitura('')
+                setBarcodeTipoLeitura(null)
+                setProdutoError('')
+              }}
+              disabled={productOptionsLoading || (!barcodeLeitura.trim() && !barcodeTipoLeitura)}
+              title="Limpar leitura de código de barras"
+              aria-label="Limpar leitura de código de barras"
+            >
+              Limpar
+            </button>
+            <button
+              type="button"
               style={{ ...buttonStyle, background: '#444', fontSize: 13, whiteSpace: 'nowrap', touchAction: 'manipulation' }}
               onClick={() => {
                 setBarcodeFotoHint('')
