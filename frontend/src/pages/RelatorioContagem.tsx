@@ -308,10 +308,10 @@ export default function RelatorioContagem({ mode = 'periodo' }: RelatorioContage
   }
 
   function exportToExcel() {
-    if (!displayRows.length) return
+    if (!rows.length) return
 
-    // Exporta na mesma ordem que está visível na lista (displayRows).
-    const sheetRows = displayRows.map((r) => ({
+    // Exporta todos os registros do filtro atual (não só a página visível).
+    const sheetRows = rows.map((r) => ({
       Conferente: conferenteNome(r),
       'Dia da contagem': diaContagemLabel(r),
       'Data e hora do registro': formatDateTimeBR(r.data_hora_contagem),
@@ -511,7 +511,11 @@ export default function RelatorioContagem({ mode = 'periodo' }: RelatorioContage
               height: 40,
               opacity: loading || rows.length === 0 ? 0.5 : 1,
             }}
-            title={rows.length === 0 ? 'Carregue o relatório antes de exportar' : 'Baixar planilha .xlsx'}
+            title={
+              rows.length === 0
+                ? 'Carregue o relatório antes de exportar'
+                : `Baixar planilha .xlsx com todos os ${rows.length} registros do filtro`
+            }
           >
             Exportar Excel
           </button>
