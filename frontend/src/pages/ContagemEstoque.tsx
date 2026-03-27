@@ -2504,20 +2504,51 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         ? []
         : filteredChecklistItems
 
+  const isArmazemPaginado =
+    offlineSession?.status === 'aberta' &&
+    offlineSession.listMode === 'armazem' &&
+    !armazemModoIncompleto
+
+  const armazemGrupos = isArmazemPaginado
+    ? [1, 2, 3, 4]
+        .map((contagem) => ({
+          contagem,
+          items: filteredChecklistItems.filter((it) => getArmazemContagem(it.codigo_interno) === contagem),
+        }))
+        .filter((g) => g.items.length > 0)
+    : []
+
   const checklistProductTotal = checklistDisplayItems.reduce((acc, item) => {
     const isHeader = 'kind' in item && item.kind === 'header'
     return acc + (isHeader ? 0 : 1)
   }, 0)
-  const checklistTotalPages = Math.max(1, Math.ceil(checklistProductTotal / CHECKLIST_PAGE_SIZE))
+  const checklistTotalPages = Math.max(
+    1,
+    isArmazemPaginado && !checklistShowAll
+      ? armazemGrupos.length
+      : Math.ceil(checklistProductTotal / CHECKLIST_PAGE_SIZE),
+  )
   const checklistPageSafe = Math.min(checklistPage, checklistTotalPages)
   const checklistRangeFrom =
-    checklistProductTotal === 0
+    isArmazemPaginado
+      ? checklistProductTotal === 0
+        ? 0
+        : checklistShowAll
+          ? 1
+          : armazemGrupos.slice(0, checklistPageSafe - 1).reduce((acc, g) => acc + g.items.length, 0) + 1
+      : checklistProductTotal === 0
       ? 0
       : checklistShowAll
         ? 1
         : (checklistPageSafe - 1) * CHECKLIST_PAGE_SIZE + 1
   const checklistRangeTo =
-    checklistProductTotal === 0
+    isArmazemPaginado
+      ? checklistProductTotal === 0
+        ? 0
+        : checklistShowAll
+          ? checklistProductTotal
+          : armazemGrupos.slice(0, checklistPageSafe).reduce((acc, g) => acc + g.items.length, 0)
+      : checklistProductTotal === 0
       ? 0
       : checklistShowAll
         ? checklistProductTotal
@@ -2526,6 +2557,17 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
   const checklistDisplayPageItems: ChecklistDisplayItem[] =
     checklistShowAll
       ? checklistDisplayItems
+      : isArmazemPaginado
+        ? (() => {
+            const group = armazemGrupos[checklistPageSafe - 1]
+            if (!group) return []
+            const header: ChecklistDisplayHeader = {
+              kind: 'header',
+              key: `hdr-page-${group.contagem}`,
+              contagem: group.contagem,
+            }
+            return [header, ...group.items]
+          })()
       : (() => {
           const out: ChecklistDisplayItem[] = []
           const start = (checklistPageSafe - 1) * CHECKLIST_PAGE_SIZE
@@ -2863,74 +2905,6 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                     Só pendentes
                   </label>
                 </div>
-                {checklistProductTotal > 0 ? (
-                  <div
-                    style={{
-                      display: 'flex',
-                      flexWrap: 'wrap',
-                      alignItems: 'center',
-                      gap: 10,
-                      marginTop: 10,
-                    }}
-                  >
-                    <span style={{ fontSize: 13, color: 'var(--text, #888)' }}>
-                      {checklistShowAll
-                        ? `Exibindo todos os ${checklistProductTotal} registros`
-                        : `${checklistRangeFrom}–${checklistRangeTo} de ${checklistProductTotal} · Página ${checklistPageSafe} de ${checklistTotalPages} · ${CHECKLIST_PAGE_SIZE} por página`}
-                    </span>
-                    <button
-                      type="button"
-                      disabled={checklistShowAll || checklistPageSafe <= 1}
-                      onClick={() => setChecklistPage((p) => Math.max(1, p - 1))}
-                      style={{
-                        ...buttonStyle,
-                        background: '#444',
-                        fontSize: 12,
-                        opacity: checklistShowAll || checklistPageSafe <= 1 ? 0.5 : 1,
-                        cursor: checklistShowAll || checklistPageSafe <= 1 ? 'not-allowed' : 'pointer',
-                      }}
-                    >
-                      Anterior
-                    </button>
-                    <button
-                      type="button"
-                      disabled={checklistShowAll || checklistPageSafe >= checklistTotalPages}
-                      onClick={() => setChecklistPage((p) => Math.min(checklistTotalPages, p + 1))}
-                      style={{
-                        ...buttonStyle,
-                        background: '#444',
-                        fontSize: 12,
-                        opacity: checklistShowAll || checklistPageSafe >= checklistTotalPages ? 0.5 : 1,
-                        cursor:
-                          checklistShowAll || checklistPageSafe >= checklistTotalPages ? 'not-allowed' : 'pointer',
-                      }}
-                    >
-                      Próxima
-                    </button>
-                    {checklistProductTotal > CHECKLIST_PAGE_SIZE ? (
-                      checklistShowAll ? (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setChecklistShowAll(false)
-                            setChecklistPage(1)
-                          }}
-                          style={{ ...buttonStyle, background: '#444', fontSize: 12 }}
-                        >
-                          Paginar ({CHECKLIST_PAGE_SIZE} por página)
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => setChecklistShowAll(true)}
-                          style={{ ...buttonStyle, background: '#444', fontSize: 12 }}
-                        >
-                          Mostrar tudo
-                        </button>
-                      )
-                    ) : null}
-                  </div>
-                ) : null}
                 {isMobile ? (
                   <>
                     <div style={{ marginTop: 8, display: 'grid', gap: 8 }}>
@@ -3287,6 +3261,76 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                     </table>
                   </div>
                 )}
+                {checklistProductTotal > 0 ? (
+                  <div
+                    style={{
+                      display: 'flex',
+                      flexWrap: 'wrap',
+                      alignItems: 'center',
+                      gap: 10,
+                      marginTop: 10,
+                    }}
+                  >
+                    <span style={{ fontSize: 13, color: 'var(--text, #888)' }}>
+                      {checklistShowAll
+                        ? `Exibindo todos os ${checklistProductTotal} registros`
+                        : isArmazemPaginado
+                          ? `${checklistRangeFrom}–${checklistRangeTo} de ${checklistProductTotal} · Página ${checklistPageSafe} de ${checklistTotalPages} · ${formatContagemLabel(armazemGrupos[checklistPageSafe - 1]?.contagem ?? checklistPageSafe)}`
+                          : `${checklistRangeFrom}–${checklistRangeTo} de ${checklistProductTotal} · Página ${checklistPageSafe} de ${checklistTotalPages} · ${CHECKLIST_PAGE_SIZE} por página`}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={checklistShowAll || checklistPageSafe <= 1}
+                      onClick={() => setChecklistPage((p) => Math.max(1, p - 1))}
+                      style={{
+                        ...buttonStyle,
+                        background: '#444',
+                        fontSize: 12,
+                        opacity: checklistShowAll || checklistPageSafe <= 1 ? 0.5 : 1,
+                        cursor: checklistShowAll || checklistPageSafe <= 1 ? 'not-allowed' : 'pointer',
+                      }}
+                    >
+                      Anterior
+                    </button>
+                    <button
+                      type="button"
+                      disabled={checklistShowAll || checklistPageSafe >= checklistTotalPages}
+                      onClick={() => setChecklistPage((p) => Math.min(checklistTotalPages, p + 1))}
+                      style={{
+                        ...buttonStyle,
+                        background: '#444',
+                        fontSize: 12,
+                        opacity: checklistShowAll || checklistPageSafe >= checklistTotalPages ? 0.5 : 1,
+                        cursor:
+                          checklistShowAll || checklistPageSafe >= checklistTotalPages ? 'not-allowed' : 'pointer',
+                      }}
+                    >
+                      Próxima
+                    </button>
+                    {checklistProductTotal > CHECKLIST_PAGE_SIZE ? (
+                      checklistShowAll ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setChecklistShowAll(false)
+                            setChecklistPage(1)
+                          }}
+                          style={{ ...buttonStyle, background: '#444', fontSize: 12 }}
+                        >
+                          Paginar ({CHECKLIST_PAGE_SIZE} por página)
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setChecklistShowAll(true)}
+                          style={{ ...buttonStyle, background: '#444', fontSize: 12 }}
+                        >
+                          Mostrar tudo
+                        </button>
+                      )
+                    ) : null}
+                  </div>
+                ) : null}
               </>
             ) : null}
           </>
