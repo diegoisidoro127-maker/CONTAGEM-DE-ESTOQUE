@@ -409,6 +409,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
   const [checklistFilterPendentes, setChecklistFilterPendentes] = useState(false)
   const [checklistListCollapsed, setChecklistListCollapsed] = useState(false)
   const [checklistListMode, setChecklistListMode] = useState<ChecklistListMode>('todos')
+  const [checklistVisibleCols, setChecklistVisibleCols] = useState<Record<string, boolean>>({})
   const [checklistEditingKey, setChecklistEditingKey] = useState<string | null>(null)
   const [checklistEditDraft, setChecklistEditDraft] = useState<{
     codigo_interno: string
@@ -2593,6 +2594,30 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
           return out
         })()
 
+  const checklistColumns = useMemo(() => {
+    const cols = [
+      { id: 'codigo', label: 'Código do produto' },
+      { id: 'descricao', label: 'Descrição' },
+      ...(inventario ? [{ id: 'unidade', label: 'Unidade de medida' }] : []),
+      { id: 'quantidade', label: 'Quantidade contada' },
+      ...(inventario ? [{ id: 'up', label: 'UP' }] : []),
+      ...(inventario ? [{ id: 'data_fabricacao', label: 'Data de fabricação' }] : []),
+      ...(inventario ? [{ id: 'data_validade', label: 'Data de vencimento' }] : []),
+      ...(inventario ? [{ id: 'lote', label: 'Lote' }] : []),
+      ...(inventario ? [{ id: 'observacao', label: 'Observação' }] : []),
+      ...(inventario ? [{ id: 'ean', label: 'EAN' }] : []),
+      ...(inventario ? [{ id: 'dun', label: 'DUN' }] : []),
+      ...(inventario ? [{ id: 'foto', label: 'Foto' }] : []),
+      ...(!inventario ? [{ id: 'status', label: 'Status' }] : []),
+      { id: 'acoes', label: 'Ações' },
+    ] as Array<{ id: string; label: string }>
+    return cols
+  }, [inventario])
+
+  const visibleChecklistColumns = checklistColumns.filter((c) => checklistVisibleCols[c.id] !== false)
+  const visibleChecklistColCount = Math.max(1, visibleChecklistColumns.length)
+  const showChecklistColumn = (id: string) => checklistVisibleCols[id] !== false
+
   const carregarListaDisabled = checklistLoading || finalizing || !conferenteId
 
   return (
@@ -2905,6 +2930,34 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                     Só pendentes
                   </label>
                 </div>
+                <div
+                  style={{
+                    marginTop: 8,
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    gap: 10,
+                    alignItems: 'center',
+                    fontSize: 12,
+                    color: 'var(--text, #777)',
+                  }}
+                >
+                  <strong style={{ fontSize: 12 }}>Ocultar/mostrar colunas:</strong>
+                  {checklistColumns.map((c) => (
+                    <label key={c.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                      <input
+                        type="checkbox"
+                        checked={showChecklistColumn(c.id)}
+                        onChange={(e) =>
+                          setChecklistVisibleCols((prev) => ({
+                            ...prev,
+                            [c.id]: e.target.checked,
+                          }))
+                        }
+                      />
+                      {c.label}
+                    </label>
+                  ))}
+                </div>
                 {isMobile ? (
                   <>
                     <div style={{ marginTop: 8, display: 'grid', gap: 8 }}>
@@ -3086,20 +3139,20 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                     <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: inventario ? 1700 : 720 }}>
                       <thead>
                         <tr>
-                          <th style={thStyle}>Código do produto</th>
-                          <th style={thStyle}>Descrição</th>
-                          {inventario ? <th style={thStyle}>Unidade de medida</th> : null}
-                          <th style={thStyle}>Quantidade contada</th>
-                          {inventario ? <th style={thStyle}>UP</th> : null}
-                          {inventario ? <th style={thStyle}>Data de fabricação</th> : null}
-                          {inventario ? <th style={thStyle}>Data de vencimento</th> : null}
-                          {inventario ? <th style={thStyle}>Lote</th> : null}
-                          {inventario ? <th style={thStyle}>Observação</th> : null}
-                          {inventario ? <th style={thStyle}>EAN</th> : null}
-                          {inventario ? <th style={thStyle}>DUN</th> : null}
-                          {inventario ? <th style={thStyle}>Foto</th> : null}
-                          {!inventario ? <th style={thStyle}>Status</th> : null}
-                          <th style={thStyle}>Ações</th>
+                          {showChecklistColumn('codigo') ? <th style={thStyle}>Código do produto</th> : null}
+                          {showChecklistColumn('descricao') ? <th style={thStyle}>Descrição</th> : null}
+                          {inventario && showChecklistColumn('unidade') ? <th style={thStyle}>Unidade de medida</th> : null}
+                          {showChecklistColumn('quantidade') ? <th style={thStyle}>Quantidade contada</th> : null}
+                          {inventario && showChecklistColumn('up') ? <th style={thStyle}>UP</th> : null}
+                          {inventario && showChecklistColumn('data_fabricacao') ? <th style={thStyle}>Data de fabricação</th> : null}
+                          {inventario && showChecklistColumn('data_validade') ? <th style={thStyle}>Data de vencimento</th> : null}
+                          {inventario && showChecklistColumn('lote') ? <th style={thStyle}>Lote</th> : null}
+                          {inventario && showChecklistColumn('observacao') ? <th style={thStyle}>Observação</th> : null}
+                          {inventario && showChecklistColumn('ean') ? <th style={thStyle}>EAN</th> : null}
+                          {inventario && showChecklistColumn('dun') ? <th style={thStyle}>DUN</th> : null}
+                          {inventario && showChecklistColumn('foto') ? <th style={thStyle}>Foto</th> : null}
+                          {!inventario && showChecklistColumn('status') ? <th style={thStyle}>Status</th> : null}
+                          {showChecklistColumn('acoes') ? <th style={thStyle}>Ações</th> : null}
                         </tr>
                       </thead>
                       <tbody>
@@ -3108,7 +3161,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                             return (
                               <tr key={item.key}>
                                 <td
-                                  colSpan={inventario ? 13 : 5}
+                                  colSpan={visibleChecklistColCount}
                                   style={{
                                     padding: '10px 8px',
                                     fontWeight: 800,
@@ -3131,154 +3184,170 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                             <tr key={it.key}>
                               {isEditing && checklistEditDraft ? (
                                 <>
-                                  <td style={tdStyle}>
-                                    <input
-                                      value={checklistEditDraft.codigo_interno}
-                                      onChange={(e) =>
-                                        setChecklistEditDraft((d) =>
-                                          d ? { ...d, codigo_interno: e.target.value } : d,
-                                        )
-                                      }
-                                      style={{ ...checklistQtdInputStyle, width: '100%', minWidth: 100 }}
-                                      aria-label="Código do produto"
-                                    />
-                                  </td>
-                                  <td style={{ ...tdStyle, whiteSpace: 'normal', maxWidth: 420 }}>
-                                    <textarea
-                                      value={checklistEditDraft.descricao}
-                                      onChange={(e) =>
-                                        setChecklistEditDraft((d) =>
-                                          d ? { ...d, descricao: e.target.value } : d,
-                                        )
-                                      }
-                                      rows={2}
-                                      style={{
-                                        ...checklistQtdInputStyle,
-                                        width: '100%',
-                                        minWidth: 160,
-                                        resize: 'vertical',
-                                        fontFamily: 'inherit',
-                                      }}
-                                      aria-label="Descrição"
-                                    />
-                                  </td>
-                                  {inventario ? <td style={tdStyle}>{it.unidade_medida ?? ''}</td> : null}
-                                  <td style={tdStyle}>
-                                    <input
-                                      type="text"
-                                      inputMode="decimal"
-                                      value={checklistEditDraft.quantidade_contada}
-                                      onChange={(e) =>
-                                        setChecklistEditDraft((d) =>
-                                          d ? { ...d, quantidade_contada: e.target.value } : d,
-                                        )
-                                      }
-                                      style={checklistQtdInputStyle}
-                                      placeholder="—"
-                                      aria-label="Quantidade"
-                                    />
-                                  </td>
-                                  {inventario ? <td style={tdStyle}>{it.up_quantidade ?? ''}</td> : null}
-                                  {inventario ? <td style={tdStyle}>{it.data_fabricacao ?? ''}</td> : null}
-                                  {inventario ? <td style={tdStyle}>{it.data_validade ?? ''}</td> : null}
-                                  {inventario ? <td style={tdStyle}>{it.lote ?? ''}</td> : null}
-                                  {inventario ? <td style={tdStyle}>{it.observacao ?? ''}</td> : null}
-                                  {inventario ? <td style={tdStyle}>{it.ean ?? ''}</td> : null}
-                                  {inventario ? <td style={tdStyle}>{it.dun ?? ''}</td> : null}
-                                  {inventario ? <td style={tdStyle}>{hasPhoto ? 'Com foto' : 'Sem foto'}</td> : null}
-                                  {!inventario ? <td style={tdStyle}>Editando</td> : null}
-                                  <td style={{ ...tdStyle, whiteSpace: 'normal' }}>
-                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                                      <button
-                                        type="button"
-                                        style={{ ...buttonStyle, background: '#0b5', fontSize: 12, padding: '6px 10px' }}
-                                        onClick={() => saveChecklistEdit()}
-                                      >
-                                        Salvar
-                                      </button>
-                                      <button
-                                        type="button"
-                                        style={{ ...buttonStyle, background: '#666', fontSize: 12, padding: '6px 10px' }}
-                                        onClick={() => cancelChecklistEdit()}
-                                      >
-                                        Cancelar
-                                      </button>
-                                    </div>
-                                  </td>
-                                </>
-                              ) : (
-                                <>
-                                  <td style={tdStyle}>
-                                    {it.codigo_interno}
-                                    {it.inventario_repeticao ? (
-                                      <span style={{ marginLeft: 6, fontSize: 11, color: '#0a7', fontWeight: 700 }}>
-                                        ({it.inventario_repeticao}ª)
-                                      </span>
-                                    ) : null}
-                                  </td>
-                                  <td style={{ ...tdStyle, whiteSpace: 'normal', maxWidth: 420 }}>{it.descricao}</td>
-                                  {inventario ? <td style={tdStyle}>{it.unidade_medida ?? ''}</td> : null}
-                                  <td style={tdStyle}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                                  {showChecklistColumn('codigo') ? (
+                                    <td style={tdStyle}>
+                                      <input
+                                        value={checklistEditDraft.codigo_interno}
+                                        onChange={(e) =>
+                                          setChecklistEditDraft((d) =>
+                                            d ? { ...d, codigo_interno: e.target.value } : d,
+                                          )
+                                        }
+                                        style={{ ...checklistQtdInputStyle, width: '100%', minWidth: 100 }}
+                                        aria-label="Código do produto"
+                                      />
+                                    </td>
+                                  ) : null}
+                                  {showChecklistColumn('descricao') ? (
+                                    <td style={{ ...tdStyle, whiteSpace: 'normal', maxWidth: 420 }}>
+                                      <textarea
+                                        value={checklistEditDraft.descricao}
+                                        onChange={(e) =>
+                                          setChecklistEditDraft((d) =>
+                                            d ? { ...d, descricao: e.target.value } : d,
+                                          )
+                                        }
+                                        rows={2}
+                                        style={{
+                                          ...checklistQtdInputStyle,
+                                          width: '100%',
+                                          minWidth: 160,
+                                          resize: 'vertical',
+                                          fontFamily: 'inherit',
+                                        }}
+                                        aria-label="Descrição"
+                                      />
+                                    </td>
+                                  ) : null}
+                                  {inventario && showChecklistColumn('unidade') ? <td style={tdStyle}>{it.unidade_medida ?? ''}</td> : null}
+                                  {showChecklistColumn('quantidade') ? (
+                                    <td style={tdStyle}>
                                       <input
                                         type="text"
                                         inputMode="decimal"
-                                        value={it.quantidade_contada}
-                                        onChange={(e) => updateOfflineItemQty(it.key, e.target.value)}
+                                        value={checklistEditDraft.quantidade_contada}
+                                        onChange={(e) =>
+                                          setChecklistEditDraft((d) =>
+                                            d ? { ...d, quantidade_contada: e.target.value } : d,
+                                          )
+                                        }
                                         style={checklistQtdInputStyle}
                                         placeholder="—"
-                                        aria-label={`Quantidade ${it.codigo_interno}${it.inventario_repeticao ? ` ${it.inventario_repeticao}ª` : ''}`}
+                                        aria-label="Quantidade"
                                       />
-                                      {checklistSavedFlashKey === it.key ? (
-                                        <span style={{ fontSize: 11, color: '#0a0', fontWeight: 700 }}>Salvo</span>
-                                      ) : null}
-                                    </div>
-                                  </td>
-                                  {inventario ? <td style={tdStyle}>{it.up_quantidade ?? ''}</td> : null}
-                                  {inventario ? <td style={tdStyle}>{it.data_fabricacao ?? ''}</td> : null}
-                                  {inventario ? <td style={tdStyle}>{it.data_validade ?? ''}</td> : null}
-                                  {inventario ? <td style={tdStyle}>{it.lote ?? ''}</td> : null}
-                                  {inventario ? <td style={tdStyle}>{it.observacao ?? ''}</td> : null}
-                                  {inventario ? <td style={tdStyle}>{it.ean ?? ''}</td> : null}
-                                  {inventario ? <td style={tdStyle}>{it.dun ?? ''}</td> : null}
-                                  {inventario ? <td style={tdStyle}>{hasPhoto ? 'Com foto' : 'Sem foto'}</td> : null}
-                                  {!inventario ? <td style={tdStyle}>{pend ? 'Pendente' : 'Contado'}</td> : null}
-                                  <td style={{ ...tdStyle, whiteSpace: 'normal' }}>
-                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                                      <button
-                                        type="button"
-                                        style={{ ...buttonStyle, background: '#2a4d7a', fontSize: 12, padding: '6px 10px' }}
-                                        onClick={() => openChecklistEdit(it)}
-                                      >
-                                        Editar
-                                      </button>
-                                      <button
-                                        type="button"
-                                        style={{ ...buttonStyle, background: '#666', fontSize: 12, padding: '6px 10px' }}
-                                        onClick={() => handleLimparQuantidadeOffline(it.key)}
-                                      >
-                                        Limpar
-                                      </button>
-                                      <button
-                                        type="button"
-                                        style={{ ...buttonStyle, background: hasPhoto ? '#0b5' : '#444', fontSize: 12, padding: '6px 10px' }}
-                                        onClick={() => openPhotoModalForCodigo(it.codigo_interno)}
-                                        title={hasPhoto ? 'Ver/atualizar foto' : 'Anexar foto'}
-                                      >
-                                        {hasPhoto ? 'Foto (ok)' : 'Sem foto'}
-                                      </button>
-                                      {hasPhoto ? (
+                                    </td>
+                                  ) : null}
+                                  {inventario && showChecklistColumn('up') ? <td style={tdStyle}>{it.up_quantidade ?? ''}</td> : null}
+                                  {inventario && showChecklistColumn('data_fabricacao') ? <td style={tdStyle}>{it.data_fabricacao ?? ''}</td> : null}
+                                  {inventario && showChecklistColumn('data_validade') ? <td style={tdStyle}>{it.data_validade ?? ''}</td> : null}
+                                  {inventario && showChecklistColumn('lote') ? <td style={tdStyle}>{it.lote ?? ''}</td> : null}
+                                  {inventario && showChecklistColumn('observacao') ? <td style={tdStyle}>{it.observacao ?? ''}</td> : null}
+                                  {inventario && showChecklistColumn('ean') ? <td style={tdStyle}>{it.ean ?? ''}</td> : null}
+                                  {inventario && showChecklistColumn('dun') ? <td style={tdStyle}>{it.dun ?? ''}</td> : null}
+                                  {inventario && showChecklistColumn('foto') ? <td style={tdStyle}>{hasPhoto ? 'Com foto' : 'Sem foto'}</td> : null}
+                                  {!inventario && showChecklistColumn('status') ? <td style={tdStyle}>Editando</td> : null}
+                                  {showChecklistColumn('acoes') ? (
+                                    <td style={{ ...tdStyle, whiteSpace: 'normal' }}>
+                                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                                         <button
                                           type="button"
-                                          style={{ ...buttonStyle, background: '#a85a00', fontSize: 12, padding: '6px 10px' }}
-                                          onClick={() => removePhotoFromChecklistItem(it)}
-                                          title="Remover foto anexada"
+                                          style={{ ...buttonStyle, background: '#0b5', fontSize: 12, padding: '6px 10px' }}
+                                          onClick={() => saveChecklistEdit()}
                                         >
-                                          Remover foto
+                                          Salvar
                                         </button>
+                                        <button
+                                          type="button"
+                                          style={{ ...buttonStyle, background: '#666', fontSize: 12, padding: '6px 10px' }}
+                                          onClick={() => cancelChecklistEdit()}
+                                        >
+                                          Cancelar
+                                        </button>
+                                      </div>
+                                    </td>
+                                  ) : null}
+                                </>
+                              ) : (
+                                <>
+                                  {showChecklistColumn('codigo') ? (
+                                    <td style={tdStyle}>
+                                      {it.codigo_interno}
+                                      {it.inventario_repeticao ? (
+                                        <span style={{ marginLeft: 6, fontSize: 11, color: '#0a7', fontWeight: 700 }}>
+                                          ({it.inventario_repeticao}ª)
+                                        </span>
                                       ) : null}
-                                    </div>
-                                  </td>
+                                    </td>
+                                  ) : null}
+                                  {showChecklistColumn('descricao') ? (
+                                    <td style={{ ...tdStyle, whiteSpace: 'normal', maxWidth: 420 }}>{it.descricao}</td>
+                                  ) : null}
+                                  {inventario && showChecklistColumn('unidade') ? <td style={tdStyle}>{it.unidade_medida ?? ''}</td> : null}
+                                  {showChecklistColumn('quantidade') ? (
+                                    <td style={tdStyle}>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                                        <input
+                                          type="text"
+                                          inputMode="decimal"
+                                          value={it.quantidade_contada}
+                                          onChange={(e) => updateOfflineItemQty(it.key, e.target.value)}
+                                          style={checklistQtdInputStyle}
+                                          placeholder="—"
+                                          aria-label={`Quantidade ${it.codigo_interno}${it.inventario_repeticao ? ` ${it.inventario_repeticao}ª` : ''}`}
+                                        />
+                                        {checklistSavedFlashKey === it.key ? (
+                                          <span style={{ fontSize: 11, color: '#0a0', fontWeight: 700 }}>Salvo</span>
+                                        ) : null}
+                                      </div>
+                                    </td>
+                                  ) : null}
+                                  {inventario && showChecklistColumn('up') ? <td style={tdStyle}>{it.up_quantidade ?? ''}</td> : null}
+                                  {inventario && showChecklistColumn('data_fabricacao') ? <td style={tdStyle}>{it.data_fabricacao ?? ''}</td> : null}
+                                  {inventario && showChecklistColumn('data_validade') ? <td style={tdStyle}>{it.data_validade ?? ''}</td> : null}
+                                  {inventario && showChecklistColumn('lote') ? <td style={tdStyle}>{it.lote ?? ''}</td> : null}
+                                  {inventario && showChecklistColumn('observacao') ? <td style={tdStyle}>{it.observacao ?? ''}</td> : null}
+                                  {inventario && showChecklistColumn('ean') ? <td style={tdStyle}>{it.ean ?? ''}</td> : null}
+                                  {inventario && showChecklistColumn('dun') ? <td style={tdStyle}>{it.dun ?? ''}</td> : null}
+                                  {inventario && showChecklistColumn('foto') ? <td style={tdStyle}>{hasPhoto ? 'Com foto' : 'Sem foto'}</td> : null}
+                                  {!inventario && showChecklistColumn('status') ? <td style={tdStyle}>{pend ? 'Pendente' : 'Contado'}</td> : null}
+                                  {showChecklistColumn('acoes') ? (
+                                    <td style={{ ...tdStyle, whiteSpace: 'normal' }}>
+                                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                                        <button
+                                          type="button"
+                                          style={{ ...buttonStyle, background: '#2a4d7a', fontSize: 12, padding: '6px 10px' }}
+                                          onClick={() => openChecklistEdit(it)}
+                                        >
+                                          Editar
+                                        </button>
+                                        <button
+                                          type="button"
+                                          style={{ ...buttonStyle, background: '#666', fontSize: 12, padding: '6px 10px' }}
+                                          onClick={() => handleLimparQuantidadeOffline(it.key)}
+                                        >
+                                          Limpar
+                                        </button>
+                                        <button
+                                          type="button"
+                                          style={{ ...buttonStyle, background: hasPhoto ? '#0b5' : '#444', fontSize: 12, padding: '6px 10px' }}
+                                          onClick={() => openPhotoModalForCodigo(it.codigo_interno)}
+                                          title={hasPhoto ? 'Ver/atualizar foto' : 'Anexar foto'}
+                                        >
+                                          {hasPhoto ? 'Foto (ok)' : 'Sem foto'}
+                                        </button>
+                                        {hasPhoto ? (
+                                          <button
+                                            type="button"
+                                            style={{ ...buttonStyle, background: '#a85a00', fontSize: 12, padding: '6px 10px' }}
+                                            onClick={() => removePhotoFromChecklistItem(it)}
+                                            title="Remover foto anexada"
+                                          >
+                                            Remover foto
+                                          </button>
+                                        ) : null}
+                                      </div>
+                                    </td>
+                                  ) : null}
                                 </>
                               )}
                             </tr>
