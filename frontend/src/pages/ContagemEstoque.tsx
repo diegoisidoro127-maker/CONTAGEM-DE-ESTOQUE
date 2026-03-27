@@ -2879,7 +2879,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
             {!checklistListCollapsed ? (
               <>
                 <p style={{ margin: '10px 0 0', fontSize: 12, color: 'var(--text, #888)' }}>
-                  Informe a <strong>quantidade</strong> diretamente na coluna Qtd — cada alteração é{' '}
+                  Informe a <strong>quantidade</strong> diretamente na coluna Quantidade contada — cada alteração é{' '}
                   <strong>gravada na hora</strong> no navegador (sessão local). Use <strong>Editar</strong> para ajustar
                   código, descrição ou quantidade na mesma linha.
                 </p>
@@ -2939,7 +2939,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                             <>
                               <div style={{ display: 'grid', gap: 8 }}>
                                 <label style={{ ...labelStyle }}>
-                                  Código
+                                  Código do produto
                                   <input
                                     value={checklistEditDraft.codigo_interno}
                                     onChange={(e) =>
@@ -2964,7 +2964,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                   />
                                 </label>
                                 <label style={{ ...labelStyle }}>
-                                  Qtd
+                                  Quantidade contada
                                   <input
                                     type="text"
                                     inputMode="decimal"
@@ -3013,7 +3013,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
 
                               <label style={{ ...labelStyle, marginTop: 8, gap: 4 }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                                  <span>Qtd</span>
+                                  <span>Quantidade contada</span>
                                   {checklistSavedFlashKey === it.key ? (
                                     <span style={{ fontSize: 11, color: '#0a0', fontWeight: 700 }}>Salvo na sessão</span>
                                   ) : null}
@@ -3083,13 +3083,22 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                   </>
                 ) : (
                   <div style={{ overflowX: 'auto', marginTop: 10 }}>
-                    <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 720 }}>
+                    <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: inventario ? 1700 : 720 }}>
                       <thead>
                         <tr>
                           <th style={thStyle}>Código do produto</th>
                           <th style={thStyle}>Descrição</th>
+                          {inventario ? <th style={thStyle}>Unidade de medida</th> : null}
                           <th style={thStyle}>Quantidade contada</th>
-                          <th style={thStyle}>Status</th>
+                          {inventario ? <th style={thStyle}>UP</th> : null}
+                          {inventario ? <th style={thStyle}>Data de fabricação</th> : null}
+                          {inventario ? <th style={thStyle}>Data de vencimento</th> : null}
+                          {inventario ? <th style={thStyle}>Lote</th> : null}
+                          {inventario ? <th style={thStyle}>Observação</th> : null}
+                          {inventario ? <th style={thStyle}>EAN</th> : null}
+                          {inventario ? <th style={thStyle}>DUN</th> : null}
+                          {inventario ? <th style={thStyle}>Foto</th> : null}
+                          {!inventario ? <th style={thStyle}>Status</th> : null}
                           <th style={thStyle}>Ações</th>
                         </tr>
                       </thead>
@@ -3099,7 +3108,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                             return (
                               <tr key={item.key}>
                                 <td
-                                  colSpan={5}
+                                  colSpan={inventario ? 13 : 5}
                                   style={{
                                     padding: '10px 8px',
                                     fontWeight: 800,
@@ -3131,7 +3140,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                         )
                                       }
                                       style={{ ...checklistQtdInputStyle, width: '100%', minWidth: 100 }}
-                                      aria-label="Código"
+                                      aria-label="Código do produto"
                                     />
                                   </td>
                                   <td style={{ ...tdStyle, whiteSpace: 'normal', maxWidth: 420 }}>
@@ -3153,6 +3162,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                       aria-label="Descrição"
                                     />
                                   </td>
+                                  {inventario ? <td style={tdStyle}>{it.unidade_medida ?? ''}</td> : null}
                                   <td style={tdStyle}>
                                     <input
                                       type="text"
@@ -3168,7 +3178,15 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                       aria-label="Quantidade"
                                     />
                                   </td>
-                                  <td style={tdStyle}>Editando</td>
+                                  {inventario ? <td style={tdStyle}>{it.up_quantidade ?? ''}</td> : null}
+                                  {inventario ? <td style={tdStyle}>{it.data_fabricacao ?? ''}</td> : null}
+                                  {inventario ? <td style={tdStyle}>{it.data_validade ?? ''}</td> : null}
+                                  {inventario ? <td style={tdStyle}>{it.lote ?? ''}</td> : null}
+                                  {inventario ? <td style={tdStyle}>{it.observacao ?? ''}</td> : null}
+                                  {inventario ? <td style={tdStyle}>{it.ean ?? ''}</td> : null}
+                                  {inventario ? <td style={tdStyle}>{it.dun ?? ''}</td> : null}
+                                  {inventario ? <td style={tdStyle}>{hasPhoto ? 'Com foto' : 'Sem foto'}</td> : null}
+                                  {!inventario ? <td style={tdStyle}>Editando</td> : null}
                                   <td style={{ ...tdStyle, whiteSpace: 'normal' }}>
                                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                                       <button
@@ -3199,6 +3217,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                     ) : null}
                                   </td>
                                   <td style={{ ...tdStyle, whiteSpace: 'normal', maxWidth: 420 }}>{it.descricao}</td>
+                                  {inventario ? <td style={tdStyle}>{it.unidade_medida ?? ''}</td> : null}
                                   <td style={tdStyle}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                                       <input
@@ -3215,7 +3234,15 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                       ) : null}
                                     </div>
                                   </td>
-                                  <td style={tdStyle}>{pend ? 'Pendente' : 'Contado'}</td>
+                                  {inventario ? <td style={tdStyle}>{it.up_quantidade ?? ''}</td> : null}
+                                  {inventario ? <td style={tdStyle}>{it.data_fabricacao ?? ''}</td> : null}
+                                  {inventario ? <td style={tdStyle}>{it.data_validade ?? ''}</td> : null}
+                                  {inventario ? <td style={tdStyle}>{it.lote ?? ''}</td> : null}
+                                  {inventario ? <td style={tdStyle}>{it.observacao ?? ''}</td> : null}
+                                  {inventario ? <td style={tdStyle}>{it.ean ?? ''}</td> : null}
+                                  {inventario ? <td style={tdStyle}>{it.dun ?? ''}</td> : null}
+                                  {inventario ? <td style={tdStyle}>{hasPhoto ? 'Com foto' : 'Sem foto'}</td> : null}
+                                  {!inventario ? <td style={tdStyle}>{pend ? 'Pendente' : 'Contado'}</td> : null}
                                   <td style={{ ...tdStyle, whiteSpace: 'normal' }}>
                                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                                       <button
