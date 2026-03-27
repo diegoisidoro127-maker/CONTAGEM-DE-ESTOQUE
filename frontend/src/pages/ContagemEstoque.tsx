@@ -1428,7 +1428,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     }
     setChecklistLoading(true)
     try {
-      const listModeEfetivo: ChecklistListMode = inventario ? 'todos' : checklistListMode
+      const listModeEfetivo: ChecklistListMode = checklistListMode
       let itemsRaw = await fetchListaChecklistFromDb()
 
       if (listModeEfetivo === 'armazem') {
@@ -1493,7 +1493,9 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       saveOfflineSession(sess, sessionMode)
       setSaveSuccess(
         inventario
-          ? `Lista de inventário: ${items.length} linhas (${itemsRaw.length} produtos × 3 contagens). Preencha as quantidades e finalize.`
+          ? `Lista de inventário: ${items.length} linhas (${itemsRaw.length} produtos × 3 contagens)${
+              listModeEfetivo === 'armazem' ? ', ordem armazém (grupos 1ª–4ª contagem)' : ''
+            }. Preencha as quantidades e finalize.`
           : `Lista carregada: ${items.length} itens. Preencha as quantidades e finalize quando terminar.`,
       )
       setSaveError('')
@@ -2727,9 +2729,11 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
           {inventario ? (
             <>
               <strong>Inventário:</strong> cada produto aparece <strong>três vezes</strong> na lista (1ª, 2ª e 3ª contagem).
-              Carregue a lista a partir de <strong>Todos os Produtos</strong>, preencha as quantidades e use{' '}
-              <strong>Finalizar inventário</strong> para gravar em <code style={{ fontSize: 12 }}>contagens_estoque</code>{' '}
-              (campos <code style={{ fontSize: 12 }}>origem=inventario</code> e repetição). Execute o SQL em{' '}
+              Você pode usar o mesmo <strong>tipo de lista</strong> da contagem diária: ordem do cadastro ou{' '}
+              <strong>Armazém</strong> (dividida em grupos 1ª–4ª contagem). Carregue a lista a partir de{' '}
+              <strong>Todos os Produtos</strong>, preencha as quantidades e use <strong>Finalizar inventário</strong> para gravar
+              em <code style={{ fontSize: 12 }}>contagens_estoque</code> (campos{' '}
+              <code style={{ fontSize: 12 }}>origem=inventario</code> e repetição). Execute o SQL em{' '}
               <code style={{ fontSize: 12 }}>supabase/sql/alter_contagens_estoque_origem_inventario.sql</code> se ainda não
               aplicou no banco.
             </>
@@ -2875,7 +2879,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                 value={checklistListMode}
                 onChange={(e) => setChecklistListMode(e.target.value as ChecklistListMode)}
                 style={inputStyle}
-                disabled={inventario || (!!offlineSession && offlineSession.status === 'aberta')}
+                disabled={!!offlineSession && offlineSession.status === 'aberta'}
               >
                 <option value="todos">Todos os Produtos (cadastro)</option>
                 <option value="armazem">Armazém (dividida por contagem 1-4)</option>

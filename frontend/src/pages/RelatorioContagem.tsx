@@ -88,6 +88,8 @@ export default function RelatorioContagem({ mode = 'periodo' }: RelatorioContage
   const [rowActionLoading, setRowActionLoading] = useState(false)
 
   const isDiaMode = mode === 'dia'
+  /** Excel só no relatório por período — nunca em “Todas as contagens” (`mode="dia"`). */
+  const showExportExcel = mode === 'periodo'
 
   const [startDate, setStartDate] = useState(() =>
     toISODateLocal(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)),
@@ -497,7 +499,7 @@ export default function RelatorioContagem({ mode = 'periodo' }: RelatorioContage
             {loading ? 'Carregando...' : `Carregar (${dateRangeText})`}
           </button>
 
-          {!isDiaMode ? (
+          {showExportExcel ? (
             <button
               type="button"
               onClick={exportToExcel}
