@@ -342,7 +342,9 @@ export default function BaseProdutos() {
         Lista da tabela <code style={{ fontSize: 12 }}>public.&quot;{TABELA_PRODUTOS}&quot;</code>. Use{' '}
         <strong>Editar</strong> para alterar descrição, unidade, EAN e DUN e depois <strong>Salvar</strong> — a gravação é
         confirmada no banco (se o Supabase retornar 0 linhas, aparece aviso de RLS). <strong>Excluir</strong> remove a
-        linha. Permissões INSERT/UPDATE/DELETE via RLS.
+        linha. Permissões INSERT/UPDATE/DELETE via RLS. Se aparecer <strong>0 linhas</strong> ao salvar, execute no SQL
+        Editor o arquivo{' '}
+        <code style={{ fontSize: 12 }}>supabase/sql/rls_todos_os_produtos_crud.sql</code>.
       </p>
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end', marginBottom: 16 }}>
