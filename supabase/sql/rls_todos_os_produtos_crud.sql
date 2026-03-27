@@ -1,20 +1,32 @@
--- Políticas RLS para a tabela usada pelo app: public."Todos os Produtos"
--- Sintoma sem isto: o front mostra "Nenhuma linha foi atualizada (0 linhas)" ao Salvar,
--- porque SELECT funciona mas UPDATE/INSERT/DELETE ficam bloqueados pelo RLS.
+-- Políticas RLS + GRANT para: public."Todos os Produtos"
+-- Sintoma: "Nenhuma linha foi atualizada (0 linhas)" ao salvar no app.
+-- Causas comuns: (1) RLS sem política de UPDATE; (2) política antiga conflitante; (3) falta de GRANT na tabela.
 --
--- Rode no Supabase: SQL Editor → Run (uma vez).
--- Ajuste depois se quiser restringir a usuários autenticados apenas.
+-- Rode no Supabase: SQL Editor → Run (inteiro, uma vez).
 
 begin;
 
 alter table public."Todos os Produtos" enable row level security;
 
--- anon (chave pública do front)
-drop policy if exists "todos_produtos_anon_select" on public."Todos os Produtos";
-drop policy if exists "todos_produtos_anon_insert" on public."Todos os Produtos";
-drop policy if exists "todos_produtos_anon_update" on public."Todos os Produtos";
-drop policy if exists "todos_produtos_anon_delete" on public."Todos os Produtos";
+-- Garante que anon/authenticated podem executar operações (o RLS ainda filtra por política).
+grant select, insert, update, delete on table public."Todos os Produtos" to anon, authenticated;
 
+-- Remove TODAS as políticas existentes nesta tabela (evita conflito com nomes antigos).
+do $$
+declare
+  pol record;
+begin
+  for pol in
+    select policyname
+    from pg_policies
+    where schemaname = 'public'
+      and tablename = 'Todos os Produtos'
+  loop
+    execute format('drop policy if exists %I on public."Todos os Produtos"', pol.policyname);
+  end loop;
+end $$;
+
+-- anon (chave pública do front)
 create policy "todos_produtos_anon_select"
 on public."Todos os Produtos"
 for select
@@ -40,12 +52,7 @@ for delete
 to anon
 using (true);
 
--- authenticated (se usar login)
-drop policy if exists "todos_produtos_auth_select" on public."Todos os Produtos";
-drop policy if exists "todos_produtos_auth_insert" on public."Todos os Produtos";
-drop policy if exists "todos_produtos_auth_update" on public."Todos os Produtos";
-drop policy if exists "todos_produtos_auth_delete" on public."Todos os Produtos";
-
+-- authenticated
 create policy "todos_produtos_auth_select"
 on public."Todos os Produtos"
 for select

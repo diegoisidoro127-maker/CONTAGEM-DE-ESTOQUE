@@ -189,10 +189,20 @@ export default function BaseProdutos() {
       const unidadeRaw = String(r.unidade ?? '').trim()
       const unidade = unidadeRaw === '' ? null : unidadeRaw
 
-      const tryUpdate = async (payload: Record<string, unknown>) => {
+      const runUpdate = (
+        payload: Record<string, unknown>,
+        filter: (q: ReturnType<typeof supabase.from>) => ReturnType<typeof supabase.from>,
+      ) => {
         let q = supabase.from(TABELA_PRODUTOS).update(payload)
-        q = buildFilterForRow(r)(q)
-        const res = await q.select('id,codigo_interno').limit(1)
+        q = filter(q) as typeof q
+        return q.select('id,codigo_interno').limit(1)
+      }
+
+      const tryUpdate = async (payload: Record<string, unknown>) => {
+        let res = await runUpdate(payload, buildFilterForRow(r))
+        if ((!res.data || res.data.length === 0) && !res.error && r.id && r.id.trim() !== '' && r.codigo_interno.trim()) {
+          res = await runUpdate(payload, (q) => q.eq('codigo_interno', r.codigo_interno.trim()))
+        }
         return res
       }
 
@@ -215,7 +225,8 @@ export default function BaseProdutos() {
       if (uErr) throw uErr
       if (!data || data.length === 0) {
         throw new Error(
-          'Nenhuma linha foi atualizada no banco (0 linhas). Confira políticas RLS (UPDATE) no Supabase e se o id/código está correto.',
+          'Nenhuma linha foi atualizada no banco (0 linhas). No Supabase, execute o script ' +
+            'supabase/sql/rls_todos_os_produtos_crud.sql (RLS + GRANT). Se já executou, confira se o id/código da linha bate com o banco.',
         )
       }
 
