@@ -337,6 +337,14 @@ function dataContagemYmdFromIso(isoLike: string) {
   return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`
 }
 
+/** Erro PostgREST / Postgres: coluna inexistente (ex.: migração `origem` ainda não aplicada). */
+function isMissingDbColumnError(e: unknown, columnSqlName: string): boolean {
+  const code = e && typeof e === 'object' && 'code' in e ? String((e as { code: unknown }).code) : ''
+  const msg = (e && typeof e === 'object' && 'message' in e ? String((e as { message: unknown }).message) : String(e)).toLowerCase()
+  const col = columnSqlName.toLowerCase()
+  return code === '42703' || (msg.includes('does not exist') && msg.includes(col))
+}
+
 function toISODateLocal(d: Date) {
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
@@ -1895,7 +1903,19 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       } else {
         delQ = delQ.or('origem.is.null,origem.neq.inventario')
       }
-      const { error } = await delQ
+      let { error } = await delQ
+
+      if (error && isMissingDbColumnError(error, 'origem')) {
+        if (inventario) {
+          throw new Error(
+            'A tabela contagens_estoque não tem a coluna origem. Não é possível apagar só o inventário com segurança. ' +
+              'Execute o script supabase/sql/alter_contagens_estoque_origem_inventario.sql no Supabase e tente de novo.',
+          )
+        }
+        const simple = await supabase.from('contagens_estoque').delete().eq('data_contagem', dayKey)
+        error = simple.error
+      }
+
       if (error) throw error
 
       setEditingPreviewId(null)

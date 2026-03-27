@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type React from 'react'
 import { supabase } from '../lib/supabaseClient'
 
@@ -26,6 +26,15 @@ function normEanDun(v: string | null | undefined): string | null {
   return t === '' ? null : t
 }
 
+function isColumnMissingError(e: unknown): boolean {
+  const code =
+    e && typeof e === 'object' && 'code' in e ? String((e as { code: unknown }).code) : ''
+  const msg = (
+    e && typeof e === 'object' && 'message' in e ? String((e as { message: unknown }).message) : String(e)
+  ).toLowerCase()
+  return code === '42703' || msg.includes('does not exist')
+}
+
 export default function BaseProdutos() {
   const [rows, setRows] = useState<ProdutoDbRow[]>([])
   const [loading, setLoading] = useState(false)
@@ -36,11 +45,18 @@ export default function BaseProdutos() {
   const [page, setPage] = useState(1)
   const [showAll, setShowAll] = useState(false)
   const [savingKey, setSavingKey] = useState<string | null>(null)
-  /** Último EAN/DUN confirmado no banco por linha (evita POST ao sair do campo sem alteração). */
-  const lastPersistedRef = useRef<Record<string, { ean: string | null; dun: string | null }>>({})
-  const rowsRef = useRef(rows)
-  rowsRef.current = rows
-  const persistLockRef = useRef<Set<string>>(new Set())
+  const [deletingKey, setDeletingKey] = useState<string | null>(null)
+
+  const [editingKey, setEditingKey] = useState<string | null>(null)
+  const [editSnapshot, setEditSnapshot] = useState<ProdutoDbRow | null>(null)
+
+  const [cadastroOpen, setCadastroOpen] = useState(false)
+  const [cadastroCodigo, setCadastroCodigo] = useState('')
+  const [cadastroDescricao, setCadastroDescricao] = useState('')
+  const [cadastroUnidade, setCadastroUnidade] = useState('')
+  const [cadastroEan, setCadastroEan] = useState('')
+  const [cadastroDun, setCadastroDun] = useState('')
+  const [cadastroSaving, setCadastroSaving] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -80,19 +96,15 @@ export default function BaseProdutos() {
       })
       const list = mapped.filter((r) => r.codigo_interno.trim() !== '')
       setRows(list)
-      const snap: Record<string, { ean: string | null; dun: string | null }> = {}
-      for (const r of list) {
-        snap[rowKey(r)] = { ean: normEanDun(r.ean), dun: normEanDun(r.dun) }
-      }
-      lastPersistedRef.current = snap
+      setEditingKey(null)
+      setEditSnapshot(null)
       setPage(1)
       setShowAll(false)
-      setSuccess(`${mapped.length} produto(s) carregado(s).`)
+      setSuccess(`${list.length} produto(s) carregado(s).`)
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e)
       setError(msg || 'Erro ao carregar a base.')
       setRows([])
-      lastPersistedRef.current = {}
     } finally {
       setLoading(false)
     }
@@ -125,56 +137,212 @@ export default function BaseProdutos() {
   const rangeTo =
     filtered.length === 0 ? 0 : showAll ? filtered.length : Math.min(pageSafe * PAGE_SIZE, filtered.length)
 
-  function setField(key: string, field: 'ean' | 'dun', value: string) {
-    setRows((prev) =>
-      prev.map((r) => (rowKey(r) === key ? { ...r, [field]: value === '' ? null : value } : r)),
-    )
+  function patchRow(key: string, patch: Partial<ProdutoDbRow>) {
+    setRows((prev) => prev.map((r) => (rowKey(r) === key ? { ...r, ...patch } : r)))
   }
 
-  /** Persiste EAN+DUN no Supabase ao sair do campo, se houver alteração em relação ao último valor salvo. */
-  async function persistRowEanDunOnBlur(rowKeyStr: string) {
-    const r = rowsRef.current.find((x) => rowKey(x) === rowKeyStr)
-    if (!r) return
-    if (persistLockRef.current.has(rowKeyStr)) return
+  function startEdit(r: ProdutoDbRow) {
+    const k = rowKey(r)
+    if (editingKey && editingKey !== k) {
+      if (!confirm('Há outra linha em edição. Descartar alterações nela e editar esta?')) return
+      cancelEditInternal()
+    }
+    setEditSnapshot({ ...r })
+    setEditingKey(k)
+    setError('')
+    setSuccess('')
+  }
 
-    const ean = normEanDun(r.ean)
-    const dun = normEanDun(r.dun)
-    const prev = lastPersistedRef.current[rowKeyStr]
-    if (prev && prev.ean === ean && prev.dun === dun) return
+  function cancelEditInternal() {
+    if (editingKey && editSnapshot) {
+      setRows((prev) => prev.map((x) => (rowKey(x) === editingKey ? { ...editSnapshot } : x)))
+    }
+    setEditingKey(null)
+    setEditSnapshot(null)
+  }
 
-    persistLockRef.current.add(rowKeyStr)
-    setSavingKey(rowKeyStr)
+  function cancelEdit() {
+    cancelEditInternal()
+  }
+
+  function buildFilterForRow(r: ProdutoDbRow) {
+    if (r.id && r.id.trim() !== '') {
+      return (q: ReturnType<typeof supabase.from>) => q.eq('id', r.id)
+    }
+    if (r.codigo_interno.trim()) {
+      return (q: ReturnType<typeof supabase.from>) => q.eq('codigo_interno', r.codigo_interno.trim())
+    }
+    throw new Error('Sem id nem código para identificar a linha.')
+  }
+
+  async function saveRow(r: ProdutoDbRow) {
+    const k = rowKey(r)
+    setSavingKey(k)
     setError('')
     setSuccess('')
     try {
-      let q = supabase.from(TABELA_PRODUTOS).update({ ean, dun })
-      if (r.id && r.id.trim() !== '') {
-        q = q.eq('id', r.id)
-      } else if (r.codigo_interno.trim()) {
-        q = q.eq('codigo_interno', r.codigo_interno.trim())
-      } else {
-        throw new Error('Sem id nem código para identificar a linha.')
+      const descricao = String(r.descricao ?? '').trim()
+      if (!descricao) throw new Error('Descrição é obrigatória.')
+
+      const ean = normEanDun(r.ean)
+      const dun = normEanDun(r.dun)
+      const unidadeRaw = String(r.unidade ?? '').trim()
+      const unidade = unidadeRaw === '' ? null : unidadeRaw
+
+      const tryUpdate = async (payload: Record<string, unknown>) => {
+        let q = supabase.from(TABELA_PRODUTOS).update(payload)
+        q = buildFilterForRow(r)(q)
+        const res = await q.select('id,codigo_interno').limit(1)
+        return res
       }
-      const { error: uErr } = await q
+
+      let payload: Record<string, unknown> = { descricao, ean, dun, unidade }
+      let { data, error: uErr } = await tryUpdate(payload)
+
+      if (uErr && isColumnMissingError(uErr)) {
+        const { unidade: _u, ...rest } = payload
+        const r2 = await tryUpdate(rest)
+        data = r2.data
+        uErr = r2.error as typeof uErr
+      }
+
+      if (uErr && isColumnMissingError(uErr)) {
+        const r3 = await tryUpdate({ descricao, ean, dun })
+        data = r3.data
+        uErr = r3.error as typeof uErr
+      }
+
       if (uErr) throw uErr
-      lastPersistedRef.current[rowKeyStr] = { ean, dun }
-      setSuccess(`EAN/DUN atualizados no banco para ${r.codigo_interno}.`)
+      if (!data || data.length === 0) {
+        throw new Error(
+          'Nenhuma linha foi atualizada no banco (0 linhas). Confira políticas RLS (UPDATE) no Supabase e se o id/código está correto.',
+        )
+      }
+
+      setSuccess(`Produto ${r.codigo_interno} atualizado no banco.`)
+      setEditingKey(null)
+      setEditSnapshot(null)
+      await load()
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e)
       setError(msg || 'Erro ao salvar.')
     } finally {
-      persistLockRef.current.delete(rowKeyStr)
       setSavingKey(null)
     }
   }
+
+  async function deleteRow(r: ProdutoDbRow) {
+    if (!confirm(`Excluir permanentemente o produto ${r.codigo_interno} — ${r.descricao}?`)) return
+    const k = rowKey(r)
+    setDeletingKey(k)
+    setError('')
+    setSuccess('')
+    try {
+      let q = supabase.from(TABELA_PRODUTOS).delete()
+      q = buildFilterForRow(r)(q)
+      const { error: dErr } = await q
+      if (dErr) throw dErr
+      setSuccess(`Produto ${r.codigo_interno} excluído do banco.`)
+      if (editingKey === k) {
+        setEditingKey(null)
+        setEditSnapshot(null)
+      }
+      await load()
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e)
+      setError(msg || 'Erro ao excluir.')
+    } finally {
+      setDeletingKey(null)
+    }
+  }
+
+  async function cadastrarProduto() {
+    const cod = cadastroCodigo.trim()
+    const desc = cadastroDescricao.trim()
+    if (!cod || !desc) {
+      setError('Código e descrição são obrigatórios no cadastro.')
+      return
+    }
+    setCadastroSaving(true)
+    setError('')
+    setSuccess('')
+    try {
+      const ean = normEanDun(cadastroEan)
+      const dun = normEanDun(cadastroDun)
+      const unidadeRaw = cadastroUnidade.trim()
+      const unidade = unidadeRaw === '' ? null : unidadeRaw
+
+      const tryInsert = async (payload: Record<string, unknown>) => {
+        return supabase.from(TABELA_PRODUTOS).insert(payload).select('id,codigo_interno').limit(1)
+      }
+
+      let payload: Record<string, unknown> = {
+        codigo_interno: cod,
+        descricao: desc,
+        ean,
+        dun,
+        unidade,
+      }
+      let { data, error: insErr } = await tryInsert(payload)
+
+      if (insErr && isColumnMissingError(insErr)) {
+        const { unidade: _u, ...rest } = payload
+        const r2 = await tryInsert(rest)
+        data = r2.data
+        insErr = r2.error as typeof insErr
+      }
+
+      if (insErr && isColumnMissingError(insErr)) {
+        const r3 = await tryInsert({
+          codigo_interno: cod,
+          descricao: desc,
+          ean,
+          dun,
+          unidade_medida: unidade,
+        })
+        data = r3.data
+        insErr = r3.error as typeof insErr
+      }
+
+      if (insErr && isColumnMissingError(insErr)) {
+        const r4 = await tryInsert({ codigo_interno: cod, descricao: desc, ean, dun })
+        data = r4.data
+        insErr = r4.error as typeof insErr
+      }
+
+      if (insErr) throw insErr
+      if (!data || data.length === 0) {
+        throw new Error(
+          'Insert não retornou linha. Verifique permissões RLS (INSERT) na tabela "Todos os Produtos".',
+        )
+      }
+
+      setSuccess(`Produto ${cod} cadastrado no banco.`)
+      setCadastroOpen(false)
+      setCadastroCodigo('')
+      setCadastroDescricao('')
+      setCadastroUnidade('')
+      setCadastroEan('')
+      setCadastroDun('')
+      await load()
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e)
+      setError(msg || 'Erro ao cadastrar.')
+    } finally {
+      setCadastroSaving(false)
+    }
+  }
+
+  const canEditRow = (k: string) => editingKey === k
 
   return (
     <div style={{ padding: 16, maxWidth: 1200, margin: '0 auto' }}>
       <h2 style={{ margin: '0 0 8px' }}>Base de dados — Todos os Produtos</h2>
       <p style={{ margin: '0 0 16px', fontSize: 13, color: 'var(--text, #666)', maxWidth: 720 }}>
-        Lista carregada da tabela <code style={{ fontSize: 12 }}>public.&quot;{TABELA_PRODUTOS}&quot;</code>. Altere{' '}
-        <strong>EAN</strong> ou <strong>DUN</strong> e saia do campo (Tab ou clique fora): o valor é gravado automaticamente
-        no banco. É necessário permissão de UPDATE no Supabase (RLS).
+        Lista da tabela <code style={{ fontSize: 12 }}>public.&quot;{TABELA_PRODUTOS}&quot;</code>. Use{' '}
+        <strong>Editar</strong> para alterar descrição, unidade, EAN e DUN e depois <strong>Salvar</strong> — a gravação é
+        confirmada no banco (se o Supabase retornar 0 linhas, aparece aviso de RLS). <strong>Excluir</strong> remove a
+        linha. Permissões INSERT/UPDATE/DELETE via RLS.
       </p>
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end', marginBottom: 16 }}>
@@ -192,6 +360,23 @@ export default function BaseProdutos() {
           }}
         >
           {loading ? 'Carregando…' : 'Carregar / atualizar lista'}
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setCadastroOpen((v) => !v)
+            setError('')
+          }}
+          style={{
+            padding: '10px 16px',
+            borderRadius: 8,
+            border: '1px solid #1b5e20',
+            background: '#2e7d32',
+            color: '#fff',
+            cursor: 'pointer',
+          }}
+        >
+          {cadastroOpen ? 'Fechar cadastro' : 'Cadastrar produtos'}
         </button>
         <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 13 }}>
           Filtrar código
@@ -221,6 +406,81 @@ export default function BaseProdutos() {
         </label>
       </div>
 
+      {cadastroOpen ? (
+        <div
+          style={{
+            marginBottom: 16,
+            padding: 14,
+            borderRadius: 10,
+            border: '1px solid var(--border, #ccc)',
+            background: 'var(--panel-bg, rgba(0,0,0,.04))',
+            maxWidth: 560,
+          }}
+        >
+          <h3 style={{ margin: '0 0 10px', fontSize: 16 }}>Novo produto</h3>
+          <div style={{ display: 'grid', gap: 10 }}>
+            <label style={{ fontSize: 13, display: 'flex', flexDirection: 'column', gap: 4 }}>
+              Código do produto *
+              <input
+                value={cadastroCodigo}
+                onChange={(e) => setCadastroCodigo(e.target.value)}
+                style={{ ...inputStyle, padding: '8px 10px' }}
+                placeholder="ex.: 01.01.0099"
+                autoComplete="off"
+              />
+            </label>
+            <label style={{ fontSize: 13, display: 'flex', flexDirection: 'column', gap: 4 }}>
+              Descrição *
+              <textarea
+                value={cadastroDescricao}
+                onChange={(e) => setCadastroDescricao(e.target.value)}
+                style={{ ...inputStyle, padding: '8px 10px', minHeight: 72, resize: 'vertical' }}
+                placeholder="Descrição do produto"
+                rows={3}
+              />
+            </label>
+            <label style={{ fontSize: 13, display: 'flex', flexDirection: 'column', gap: 4 }}>
+              Unidade de medida
+              <input
+                value={cadastroUnidade}
+                onChange={(e) => setCadastroUnidade(e.target.value)}
+                style={{ ...inputStyle, padding: '8px 10px' }}
+                placeholder="ex.: PT, CX"
+                autoComplete="off"
+              />
+            </label>
+            <label style={{ fontSize: 13, display: 'flex', flexDirection: 'column', gap: 4 }}>
+              EAN
+              <input
+                value={cadastroEan}
+                onChange={(e) => setCadastroEan(e.target.value)}
+                style={{ ...inputStyle, padding: '8px 10px' }}
+                autoComplete="off"
+              />
+            </label>
+            <label style={{ fontSize: 13, display: 'flex', flexDirection: 'column', gap: 4 }}>
+              DUN
+              <input
+                value={cadastroDun}
+                onChange={(e) => setCadastroDun(e.target.value)}
+                style={{ ...inputStyle, padding: '8px 10px' }}
+                autoComplete="off"
+              />
+            </label>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                disabled={cadastroSaving}
+                onClick={() => void cadastrarProduto()}
+                style={btnPrimary}
+              >
+                {cadastroSaving ? 'Salvando…' : 'Salvar novo produto'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {error ? <div style={{ color: '#b00020', marginBottom: 10 }}>{error}</div> : null}
       {success ? <div style={{ color: '#0f7a0f', marginBottom: 10 }}>{success}</div> : null}
 
@@ -232,7 +492,7 @@ export default function BaseProdutos() {
               : `Mostrando ${rangeFrom}–${rangeTo} de ${filtered.length} · Página ${pageSafe} de ${totalPages} · ${PAGE_SIZE} por página (total no cadastro: ${rows.length})`}
           </div>
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 880 }}>
+            <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 960 }}>
               <thead>
                 <tr>
                   <th style={thStyle}>Código do produto</th>
@@ -240,32 +500,61 @@ export default function BaseProdutos() {
                   <th style={thStyle}>Unidade de medida</th>
                   <th style={thStyle}>EAN</th>
                   <th style={thStyle}>DUN</th>
+                  <th style={thStyle}>Ações</th>
                 </tr>
               </thead>
               <tbody>
                 {slice.map((r) => {
                   const k = rowKey(r)
                   const saving = savingKey === k
+                  const deleting = deletingKey === k
+                  const edit = canEditRow(k)
                   return (
                     <tr key={k}>
                       <td style={tdStyle}>
                         <span style={{ fontFamily: 'monospace', fontSize: 13 }}>{r.codigo_interno}</span>
                       </td>
-                      <td style={{ ...tdStyle, whiteSpace: 'normal', maxWidth: 320 }}>{r.descricao}</td>
-                      <td style={tdStyle}>{r.unidade ?? '—'}</td>
+                      <td style={{ ...tdStyle, whiteSpace: 'normal', maxWidth: 320 }}>
+                        {edit ? (
+                          <textarea
+                            value={r.descricao}
+                            onChange={(e) => patchRow(k, { descricao: e.target.value })}
+                            style={{ ...inputStyle, width: '100%', minHeight: 56, resize: 'vertical' }}
+                            rows={2}
+                          />
+                        ) : (
+                          r.descricao
+                        )}
+                      </td>
+                      <td style={tdStyle}>
+                        {edit ? (
+                          <input
+                            value={r.unidade ?? ''}
+                            onChange={(e) =>
+                              patchRow(k, {
+                                unidade: e.target.value.trim() === '' ? null : e.target.value,
+                              })
+                            }
+                            style={{ ...inputStyle, width: 96 }}
+                          />
+                        ) : (
+                          r.unidade ?? '—'
+                        )}
+                      </td>
                       <td style={tdStyle}>
                         <input
                           value={r.ean ?? ''}
-                          onChange={(e) => setField(k, 'ean', e.target.value)}
-                          onBlur={() => void persistRowEanDunOnBlur(k)}
+                          onChange={(e) => patchRow(k, { ean: e.target.value === '' ? null : e.target.value })}
                           style={{
                             ...inputStyle,
                             width: '100%',
                             minWidth: 120,
                             maxWidth: 200,
+                            opacity: edit ? 1 : 0.65,
                           }}
                           placeholder="EAN"
-                          disabled={saving}
+                          disabled={!edit || saving || deleting}
+                          readOnly={!edit}
                           autoComplete="off"
                         />
                         {saving ? (
@@ -277,18 +566,66 @@ export default function BaseProdutos() {
                       <td style={tdStyle}>
                         <input
                           value={r.dun ?? ''}
-                          onChange={(e) => setField(k, 'dun', e.target.value)}
-                          onBlur={() => void persistRowEanDunOnBlur(k)}
+                          onChange={(e) => patchRow(k, { dun: e.target.value === '' ? null : e.target.value })}
                           style={{
                             ...inputStyle,
                             width: '100%',
                             minWidth: 120,
                             maxWidth: 200,
+                            opacity: edit ? 1 : 0.65,
                           }}
                           placeholder="DUN"
-                          disabled={saving}
+                          disabled={!edit || saving || deleting}
+                          readOnly={!edit}
                           autoComplete="off"
                         />
+                      </td>
+                      <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+                          {!edit ? (
+                            <>
+                              <button
+                                type="button"
+                                disabled={saving || deleting || !!editingKey}
+                                onClick={() => startEdit(r)}
+                                style={btnPrimary}
+                                title={editingKey ? 'Termine ou cancele a outra edição' : undefined}
+                              >
+                                Editar
+                              </button>
+                              <button
+                                type="button"
+                                disabled={saving || deleting || !!editingKey}
+                                onClick={() => void deleteRow(r)}
+                                style={btnDanger}
+                              >
+                                {deleting ? 'Excluindo…' : 'Excluir'}
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button
+                                type="button"
+                                disabled={saving || deleting}
+                                onClick={() => void saveRow(r)}
+                                style={btnPrimary}
+                              >
+                                {saving ? 'Salvando…' : 'Salvar'}
+                              </button>
+                              <button type="button" disabled={saving || deleting} onClick={() => cancelEdit()} style={btnMuted}>
+                                Cancelar
+                              </button>
+                              <button
+                                type="button"
+                                disabled={saving || deleting}
+                                onClick={() => void deleteRow(r)}
+                                style={btnDanger}
+                              >
+                                Excluir
+                              </button>
+                            </>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   )
@@ -342,6 +679,36 @@ export default function BaseProdutos() {
       ) : null}
     </div>
   )
+}
+
+const btnPrimary: React.CSSProperties = {
+  padding: '6px 12px',
+  borderRadius: 6,
+  border: '1px solid #222',
+  background: '#111',
+  color: '#fff',
+  cursor: 'pointer',
+  fontSize: 12,
+}
+
+const btnMuted: React.CSSProperties = {
+  padding: '6px 12px',
+  borderRadius: 6,
+  border: '1px solid #666',
+  background: 'transparent',
+  color: 'var(--text, #ccc)',
+  cursor: 'pointer',
+  fontSize: 12,
+}
+
+const btnDanger: React.CSSProperties = {
+  padding: '6px 12px',
+  borderRadius: 6,
+  border: '1px solid #8a0000',
+  background: '#a30000',
+  color: '#fff',
+  cursor: 'pointer',
+  fontSize: 12,
 }
 
 function navBtnStyle(disabled: boolean): React.CSSProperties {
