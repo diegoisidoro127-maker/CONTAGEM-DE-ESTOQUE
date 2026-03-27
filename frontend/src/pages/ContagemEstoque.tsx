@@ -20,6 +20,28 @@ import {
 const PREVIEW_PAGE_SIZE = 15
 const CHECKLIST_PAGE_SIZE = 15
 
+const CHECKLIST_VISIBLE_COLS_STORAGE = {
+  contagem: 'contagem-checklist-visible-cols',
+  inventario: 'inventario-checklist-visible-cols',
+} as const
+
+function loadChecklistVisibleColsFromStorage(inventario: boolean): Record<string, boolean> {
+  try {
+    const k = inventario ? CHECKLIST_VISIBLE_COLS_STORAGE.inventario : CHECKLIST_VISIBLE_COLS_STORAGE.contagem
+    const raw = localStorage.getItem(k)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw) as unknown
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+    const out: Record<string, boolean> = {}
+    for (const [key, v] of Object.entries(parsed as Record<string, unknown>)) {
+      if (typeof v === 'boolean') out[key] = v
+    }
+    return out
+  } catch {
+    return {}
+  }
+}
+
 type Conferente = {
   id: string
   nome: string
@@ -409,7 +431,9 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
   const [checklistFilterPendentes, setChecklistFilterPendentes] = useState(false)
   const [checklistListCollapsed, setChecklistListCollapsed] = useState(false)
   const [checklistListMode, setChecklistListMode] = useState<ChecklistListMode>('todos')
-  const [checklistVisibleCols, setChecklistVisibleCols] = useState<Record<string, boolean>>({})
+  const [checklistVisibleCols, setChecklistVisibleCols] = useState<Record<string, boolean>>(() =>
+    loadChecklistVisibleColsFromStorage(inventario),
+  )
   const [checklistEditingKey, setChecklistEditingKey] = useState<string | null>(null)
   const [checklistEditDraft, setChecklistEditDraft] = useState<{
     codigo_interno: string
@@ -454,6 +478,15 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       /* ignore */
     }
   }, [inventario])
+
+  useEffect(() => {
+    try {
+      const k = inventario ? CHECKLIST_VISIBLE_COLS_STORAGE.inventario : CHECKLIST_VISIBLE_COLS_STORAGE.contagem
+      localStorage.setItem(k, JSON.stringify(checklistVisibleCols))
+    } catch {
+      /* ignore */
+    }
+  }, [inventario, checklistVisibleCols])
 
   useEffect(() => {
     if (codigoInterno.trim()) setBarcodeFotoHint('')
@@ -1286,6 +1319,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         }
       }
 
+      setPreviewQueryDayYmd(dayKey)
       setPreviewRows(Array.from(grouped.values()))
     }
     setPreviewLoading(false)
@@ -1762,6 +1796,8 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
   const [editingPreviewId, setEditingPreviewId] = useState<string | null>(null)
   const [editingPreviewQuantidade, setEditingPreviewQuantidade] = useState<string>('')
   const [previewRowActionLoading, setPreviewRowActionLoading] = useState(false)
+  /** Dia (YYYY-MM-DD) da última prévia carregada com sucesso — alinha exclusão em lote ao mesmo escopo da consulta. */
+  const [previewQueryDayYmd, setPreviewQueryDayYmd] = useState<string | null>(null)
   const [previewRowError, setPreviewRowError] = useState('')
   const [previewFilterCodigo, setPreviewFilterCodigo] = useState('')
   const [previewFilterDescricao, setPreviewFilterDescricao] = useState('')
@@ -1823,6 +1859,55 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     previewFilterLote,
     previewFilterObs,
   ])
+
+  async function handlePreviewDeleteAll() {
+    const dayKey = previewQueryDayYmd
+    if (!dayKey || !previewRows.length) return
+
+    const dayLabel = formatDateBRFromYmd(dayKey)
+    const modoLabel = inventario
+      ? 'inventário (apenas registros com origem = inventário)'
+      : 'contagem diária (registros que não são inventário)'
+
+    if (
+      !window.confirm(
+        `ATENÇÃO\n\nSerão apagados permanentemente do banco todos os registros da tabela contagens_estoque deste tipo:\n• ${modoLabel}\n• Dia da contagem: ${dayLabel}\n\nEsta ação não pode ser desfeita.\n\nDeseja continuar?`,
+      )
+    ) {
+      return
+    }
+    if (
+      !window.confirm(
+        `Confirmação final\n\nTem certeza absoluta de que deseja EXCLUIR TODOS esses registros do dia ${dayLabel}?\n\nClique em OK apenas se tiver certeza.`,
+      )
+    ) {
+      return
+    }
+
+    setPreviewRowError('')
+    setPreviewRowActionLoading(true)
+    try {
+      let delQ = supabase.from('contagens_estoque').delete().eq('data_contagem', dayKey)
+      if (inventario) {
+        delQ = delQ.eq('origem', 'inventario')
+      } else {
+        delQ = delQ.or('origem.is.null,origem.neq.inventario')
+      }
+      const { error } = await delQ
+      if (error) throw error
+
+      setEditingPreviewId(null)
+      setEditingPreviewQuantidade('')
+      setSaveError('')
+      setSaveSuccess(`Todos os registros do dia ${dayLabel} (${inventario ? 'inventário' : 'contagem diária'}) foram excluídos do banco.`)
+      await loadPreview(dayKey)
+      kickOutboxSyncNowWithRetry()
+    } catch (e: any) {
+      setPreviewRowError(`Erro ao excluir tudo: ${e?.message ? String(e.message) : 'verifique permissões (RLS).'}`)
+    } finally {
+      setPreviewRowActionLoading(false)
+    }
+  }
 
   async function handlePreviewDelete(id: string) {
     if (!confirm('Deseja realmente excluir esta contagem?')) return
@@ -2959,6 +3044,9 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                       {c.label}
                     </label>
                   ))}
+                  <span style={{ width: '100%', fontSize: 11, color: 'var(--text, #888)', marginTop: 2 }}>
+                    Suas escolhas ficam salvas neste navegador (contagem e inventário têm preferências separadas).
+                  </span>
                 </div>
                 {isMobile ? (
                   <>
@@ -4142,7 +4230,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
             </>
           )}
         </div>
-        <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginTop: 10 }}>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginTop: 10, flexWrap: 'wrap' }}>
           <button
             type="button"
             onClick={() => loadPreview()}
@@ -4150,6 +4238,42 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
             style={buttonStyle}
           >
             {previewLoading ? 'Atualizando...' : 'Atualizar prévia'}
+          </button>
+          <button
+            type="button"
+            onClick={() => void handlePreviewDeleteAll()}
+            disabled={
+              previewLoading ||
+              previewRowActionLoading ||
+              !previewQueryDayYmd ||
+              previewRows.length === 0
+            }
+            title={
+              !previewQueryDayYmd || previewRows.length === 0
+                ? 'Carregue a prévia com registros antes de excluir'
+                : 'Remove do banco todos os registros do dia mostrado na prévia (mesmo critério contagem / inventário)'
+            }
+            style={{
+              ...buttonStyle,
+              background: '#8b1538',
+              borderColor: '#6d102b',
+              opacity:
+                previewLoading ||
+                previewRowActionLoading ||
+                !previewQueryDayYmd ||
+                previewRows.length === 0
+                  ? 0.5
+                  : 1,
+              cursor:
+                previewLoading ||
+                previewRowActionLoading ||
+                !previewQueryDayYmd ||
+                previewRows.length === 0
+                  ? 'not-allowed'
+                  : 'pointer',
+            }}
+          >
+            Excluir tudo (banco)
           </button>
         </div>
         {previewRows.length ? (

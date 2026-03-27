@@ -497,28 +497,30 @@ export default function RelatorioContagem({ mode = 'periodo' }: RelatorioContage
             {loading ? 'Carregando...' : `Carregar (${dateRangeText})`}
           </button>
 
-          <button
-            type="button"
-            onClick={exportToExcel}
-            disabled={loading || rows.length === 0}
-            style={{
-              padding: '10px 14px',
-              borderRadius: 8,
-              border: '1px solid #1b5e20',
-              background: '#2e7d32',
-              color: 'white',
-              cursor: loading || rows.length === 0 ? 'not-allowed' : 'pointer',
-              height: 40,
-              opacity: loading || rows.length === 0 ? 0.5 : 1,
-            }}
-            title={
-              rows.length === 0
-                ? 'Carregue o relatório antes de exportar'
-                : `Baixar planilha .xlsx com todos os ${rows.length} registros do filtro`
-            }
-          >
-            Exportar Excel
-          </button>
+          {!isDiaMode ? (
+            <button
+              type="button"
+              onClick={exportToExcel}
+              disabled={loading || rows.length === 0}
+              style={{
+                padding: '10px 14px',
+                borderRadius: 8,
+                border: '1px solid #1b5e20',
+                background: '#2e7d32',
+                color: 'white',
+                cursor: loading || rows.length === 0 ? 'not-allowed' : 'pointer',
+                height: 40,
+                opacity: loading || rows.length === 0 ? 0.5 : 1,
+              }}
+              title={
+                rows.length === 0
+                  ? 'Carregue o relatório antes de exportar'
+                  : `Baixar planilha .xlsx com todos os ${rows.length} registros do filtro`
+              }
+            >
+              Exportar Excel
+            </button>
+          ) : null}
         </div>
 
         {error ? <div style={{ color: '#b00020' }}>{error}</div> : null}

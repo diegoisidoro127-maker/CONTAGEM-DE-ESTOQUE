@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type React from 'react'
 import { supabase } from '../lib/supabaseClient'
 
@@ -20,6 +20,12 @@ function rowKey(r: ProdutoDbRow) {
   return `cod:${r.codigo_interno.trim()}`
 }
 
+function normEanDun(v: string | null | undefined): string | null {
+  if (v == null) return null
+  const t = String(v).trim()
+  return t === '' ? null : t
+}
+
 export default function BaseProdutos() {
   const [rows, setRows] = useState<ProdutoDbRow[]>([])
   const [loading, setLoading] = useState(false)
@@ -28,17 +34,18 @@ export default function BaseProdutos() {
   const [filterCodigo, setFilterCodigo] = useState('')
   const [filterDescricao, setFilterDescricao] = useState('')
   const [page, setPage] = useState(1)
+  const [showAll, setShowAll] = useState(false)
   const [savingKey, setSavingKey] = useState<string | null>(null)
-  /** Linha em edição; EAN/DUN só editáveis quando esta chave coincide. */
-  const [editingKey, setEditingKey] = useState<string | null>(null)
-  const [snapshot, setSnapshot] = useState<{ ean: string | null; dun: string | null } | null>(null)
+  /** Último EAN/DUN confirmado no banco por linha (evita POST ao sair do campo sem alteração). */
+  const lastPersistedRef = useRef<Record<string, { ean: string | null; dun: string | null }>>({})
+  const rowsRef = useRef(rows)
+  rowsRef.current = rows
+  const persistLockRef = useRef<Set<string>>(new Set())
 
   const load = useCallback(async () => {
     setLoading(true)
     setError('')
     setSuccess('')
-    setEditingKey(null)
-    setSnapshot(null)
     try {
       let data: Record<string, unknown>[] | null = null
       let qErr: { message?: string; code?: string } | null = null
@@ -71,13 +78,21 @@ export default function BaseProdutos() {
           dun: r.dun != null && String(r.dun).trim() !== '' ? String(r.dun) : null,
         }
       })
-      setRows(mapped.filter((r) => r.codigo_interno.trim() !== ''))
+      const list = mapped.filter((r) => r.codigo_interno.trim() !== '')
+      setRows(list)
+      const snap: Record<string, { ean: string | null; dun: string | null }> = {}
+      for (const r of list) {
+        snap[rowKey(r)] = { ean: normEanDun(r.ean), dun: normEanDun(r.dun) }
+      }
+      lastPersistedRef.current = snap
       setPage(1)
+      setShowAll(false)
       setSuccess(`${mapped.length} produto(s) carregado(s).`)
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e)
       setError(msg || 'Erro ao carregar a base.')
       setRows([])
+      lastPersistedRef.current = {}
     } finally {
       setLoading(false)
     }
@@ -100,35 +115,15 @@ export default function BaseProdutos() {
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const pageSafe = Math.min(page, totalPages)
   const slice = useMemo(() => {
+    if (showAll) return filtered
     const start = (pageSafe - 1) * PAGE_SIZE
     return filtered.slice(start, start + PAGE_SIZE)
-  }, [filtered, pageSafe])
+  }, [filtered, pageSafe, showAll])
 
-  function revertRow(k: string, snap: { ean: string | null; dun: string | null }) {
-    setRows((prev) =>
-      prev.map((r) => (rowKey(r) === k ? { ...r, ean: snap.ean, dun: snap.dun } : r)),
-    )
-  }
-
-  function startEdit(r: ProdutoDbRow) {
-    const k = rowKey(r)
-    if (editingKey && editingKey !== k && snapshot) {
-      revertRow(editingKey, snapshot)
-    }
-    setSnapshot({ ean: r.ean, dun: r.dun })
-    setEditingKey(k)
-  }
-
-  function cancelEdit() {
-    if (!editingKey || !snapshot) {
-      setEditingKey(null)
-      setSnapshot(null)
-      return
-    }
-    revertRow(editingKey, snapshot)
-    setEditingKey(null)
-    setSnapshot(null)
-  }
+  const rangeFrom =
+    filtered.length === 0 ? 0 : showAll ? 1 : (pageSafe - 1) * PAGE_SIZE + 1
+  const rangeTo =
+    filtered.length === 0 ? 0 : showAll ? filtered.length : Math.min(pageSafe * PAGE_SIZE, filtered.length)
 
   function setField(key: string, field: 'ean' | 'dun', value: string) {
     setRows((prev) =>
@@ -136,14 +131,22 @@ export default function BaseProdutos() {
     )
   }
 
-  async function saveRow(r: ProdutoDbRow) {
-    const k = rowKey(r)
-    setSavingKey(k)
+  /** Persiste EAN+DUN no Supabase ao sair do campo, se houver alteração em relação ao último valor salvo. */
+  async function persistRowEanDunOnBlur(rowKeyStr: string) {
+    const r = rowsRef.current.find((x) => rowKey(x) === rowKeyStr)
+    if (!r) return
+    if (persistLockRef.current.has(rowKeyStr)) return
+
+    const ean = normEanDun(r.ean)
+    const dun = normEanDun(r.dun)
+    const prev = lastPersistedRef.current[rowKeyStr]
+    if (prev && prev.ean === ean && prev.dun === dun) return
+
+    persistLockRef.current.add(rowKeyStr)
+    setSavingKey(rowKeyStr)
     setError('')
     setSuccess('')
     try {
-      const ean = r.ean != null && String(r.ean).trim() !== '' ? String(r.ean).trim() : null
-      const dun = r.dun != null && String(r.dun).trim() !== '' ? String(r.dun).trim() : null
       let q = supabase.from(TABELA_PRODUTOS).update({ ean, dun })
       if (r.id && r.id.trim() !== '') {
         q = q.eq('id', r.id)
@@ -154,26 +157,24 @@ export default function BaseProdutos() {
       }
       const { error: uErr } = await q
       if (uErr) throw uErr
-      setSuccess(`EAN/DUN salvos para ${r.codigo_interno}.`)
-      setEditingKey(null)
-      setSnapshot(null)
+      lastPersistedRef.current[rowKeyStr] = { ean, dun }
+      setSuccess(`EAN/DUN atualizados no banco para ${r.codigo_interno}.`)
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e)
       setError(msg || 'Erro ao salvar.')
     } finally {
+      persistLockRef.current.delete(rowKeyStr)
       setSavingKey(null)
     }
   }
-
-  const canEdit = (k: string) => editingKey === k
 
   return (
     <div style={{ padding: 16, maxWidth: 1200, margin: '0 auto' }}>
       <h2 style={{ margin: '0 0 8px' }}>Base de dados — Todos os Produtos</h2>
       <p style={{ margin: '0 0 16px', fontSize: 13, color: 'var(--text, #666)', maxWidth: 720 }}>
-        Lista carregada da tabela <code style={{ fontSize: 12 }}>public.&quot;{TABELA_PRODUTOS}&quot;</code>. Clique em{' '}
-        <strong>Editar</strong> para liberar EAN e DUN; depois use <strong>Salvar</strong>. É necessário permissão de UPDATE
-        no Supabase (RLS).
+        Lista carregada da tabela <code style={{ fontSize: 12 }}>public.&quot;{TABELA_PRODUTOS}&quot;</code>. Altere{' '}
+        <strong>EAN</strong> ou <strong>DUN</strong> e saia do campo (Tab ou clique fora): o valor é gravado automaticamente
+        no banco. É necessário permissão de UPDATE no Supabase (RLS).
       </p>
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end', marginBottom: 16 }}>
@@ -199,6 +200,7 @@ export default function BaseProdutos() {
             onChange={(e) => {
               setFilterCodigo(e.target.value)
               setPage(1)
+              setShowAll(false)
             }}
             style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid #ccc', minWidth: 160 }}
             placeholder="código"
@@ -211,6 +213,7 @@ export default function BaseProdutos() {
             onChange={(e) => {
               setFilterDescricao(e.target.value)
               setPage(1)
+              setShowAll(false)
             }}
             style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid #ccc', width: '100%' }}
             placeholder="descrição"
@@ -224,26 +227,25 @@ export default function BaseProdutos() {
       {filtered.length > 0 ? (
         <>
           <div style={{ fontSize: 13, color: 'var(--text, #888)', marginBottom: 8 }}>
-            Mostrando {(pageSafe - 1) * PAGE_SIZE + 1}–{Math.min(pageSafe * PAGE_SIZE, filtered.length)} de{' '}
-            {filtered.length} (total no cadastro: {rows.length})
+            {showAll
+              ? `Exibindo todos os ${filtered.length} produto(s) filtrado(s) (total no cadastro: ${rows.length})`
+              : `Mostrando ${rangeFrom}–${rangeTo} de ${filtered.length} · Página ${pageSafe} de ${totalPages} · ${PAGE_SIZE} por página (total no cadastro: ${rows.length})`}
           </div>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 880 }}>
               <thead>
                 <tr>
-                  <th style={thStyle}>Código</th>
+                  <th style={thStyle}>Código do produto</th>
                   <th style={thStyle}>Descrição</th>
-                  <th style={thStyle}>Unidade</th>
+                  <th style={thStyle}>Unidade de medida</th>
                   <th style={thStyle}>EAN</th>
                   <th style={thStyle}>DUN</th>
-                  <th style={thStyle}>Ações</th>
                 </tr>
               </thead>
               <tbody>
                 {slice.map((r) => {
                   const k = rowKey(r)
                   const saving = savingKey === k
-                  const edit = canEdit(k)
                   return (
                     <tr key={k}>
                       <td style={tdStyle}>
@@ -255,64 +257,38 @@ export default function BaseProdutos() {
                         <input
                           value={r.ean ?? ''}
                           onChange={(e) => setField(k, 'ean', e.target.value)}
+                          onBlur={() => void persistRowEanDunOnBlur(k)}
                           style={{
                             ...inputStyle,
                             width: '100%',
                             minWidth: 120,
                             maxWidth: 200,
-                            opacity: edit ? 1 : 0.75,
                           }}
                           placeholder="EAN"
-                          disabled={saving || !edit}
+                          disabled={saving}
+                          autoComplete="off"
                         />
+                        {saving ? (
+                          <span style={{ display: 'block', fontSize: 11, color: 'var(--text, #888)', marginTop: 4 }}>
+                            Salvando…
+                          </span>
+                        ) : null}
                       </td>
                       <td style={tdStyle}>
                         <input
                           value={r.dun ?? ''}
                           onChange={(e) => setField(k, 'dun', e.target.value)}
+                          onBlur={() => void persistRowEanDunOnBlur(k)}
                           style={{
                             ...inputStyle,
                             width: '100%',
                             minWidth: 120,
                             maxWidth: 200,
-                            opacity: edit ? 1 : 0.75,
                           }}
                           placeholder="DUN"
-                          disabled={saving || !edit}
+                          disabled={saving}
+                          autoComplete="off"
                         />
-                      </td>
-                      <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
-                          {!edit ? (
-                            <button
-                              type="button"
-                              disabled={saving}
-                              onClick={() => startEdit(r)}
-                              style={btnPrimary}
-                            >
-                              Editar
-                            </button>
-                          ) : (
-                            <>
-                              <button
-                                type="button"
-                                disabled={saving}
-                                onClick={() => void saveRow(r)}
-                                style={btnPrimary}
-                              >
-                                {saving ? 'Salvando…' : 'Salvar'}
-                              </button>
-                              <button
-                                type="button"
-                                disabled={saving}
-                                onClick={() => cancelEdit()}
-                                style={btnMuted}
-                              >
-                                Cancelar
-                              </button>
-                            </>
-                          )}
-                        </div>
                       </td>
                     </tr>
                   )
@@ -320,27 +296,42 @@ export default function BaseProdutos() {
               </tbody>
             </table>
           </div>
-          {totalPages > 1 ? (
+          {filtered.length > PAGE_SIZE || (filtered.length > 0 && showAll) ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 14, flexWrap: 'wrap' }}>
               <button
                 type="button"
-                disabled={pageSafe <= 1}
+                disabled={showAll || pageSafe <= 1 || filtered.length === 0}
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
-                style={navBtnStyle(pageSafe <= 1)}
+                style={navBtnStyle(showAll || pageSafe <= 1 || filtered.length === 0)}
               >
                 Anterior
               </button>
-              <span style={{ fontSize: 13 }}>
-                Página {pageSafe} / {totalPages}
-              </span>
               <button
                 type="button"
-                disabled={pageSafe >= totalPages}
+                disabled={showAll || pageSafe >= totalPages || filtered.length === 0}
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                style={navBtnStyle(pageSafe >= totalPages)}
+                style={navBtnStyle(showAll || pageSafe >= totalPages || filtered.length === 0)}
               >
                 Próxima
               </button>
+              {filtered.length > PAGE_SIZE ? (
+                showAll ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowAll(false)
+                      setPage(1)
+                    }}
+                    style={navBtnStyle(false)}
+                  >
+                    Paginar ({PAGE_SIZE} por página)
+                  </button>
+                ) : (
+                  <button type="button" onClick={() => setShowAll(true)} style={navBtnStyle(false)}>
+                    Mostrar tudo
+                  </button>
+                )
+              ) : null}
             </div>
           ) : null}
         </>
@@ -351,26 +342,6 @@ export default function BaseProdutos() {
       ) : null}
     </div>
   )
-}
-
-const btnPrimary: React.CSSProperties = {
-  padding: '6px 12px',
-  borderRadius: 6,
-  border: '1px solid #222',
-  background: '#111',
-  color: '#fff',
-  cursor: 'pointer',
-  fontSize: 12,
-}
-
-const btnMuted: React.CSSProperties = {
-  padding: '6px 12px',
-  borderRadius: 6,
-  border: '1px solid #666',
-  background: 'transparent',
-  color: 'var(--text, #ccc)',
-  cursor: 'pointer',
-  fontSize: 12,
 }
 
 function navBtnStyle(disabled: boolean): React.CSSProperties {
