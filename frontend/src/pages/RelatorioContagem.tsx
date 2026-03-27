@@ -167,7 +167,8 @@ export default function RelatorioContagem({ mode = 'periodo' }: RelatorioContage
       let q = supabase
         .from('contagens_estoque')
         .select(selectCompletoCompact)
-        .order('data_hora_contagem', { ascending: false })
+        .order('codigo_interno', { ascending: true })
+        .order('data_hora_contagem', { ascending: true })
 
       if (!allTime) {
         if (useSingleDay) {
@@ -224,7 +225,8 @@ export default function RelatorioContagem({ mode = 'periodo' }: RelatorioContage
           let q2 = supabase
             .from('contagens_estoque')
             .select(selectBasicoCompact)
-            .order('data_hora_contagem', { ascending: false })
+            .order('codigo_interno', { ascending: true })
+            .order('data_hora_contagem', { ascending: true })
 
           if (!allTime) {
             if (useSingleDay) {
