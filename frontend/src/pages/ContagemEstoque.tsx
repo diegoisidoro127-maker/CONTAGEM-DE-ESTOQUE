@@ -18,6 +18,7 @@ import {
 } from '../lib/offlineContagemSession'
 
 const PREVIEW_PAGE_SIZE = 15
+const CHECKLIST_PAGE_SIZE = 15
 
 type Conferente = {
   id: string
@@ -436,7 +437,8 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
   const [armazemMissingCodes, setArmazemMissingCodes] = useState<string[]>([])
   const [confirmFinalizeMissingOpen, setConfirmFinalizeMissingOpen] = useState(false)
   const [missingItemsForFinalize, setMissingItemsForFinalize] = useState<OfflineChecklistItem[]>([])
-  const [mobileChecklistLimit, setMobileChecklistLimit] = useState(20)
+  const [checklistPage, setChecklistPage] = useState(1)
+  const [checklistShowAll, setChecklistShowAll] = useState(false)
   /** Feedback visual: linha da checklist acabou de ser gravada no `localStorage`. */
   const [checklistSavedFlashKey, setChecklistSavedFlashKey] = useState<string | null>(null)
   const checklistSavedFlashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -488,9 +490,9 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     }
   }, [sessionMode])
 
-  // Mobile: evita lista infinita na tela, trazendo só alguns itens por vez.
   useEffect(() => {
-    setMobileChecklistLimit(20)
+    setChecklistPage(1)
+    setChecklistShowAll(false)
   }, [checklistListMode, checklistFilterCodigo, checklistFilterDescricao, checklistFilterPendentes, offlineSession?.status])
 
   // Persiste alterações da sessão aberta.
@@ -2521,39 +2523,52 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         ? []
         : filteredChecklistItems
 
-  const mobileProductsTotal = isMobile
-    ? checklistDisplayItems.reduce((acc, item) => {
-        const isHeader = 'kind' in item && item.kind === 'header'
-        return acc + (isHeader ? 0 : 1)
-      }, 0)
-    : 0
-  const mobileHasMore = isMobile && mobileProductsTotal > mobileChecklistLimit
+  const checklistProductTotal = checklistDisplayItems.reduce((acc, item) => {
+    const isHeader = 'kind' in item && item.kind === 'header'
+    return acc + (isHeader ? 0 : 1)
+  }, 0)
+  const checklistTotalPages = Math.max(1, Math.ceil(checklistProductTotal / CHECKLIST_PAGE_SIZE))
+  const checklistPageSafe = Math.min(checklistPage, checklistTotalPages)
+  const checklistRangeFrom =
+    checklistProductTotal === 0
+      ? 0
+      : checklistShowAll
+        ? 1
+        : (checklistPageSafe - 1) * CHECKLIST_PAGE_SIZE + 1
+  const checklistRangeTo =
+    checklistProductTotal === 0
+      ? 0
+      : checklistShowAll
+        ? checklistProductTotal
+        : Math.min(checklistPageSafe * CHECKLIST_PAGE_SIZE, checklistProductTotal)
 
-  const mobileChecklistVisibleItems: ChecklistDisplayItem[] =
-    isMobile && mobileHasMore
-      ? (() => {
+  const checklistDisplayPageItems: ChecklistDisplayItem[] =
+    checklistShowAll
+      ? checklistDisplayItems
+      : (() => {
           const out: ChecklistDisplayItem[] = []
-          let includedProducts = 0
+          const start = (checklistPageSafe - 1) * CHECKLIST_PAGE_SIZE
+          const end = start + CHECKLIST_PAGE_SIZE
+          let index = 0
           let pendingHeader: ChecklistDisplayHeader | null = null
-
           for (const item of checklistDisplayItems) {
             const isHeader = 'kind' in item && item.kind === 'header'
             if (isHeader) {
               pendingHeader = item as ChecklistDisplayHeader
               continue
             }
-
-            if (includedProducts >= mobileChecklistLimit) break
-            if (pendingHeader) {
-              out.push(pendingHeader)
-              pendingHeader = null
+            if (index >= start && index < end) {
+              if (pendingHeader) {
+                out.push(pendingHeader)
+                pendingHeader = null
+              }
+              out.push(item)
             }
-            out.push(item)
-            includedProducts++
+            index++
+            if (index >= end) break
           }
           return out
         })()
-      : checklistDisplayItems
 
   const carregarListaDisabled = checklistLoading || finalizing || !conferenteId
 
@@ -2867,10 +2882,78 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                     Só pendentes
                   </label>
                 </div>
+                {checklistProductTotal > 0 ? (
+                  <div
+                    style={{
+                      display: 'flex',
+                      flexWrap: 'wrap',
+                      alignItems: 'center',
+                      gap: 10,
+                      marginTop: 10,
+                    }}
+                  >
+                    <span style={{ fontSize: 13, color: 'var(--text, #888)' }}>
+                      {checklistShowAll
+                        ? `Exibindo todos os ${checklistProductTotal} registros`
+                        : `${checklistRangeFrom}–${checklistRangeTo} de ${checklistProductTotal} · Página ${checklistPageSafe} de ${checklistTotalPages} · ${CHECKLIST_PAGE_SIZE} por página`}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={checklistShowAll || checklistPageSafe <= 1}
+                      onClick={() => setChecklistPage((p) => Math.max(1, p - 1))}
+                      style={{
+                        ...buttonStyle,
+                        background: '#444',
+                        fontSize: 12,
+                        opacity: checklistShowAll || checklistPageSafe <= 1 ? 0.5 : 1,
+                        cursor: checklistShowAll || checklistPageSafe <= 1 ? 'not-allowed' : 'pointer',
+                      }}
+                    >
+                      Anterior
+                    </button>
+                    <button
+                      type="button"
+                      disabled={checklistShowAll || checklistPageSafe >= checklistTotalPages}
+                      onClick={() => setChecklistPage((p) => Math.min(checklistTotalPages, p + 1))}
+                      style={{
+                        ...buttonStyle,
+                        background: '#444',
+                        fontSize: 12,
+                        opacity: checklistShowAll || checklistPageSafe >= checklistTotalPages ? 0.5 : 1,
+                        cursor:
+                          checklistShowAll || checklistPageSafe >= checklistTotalPages ? 'not-allowed' : 'pointer',
+                      }}
+                    >
+                      Próxima
+                    </button>
+                    {checklistProductTotal > CHECKLIST_PAGE_SIZE ? (
+                      checklistShowAll ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setChecklistShowAll(false)
+                            setChecklistPage(1)
+                          }}
+                          style={{ ...buttonStyle, background: '#444', fontSize: 12 }}
+                        >
+                          Paginar ({CHECKLIST_PAGE_SIZE} por página)
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setChecklistShowAll(true)}
+                          style={{ ...buttonStyle, background: '#444', fontSize: 12 }}
+                        >
+                          Mostrar tudo
+                        </button>
+                      )
+                    ) : null}
+                  </div>
+                ) : null}
                 {isMobile ? (
                   <>
                     <div style={{ marginTop: 8, display: 'grid', gap: 8 }}>
-                    {mobileChecklistVisibleItems.map((item) => {
+                    {checklistDisplayPageItems.map((item) => {
                       if ('kind' in item && item.kind === 'header') {
                         return (
                           <div
@@ -3042,18 +3125,6 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                       )
                     })}
                     </div>
-                    {mobileHasMore ? (
-                      <div style={{ marginTop: 10, display: 'flex', justifyContent: 'center' }}>
-                        <button
-                          type="button"
-                          style={{ ...buttonStyle, background: '#444', fontSize: 13 }}
-                          onClick={() => setMobileChecklistLimit((n) => n + 20)}
-                          disabled={checklistLoading}
-                        >
-                          Carregar mais
-                        </button>
-                      </div>
-                    ) : null}
                   </>
                 ) : (
                   <div style={{ overflowX: 'auto', marginTop: 10 }}>
@@ -3068,7 +3139,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                         </tr>
                       </thead>
                       <tbody>
-                        {checklistDisplayItems.map((item) => {
+                        {checklistDisplayPageItems.map((item) => {
                           if ('kind' in item && item.kind === 'header') {
                             return (
                               <tr key={item.key}>
