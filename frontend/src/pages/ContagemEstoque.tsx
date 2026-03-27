@@ -1509,6 +1509,9 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         | 'codigo_interno'
         | 'descricao'
         | 'quantidade_contada'
+        | 'up_quantidade'
+        | 'lote'
+        | 'observacao'
         | 'unidade_medida'
         | 'ean'
         | 'dun'
@@ -2598,21 +2601,20 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     const cols = [
       { id: 'codigo', label: 'Código do produto' },
       { id: 'descricao', label: 'Descrição' },
-      ...(inventario ? [{ id: 'unidade', label: 'Unidade de medida' }] : []),
+      { id: 'unidade', label: 'Unidade de medida' },
       { id: 'quantidade', label: 'Quantidade contada' },
-      ...(inventario ? [{ id: 'up', label: 'UP' }] : []),
-      ...(inventario ? [{ id: 'data_fabricacao', label: 'Data de fabricação' }] : []),
-      ...(inventario ? [{ id: 'data_validade', label: 'Data de vencimento' }] : []),
-      ...(inventario ? [{ id: 'lote', label: 'Lote' }] : []),
-      ...(inventario ? [{ id: 'observacao', label: 'Observação' }] : []),
-      ...(inventario ? [{ id: 'ean', label: 'EAN' }] : []),
-      ...(inventario ? [{ id: 'dun', label: 'DUN' }] : []),
-      ...(inventario ? [{ id: 'foto', label: 'Foto' }] : []),
-      ...(!inventario ? [{ id: 'status', label: 'Status' }] : []),
+      { id: 'up', label: 'UP' },
+      { id: 'data_fabricacao', label: 'Data de fabricação' },
+      { id: 'data_validade', label: 'Data de vencimento' },
+      { id: 'lote', label: 'Lote' },
+      { id: 'observacao', label: 'Observação' },
+      { id: 'ean', label: 'EAN' },
+      { id: 'dun', label: 'DUN' },
+      { id: 'foto', label: 'Foto' },
       { id: 'acoes', label: 'Ações' },
     ] as Array<{ id: string; label: string }>
     return cols
-  }, [inventario])
+  }, [])
 
   const visibleChecklistColumns = checklistColumns.filter((c) => checklistVisibleCols[c.id] !== false)
   const visibleChecklistColCount = Math.max(1, visibleChecklistColumns.length)
@@ -3063,6 +3065,12 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                 ) : null}
                               </div>
                               <div style={{ fontSize: 12, whiteSpace: 'normal', color: 'var(--text, #111)', marginTop: 2 }}>{it.descricao}</div>
+                              <div style={{ marginTop: 6, fontSize: 11, color: 'var(--text, #666)', display: 'grid', gap: 2 }}>
+                                {showChecklistColumn('unidade') ? <div>Unidade: {it.unidade_medida ?? '—'}</div> : null}
+                                {showChecklistColumn('ean') ? <div>EAN: {it.ean ?? '—'}</div> : null}
+                                {showChecklistColumn('dun') ? <div>DUN: {it.dun ?? '—'}</div> : null}
+                                {showChecklistColumn('foto') ? <div>Foto: {hasPhoto ? 'Com foto' : 'Sem foto'}</div> : null}
+                              </div>
 
                               <label style={{ ...labelStyle, marginTop: 8, gap: 4 }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -3080,6 +3088,81 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                   placeholder="—"
                                 />
                               </label>
+
+                              {showChecklistColumn('up') ||
+                              showChecklistColumn('data_fabricacao') ||
+                              showChecklistColumn('data_validade') ||
+                              showChecklistColumn('lote') ||
+                              showChecklistColumn('observacao') ? (
+                                <div
+                                  style={{
+                                    marginTop: 8,
+                                    display: 'grid',
+                                    gap: 8,
+                                    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                                  }}
+                                >
+                                  {showChecklistColumn('up') ? (
+                                    <label style={{ ...labelStyle, gap: 4 }}>
+                                      <span>UP</span>
+                                      <input
+                                        type="text"
+                                        inputMode="decimal"
+                                        value={it.up_quantidade ?? ''}
+                                        onChange={(e) => updateOfflineItemFields(it.key, { up_quantidade: e.target.value })}
+                                        style={{ ...inputStyle, padding: '8px 10px', fontSize: 13 }}
+                                        placeholder="—"
+                                      />
+                                    </label>
+                                  ) : null}
+                                  {showChecklistColumn('data_fabricacao') ? (
+                                    <label style={{ ...labelStyle, gap: 4 }}>
+                                      <span>Data de fabricação</span>
+                                      <input
+                                        type="date"
+                                        value={it.data_fabricacao ?? ''}
+                                        onChange={(e) => updateOfflineItemFields(it.key, { data_fabricacao: e.target.value })}
+                                        style={{ ...inputStyle, padding: '8px 10px', fontSize: 13 }}
+                                      />
+                                    </label>
+                                  ) : null}
+                                  {showChecklistColumn('data_validade') ? (
+                                    <label style={{ ...labelStyle, gap: 4 }}>
+                                      <span>Data de vencimento</span>
+                                      <input
+                                        type="date"
+                                        value={it.data_validade ?? ''}
+                                        onChange={(e) => updateOfflineItemFields(it.key, { data_validade: e.target.value })}
+                                        style={{ ...inputStyle, padding: '8px 10px', fontSize: 13 }}
+                                      />
+                                    </label>
+                                  ) : null}
+                                  {showChecklistColumn('lote') ? (
+                                    <label style={{ ...labelStyle, gap: 4 }}>
+                                      <span>Lote</span>
+                                      <input
+                                        type="text"
+                                        value={it.lote ?? ''}
+                                        onChange={(e) => updateOfflineItemFields(it.key, { lote: e.target.value })}
+                                        style={{ ...inputStyle, padding: '8px 10px', fontSize: 13 }}
+                                        placeholder="—"
+                                      />
+                                    </label>
+                                  ) : null}
+                                  {showChecklistColumn('observacao') ? (
+                                    <label style={{ ...labelStyle, gap: 4, gridColumn: '1 / -1' }}>
+                                      <span>Observação</span>
+                                      <input
+                                        type="text"
+                                        value={it.observacao ?? ''}
+                                        onChange={(e) => updateOfflineItemFields(it.key, { observacao: e.target.value })}
+                                        style={{ ...inputStyle, padding: '8px 10px', fontSize: 13 }}
+                                        placeholder="—"
+                                      />
+                                    </label>
+                                  ) : null}
+                                </div>
+                              ) : null}
 
                               <div style={{ marginTop: 8, display: 'grid', gap: 8, gridTemplateColumns: 'repeat(3, minmax(0, 1fr))' }}>
                                 <button
@@ -3136,22 +3219,21 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                   </>
                 ) : (
                   <div style={{ overflowX: 'auto', marginTop: 10 }}>
-                    <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: inventario ? 1700 : 720 }}>
+                    <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 1700 }}>
                       <thead>
                         <tr>
                           {showChecklistColumn('codigo') ? <th style={thStyle}>Código do produto</th> : null}
                           {showChecklistColumn('descricao') ? <th style={thStyle}>Descrição</th> : null}
-                          {inventario && showChecklistColumn('unidade') ? <th style={thStyle}>Unidade de medida</th> : null}
+                          {showChecklistColumn('unidade') ? <th style={thStyle}>Unidade de medida</th> : null}
                           {showChecklistColumn('quantidade') ? <th style={thStyle}>Quantidade contada</th> : null}
-                          {inventario && showChecklistColumn('up') ? <th style={thStyle}>UP</th> : null}
-                          {inventario && showChecklistColumn('data_fabricacao') ? <th style={thStyle}>Data de fabricação</th> : null}
-                          {inventario && showChecklistColumn('data_validade') ? <th style={thStyle}>Data de vencimento</th> : null}
-                          {inventario && showChecklistColumn('lote') ? <th style={thStyle}>Lote</th> : null}
-                          {inventario && showChecklistColumn('observacao') ? <th style={thStyle}>Observação</th> : null}
-                          {inventario && showChecklistColumn('ean') ? <th style={thStyle}>EAN</th> : null}
-                          {inventario && showChecklistColumn('dun') ? <th style={thStyle}>DUN</th> : null}
-                          {inventario && showChecklistColumn('foto') ? <th style={thStyle}>Foto</th> : null}
-                          {!inventario && showChecklistColumn('status') ? <th style={thStyle}>Status</th> : null}
+                          {showChecklistColumn('up') ? <th style={thStyle}>UP</th> : null}
+                          {showChecklistColumn('data_fabricacao') ? <th style={thStyle}>Data de fabricação</th> : null}
+                          {showChecklistColumn('data_validade') ? <th style={thStyle}>Data de vencimento</th> : null}
+                          {showChecklistColumn('lote') ? <th style={thStyle}>Lote</th> : null}
+                          {showChecklistColumn('observacao') ? <th style={thStyle}>Observação</th> : null}
+                          {showChecklistColumn('ean') ? <th style={thStyle}>EAN</th> : null}
+                          {showChecklistColumn('dun') ? <th style={thStyle}>DUN</th> : null}
+                          {showChecklistColumn('foto') ? <th style={thStyle}>Foto</th> : null}
                           {showChecklistColumn('acoes') ? <th style={thStyle}>Ações</th> : null}
                         </tr>
                       </thead>
@@ -3219,7 +3301,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                       />
                                     </td>
                                   ) : null}
-                                  {inventario && showChecklistColumn('unidade') ? <td style={tdStyle}>{it.unidade_medida ?? ''}</td> : null}
+                                  {showChecklistColumn('unidade') ? <td style={tdStyle}>{it.unidade_medida ?? ''}</td> : null}
                                   {showChecklistColumn('quantidade') ? (
                                     <td style={tdStyle}>
                                       <input
@@ -3237,15 +3319,68 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                       />
                                     </td>
                                   ) : null}
-                                  {inventario && showChecklistColumn('up') ? <td style={tdStyle}>{it.up_quantidade ?? ''}</td> : null}
-                                  {inventario && showChecklistColumn('data_fabricacao') ? <td style={tdStyle}>{it.data_fabricacao ?? ''}</td> : null}
-                                  {inventario && showChecklistColumn('data_validade') ? <td style={tdStyle}>{it.data_validade ?? ''}</td> : null}
-                                  {inventario && showChecklistColumn('lote') ? <td style={tdStyle}>{it.lote ?? ''}</td> : null}
-                                  {inventario && showChecklistColumn('observacao') ? <td style={tdStyle}>{it.observacao ?? ''}</td> : null}
-                                  {inventario && showChecklistColumn('ean') ? <td style={tdStyle}>{it.ean ?? ''}</td> : null}
-                                  {inventario && showChecklistColumn('dun') ? <td style={tdStyle}>{it.dun ?? ''}</td> : null}
-                                  {inventario && showChecklistColumn('foto') ? <td style={tdStyle}>{hasPhoto ? 'Com foto' : 'Sem foto'}</td> : null}
-                                  {!inventario && showChecklistColumn('status') ? <td style={tdStyle}>Editando</td> : null}
+                                  {showChecklistColumn('up') ? (
+                                    <td style={tdStyle}>
+                                      <input
+                                        type="text"
+                                        inputMode="decimal"
+                                        value={it.up_quantidade ?? ''}
+                                        onChange={(e) => updateOfflineItemFields(it.key, { up_quantidade: e.target.value })}
+                                        style={{ ...checklistQtdInputStyle, width: 110 }}
+                                        placeholder="—"
+                                        aria-label={`UP ${it.codigo_interno}`}
+                                      />
+                                    </td>
+                                  ) : null}
+                                  {showChecklistColumn('data_fabricacao') ? (
+                                    <td style={tdStyle}>
+                                      <input
+                                        type="date"
+                                        value={it.data_fabricacao ?? ''}
+                                        onChange={(e) => updateOfflineItemFields(it.key, { data_fabricacao: e.target.value })}
+                                        style={{ ...checklistQtdInputStyle, width: 145 }}
+                                        aria-label={`Data de fabricação ${it.codigo_interno}`}
+                                      />
+                                    </td>
+                                  ) : null}
+                                  {showChecklistColumn('data_validade') ? (
+                                    <td style={tdStyle}>
+                                      <input
+                                        type="date"
+                                        value={it.data_validade ?? ''}
+                                        onChange={(e) => updateOfflineItemFields(it.key, { data_validade: e.target.value })}
+                                        style={{ ...checklistQtdInputStyle, width: 145 }}
+                                        aria-label={`Data de vencimento ${it.codigo_interno}`}
+                                      />
+                                    </td>
+                                  ) : null}
+                                  {showChecklistColumn('lote') ? (
+                                    <td style={tdStyle}>
+                                      <input
+                                        type="text"
+                                        value={it.lote ?? ''}
+                                        onChange={(e) => updateOfflineItemFields(it.key, { lote: e.target.value })}
+                                        style={{ ...checklistQtdInputStyle, width: 130 }}
+                                        placeholder="—"
+                                        aria-label={`Lote ${it.codigo_interno}`}
+                                      />
+                                    </td>
+                                  ) : null}
+                                  {showChecklistColumn('observacao') ? (
+                                    <td style={tdStyle}>
+                                      <input
+                                        type="text"
+                                        value={it.observacao ?? ''}
+                                        onChange={(e) => updateOfflineItemFields(it.key, { observacao: e.target.value })}
+                                        style={{ ...checklistQtdInputStyle, width: 180 }}
+                                        placeholder="—"
+                                        aria-label={`Observação ${it.codigo_interno}`}
+                                      />
+                                    </td>
+                                  ) : null}
+                                  {showChecklistColumn('ean') ? <td style={tdStyle}>{it.ean ?? ''}</td> : null}
+                                  {showChecklistColumn('dun') ? <td style={tdStyle}>{it.dun ?? ''}</td> : null}
+                                  {showChecklistColumn('foto') ? <td style={tdStyle}>{hasPhoto ? 'Com foto' : 'Sem foto'}</td> : null}
                                   {showChecklistColumn('acoes') ? (
                                     <td style={{ ...tdStyle, whiteSpace: 'normal' }}>
                                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
@@ -3282,7 +3417,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                   {showChecklistColumn('descricao') ? (
                                     <td style={{ ...tdStyle, whiteSpace: 'normal', maxWidth: 420 }}>{it.descricao}</td>
                                   ) : null}
-                                  {inventario && showChecklistColumn('unidade') ? <td style={tdStyle}>{it.unidade_medida ?? ''}</td> : null}
+                                  {showChecklistColumn('unidade') ? <td style={tdStyle}>{it.unidade_medida ?? ''}</td> : null}
                                   {showChecklistColumn('quantidade') ? (
                                     <td style={tdStyle}>
                                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -3301,15 +3436,14 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                       </div>
                                     </td>
                                   ) : null}
-                                  {inventario && showChecklistColumn('up') ? <td style={tdStyle}>{it.up_quantidade ?? ''}</td> : null}
-                                  {inventario && showChecklistColumn('data_fabricacao') ? <td style={tdStyle}>{it.data_fabricacao ?? ''}</td> : null}
-                                  {inventario && showChecklistColumn('data_validade') ? <td style={tdStyle}>{it.data_validade ?? ''}</td> : null}
-                                  {inventario && showChecklistColumn('lote') ? <td style={tdStyle}>{it.lote ?? ''}</td> : null}
-                                  {inventario && showChecklistColumn('observacao') ? <td style={tdStyle}>{it.observacao ?? ''}</td> : null}
-                                  {inventario && showChecklistColumn('ean') ? <td style={tdStyle}>{it.ean ?? ''}</td> : null}
-                                  {inventario && showChecklistColumn('dun') ? <td style={tdStyle}>{it.dun ?? ''}</td> : null}
-                                  {inventario && showChecklistColumn('foto') ? <td style={tdStyle}>{hasPhoto ? 'Com foto' : 'Sem foto'}</td> : null}
-                                  {!inventario && showChecklistColumn('status') ? <td style={tdStyle}>{pend ? 'Pendente' : 'Contado'}</td> : null}
+                                  {showChecklistColumn('up') ? <td style={tdStyle}>{it.up_quantidade ?? ''}</td> : null}
+                                  {showChecklistColumn('data_fabricacao') ? <td style={tdStyle}>{it.data_fabricacao ?? ''}</td> : null}
+                                  {showChecklistColumn('data_validade') ? <td style={tdStyle}>{it.data_validade ?? ''}</td> : null}
+                                  {showChecklistColumn('lote') ? <td style={tdStyle}>{it.lote ?? ''}</td> : null}
+                                  {showChecklistColumn('observacao') ? <td style={tdStyle}>{it.observacao ?? ''}</td> : null}
+                                  {showChecklistColumn('ean') ? <td style={tdStyle}>{it.ean ?? ''}</td> : null}
+                                  {showChecklistColumn('dun') ? <td style={tdStyle}>{it.dun ?? ''}</td> : null}
+                                  {showChecklistColumn('foto') ? <td style={tdStyle}>{hasPhoto ? 'Com foto' : 'Sem foto'}</td> : null}
                                   {showChecklistColumn('acoes') ? (
                                     <td style={{ ...tdStyle, whiteSpace: 'normal' }}>
                                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
