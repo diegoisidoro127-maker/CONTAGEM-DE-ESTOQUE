@@ -13,6 +13,7 @@ import {
   type OfflineSession,
   type OfflineSessionMode,
   type ChecklistListMode,
+  isListModeArmazem,
   saveOfflineSession,
   stableItemKey,
 } from '../lib/offlineContagemSession'
@@ -1455,7 +1456,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       const listModeEfetivo: ChecklistListMode = checklistListMode
       let itemsRaw = await fetchListaChecklistFromDb()
 
-      if (listModeEfetivo === 'armazem') {
+      if (isListModeArmazem(listModeEfetivo)) {
         const missing = itemsRaw.map((it) => it.codigo_interno).filter((codigo) => getArmazemContagem(codigo) === null)
         setArmazemMissingCodes(missing)
         if (missing.length > 0) {
@@ -1518,7 +1519,11 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       setSaveSuccess(
         inventario
           ? `Lista de inventário: ${items.length} linhas (${itemsRaw.length} produtos × 3 contagens)${
-              listModeEfetivo === 'armazem' ? ', ordem armazém (grupos 1ª–4ª contagem)' : ''
+              isListModeArmazem(listModeEfetivo)
+                ? listModeEfetivo === 'planilha'
+                  ? ', formato planilha (CAMARA/RUA, abas por grupo)'
+                  : ', ordem armazém (grupos 1ª–4ª contagem)'
+                : ''
             }. Preencha as quantidades e finalize.`
           : `Lista carregada: ${items.length} itens. Preencha as quantidades e finalize quando terminar.`,
       )
@@ -2695,12 +2700,12 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
   type ChecklistDisplayItem = ChecklistDisplayHeader | OfflineChecklistItem
 
   const armazemModoIncompleto =
-    offlineSession?.status === 'aberta' && offlineSession.listMode === 'armazem'
+    offlineSession?.status === 'aberta' && isListModeArmazem(offlineSession.listMode)
       ? offlineSession.items.some((it) => getArmazemContagem(it.codigo_interno) === null)
       : false
 
   const checklistDisplayItems: ChecklistDisplayItem[] =
-    offlineSession?.status === 'aberta' && offlineSession.listMode === 'armazem' && !armazemModoIncompleto
+    offlineSession?.status === 'aberta' && isListModeArmazem(offlineSession.listMode) && !armazemModoIncompleto
       ? (() => {
           const out: ChecklistDisplayItem[] = []
           let lastContagem: number | null = null
@@ -2726,7 +2731,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
 
   const isArmazemPaginado =
     offlineSession?.status === 'aberta' &&
-    offlineSession.listMode === 'armazem' &&
+    isListModeArmazem(offlineSession.listMode) &&
     !armazemModoIncompleto
 
   const armazemGrupos = isArmazemPaginado
@@ -3037,7 +3042,10 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                 disabled={!!offlineSession && offlineSession.status === 'aberta'}
               >
                 <option value="todos">Todos os Produtos (cadastro)</option>
-                <option value="armazem">Armazém (dividida por contagem 1-4)</option>
+                <option value="armazem">Armazém (dividida por contagem 1–4)</option>
+                {inventario ? (
+                  <option value="planilha">Inventário — formato planilha (CAMARA/RUA, abas)</option>
+                ) : null}
               </select>
             </label>
             <button
@@ -3127,7 +3135,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                 ) : (
                   <span style={{ color: '#0a0', marginLeft: 8 }}>Todos preenchidos — pode finalizar.</span>
                 )}
-                {offlineSession.listMode === 'armazem' && armazemModoIncompleto ? (
+                {isListModeArmazem(offlineSession.listMode) && armazemModoIncompleto ? (
                   <div style={{ marginTop: 6, fontSize: 12, color: '#b00020' }}>
                     Erro: modo armazém incompleto (faltam mapeamentos). Atualize o app para cobrir todos os códigos da tabela
                     <span style={{ fontFamily: 'monospace' }}> Todos os Produtos</span>.

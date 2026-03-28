@@ -26,7 +26,12 @@ export type OfflineChecklistItem = {
   inventario_repeticao?: 1 | 2 | 3
 }
 
-export type ChecklistListMode = 'todos' | 'armazem'
+/** `planilha` = mesmo carregamento que `armazém` (grupos 1–4), rótulo para inventário no formato da planilha. */
+export type ChecklistListMode = 'todos' | 'armazem' | 'planilha'
+
+export function isListModeArmazem(m: ChecklistListMode | undefined | null): boolean {
+  return m === 'armazem' || m === 'planilha'
+}
 
 export type OfflineSession = {
   sessionId: string
