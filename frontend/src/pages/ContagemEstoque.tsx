@@ -3928,6 +3928,32 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                     <h4 style={{ margin: '0 0 10px', fontSize: 15, fontWeight: 700, color: 'var(--text, #111)' }}>
                       Inventário — tabela no formato da planilha
                     </h4>
+                    <InventarioPlanilhaTabela
+                      items={itemsPlanilhaTabelaPagina}
+                      armazemItemsSorted={armazemItemsSorted}
+                      armazemContagem={armazemGrupoAtual?.contagem ?? null}
+                      planilhaQtdContagemHeader={planilhaQtdContagemHeader}
+                      showChecklistColumn={showChecklistColumn}
+                      thStyle={thStyle}
+                      tdStyle={tdStyle}
+                      buttonStyle={buttonStyle}
+                      checklistQtdInputStyle={checklistQtdInputStyle}
+                      checklistEditingKey={checklistEditingKey}
+                      checklistEditDraft={checklistEditDraft}
+                      setChecklistEditDraft={setChecklistEditDraft}
+                      checklistSavedFlashKey={checklistSavedFlashKey}
+                      saveChecklistEdit={saveChecklistEdit}
+                      cancelChecklistEdit={cancelChecklistEdit}
+                      openChecklistEdit={openChecklistEdit}
+                      updateOfflineItemFields={updateOfflineItemFields}
+                      updateOfflineItemQty={updateOfflineItemQty}
+                      handleLimparQuantidadeOffline={handleLimparQuantidadeOffline}
+                      openPhotoModalForCodigo={openPhotoModalForCodigo}
+                      removePhotoFromChecklistItem={removePhotoFromChecklistItem}
+                      onPlanilhaCodigoBlur={
+                        offlineSession?.listMode === 'planilha' ? aplicarCatalogoPorCodigoPlanilha : undefined
+                      }
+                    />
                     {linhasTabelaPlanilhaInventario.length > 0 ? (
                       <div
                         style={{
@@ -3935,7 +3961,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                           flexWrap: 'wrap',
                           alignItems: 'center',
                           gap: 10,
-                          marginBottom: 10,
+                          marginTop: 12,
                           fontSize: 13,
                           color: 'var(--text, #888)',
                         }}
@@ -3978,32 +4004,6 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                         </button>
                       </div>
                     ) : null}
-                    <InventarioPlanilhaTabela
-                      items={itemsPlanilhaTabelaPagina}
-                      armazemItemsSorted={armazemItemsSorted}
-                      armazemContagem={armazemGrupoAtual?.contagem ?? null}
-                      planilhaQtdContagemHeader={planilhaQtdContagemHeader}
-                      showChecklistColumn={showChecklistColumn}
-                      thStyle={thStyle}
-                      tdStyle={tdStyle}
-                      buttonStyle={buttonStyle}
-                      checklistQtdInputStyle={checklistQtdInputStyle}
-                      checklistEditingKey={checklistEditingKey}
-                      checklistEditDraft={checklistEditDraft}
-                      setChecklistEditDraft={setChecklistEditDraft}
-                      checklistSavedFlashKey={checklistSavedFlashKey}
-                      saveChecklistEdit={saveChecklistEdit}
-                      cancelChecklistEdit={cancelChecklistEdit}
-                      openChecklistEdit={openChecklistEdit}
-                      updateOfflineItemFields={updateOfflineItemFields}
-                      updateOfflineItemQty={updateOfflineItemQty}
-                      handleLimparQuantidadeOffline={handleLimparQuantidadeOffline}
-                      openPhotoModalForCodigo={openPhotoModalForCodigo}
-                      removePhotoFromChecklistItem={removePhotoFromChecklistItem}
-                      onPlanilhaCodigoBlur={
-                        offlineSession?.listMode === 'planilha' ? aplicarCatalogoPorCodigoPlanilha : undefined
-                      }
-                    />
                   </section>
                 ) : (
                   <div style={{ overflowX: 'auto', marginTop: 10 }}>
