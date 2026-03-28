@@ -454,10 +454,10 @@ export default function RelatorioContagem({ mode = 'periodo' }: RelatorioContage
       Descrição: r.descricao,
       'Unidade de medida': r.unidade_medida ?? '',
       'Quantidade contada': r.quantidade_up,
-      UP: r.up_adicional ?? '',
       'Data de fabricação': r.data_fabricacao ? formatDateBR(String(r.data_fabricacao).slice(0, 10)) : '',
       'Data de vencimento': r.data_validade ? formatDateBR(String(r.data_validade).slice(0, 10)) : '',
       Lote: r.lote ?? '',
+      UP: r.up_adicional ?? '',
       Observação: r.observacao ?? '',
       EAN: r.ean ?? '',
       DUN: r.dun ?? '',
@@ -793,16 +793,16 @@ export default function RelatorioContagem({ mode = 'periodo' }: RelatorioContage
                   <th style={thStyle}>Conferente</th>
                   <th style={thStyle}>Dia da contagem</th>
                   <th style={thStyle}>Origem</th>
-                  <th style={thStyle}>Nº inv.</th>
+                  <th style={thStyle}>Nº contagem</th>
                   <th style={thStyle}>Data e hora do registro</th>
                   <th style={thStyle}>Código do produto</th>
                   <th style={thStyle}>Descrição</th>
                   <th style={thStyle}>Unidade de medida</th>
                   <th style={thStyle}>Quantidade contada</th>
-                  <th style={thStyle}>UP</th>
                   <th style={thStyle}>Data de fabricação</th>
                   <th style={thStyle}>Data de vencimento</th>
                   <th style={thStyle}>Lote</th>
+                  <th style={thStyle}>UP</th>
                   <th style={thStyle}>Observação</th>
                   <th style={thStyle}>EAN</th>
                   <th style={thStyle}>DUN</th>
@@ -840,7 +840,6 @@ export default function RelatorioContagem({ mode = 'periodo' }: RelatorioContage
                         r.quantidade_up
                       )}
                     </td>
-                    <td style={tdStyle}>{r.up_adicional ?? ''}</td>
                     <td style={tdStyle}>
                       {r.data_fabricacao ? formatDateBR(String(r.data_fabricacao).slice(0, 10)) : ''}
                     </td>
@@ -848,6 +847,7 @@ export default function RelatorioContagem({ mode = 'periodo' }: RelatorioContage
                       {r.data_validade ? formatDateBR(String(r.data_validade).slice(0, 10)) : ''}
                     </td>
                     <td style={tdStyle}>{r.lote ?? ''}</td>
+                    <td style={tdStyle}>{r.up_adicional ?? ''}</td>
                     <td style={tdStyle}>{r.observacao ?? ''}</td>
                     <td style={tdStyle}>{r.ean ?? ''}</td>
                     <td style={tdStyle}>{r.dun ?? ''}</td>

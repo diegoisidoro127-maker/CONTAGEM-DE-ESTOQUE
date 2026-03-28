@@ -2650,7 +2650,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
 
                       {inventario ? (
                         <>
-                          <div style={{ fontSize: 12, color: 'var(--text, #888)', marginTop: 8 }}>Nº da contagem</div>
+                          <div style={{ fontSize: 12, color: 'var(--text, #888)', marginTop: 8 }}>Nº contagem</div>
                           <div style={{ fontSize: 13 }}>
                             {r.inventario_numero_contagem != null ? `${r.inventario_numero_contagem}ª` : '—'}
                           </div>
@@ -2692,10 +2692,6 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                       </div>
 
                       <div style={{ marginTop: 6, fontSize: 12, color: 'var(--text, #555)' }}>
-                        UP: {r.quantidade_up_secundaria != null ? r.quantidade_up_secundaria : '—'}
-                      </div>
-
-                      <div style={{ marginTop: 6, fontSize: 12, color: 'var(--text, #555)' }}>
                         Data de fabricação:{' '}
                         {r.data_fabricacao ? formatDateBRFromYmd(String(r.data_fabricacao).slice(0, 10)) : '—'}
                       </div>
@@ -2705,6 +2701,10 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                       </div>
 
                       <div style={{ marginTop: 6, fontSize: 12, color: 'var(--text, #555)' }}>Lote: {r.lote ?? '—'}</div>
+
+                      <div style={{ marginTop: 6, fontSize: 12, color: 'var(--text, #555)' }}>
+                        UP: {r.quantidade_up_secundaria != null ? r.quantidade_up_secundaria : '—'}
+                      </div>
                       <div style={{ marginTop: 4, fontSize: 12, color: 'var(--text, #555)' }}>
                         Observação: {r.observacao ?? '—'}
                       </div>
@@ -2813,10 +2813,10 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
               <th style={thStyle}>Descrição</th>
               <th style={thStyle}>Unidade de medida</th>
               <th style={thStyle}>Quantidade contada</th>
-              <th style={thStyle}>UP</th>
               <th style={thStyle}>Data de fabricação</th>
               <th style={thStyle}>Data de vencimento</th>
               <th style={thStyle}>Lote</th>
+              <th style={thStyle}>UP</th>
               <th style={thStyle}>Observação</th>
               <th style={thStyle}>EAN</th>
               <th style={thStyle}>DUN</th>
@@ -2877,7 +2877,6 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
               <th style={{ ...thStyle, fontWeight: 400, fontSize: 12, background: '#f3f4f6' }} />
               <th style={{ ...thStyle, fontWeight: 400, fontSize: 12, background: '#f3f4f6' }} />
               <th style={{ ...thStyle, fontWeight: 400, fontSize: 12, background: '#f3f4f6' }} />
-              <th style={{ ...thStyle, fontWeight: 400, fontSize: 12, background: '#f3f4f6' }} />
               <th style={{ ...thStyle, fontWeight: 400, fontSize: 12, background: '#f3f4f6' }}>
                 <input
                   value={previewFilterLote}
@@ -2886,6 +2885,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                   style={{ padding: '6px 8px', border: '1px solid #ccc', borderRadius: 6, width: '100%' }}
                 />
               </th>
+              <th style={{ ...thStyle, fontWeight: 400, fontSize: 12, background: '#f3f4f6' }} />
               <th style={{ ...thStyle, fontWeight: 400, fontSize: 12, background: '#f3f4f6' }}>
                 <input
                   value={previewFilterObs}
@@ -2928,7 +2928,6 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                       r.quantidade_up
                     )}
                   </td>
-                  <td style={tdStyle}>{r.quantidade_up_secundaria != null ? r.quantidade_up_secundaria : ''}</td>
                   <td style={tdStyle}>
                     {r.data_fabricacao ? formatDateBRFromYmd(String(r.data_fabricacao).slice(0, 10)) : ''}
                   </td>
@@ -2936,6 +2935,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                     {r.data_validade ? formatDateBRFromYmd(String(r.data_validade).slice(0, 10)) : ''}
                   </td>
                   <td style={tdStyle}>{r.lote ?? ''}</td>
+                  <td style={tdStyle}>{r.quantidade_up_secundaria != null ? r.quantidade_up_secundaria : ''}</td>
                   <td style={tdStyle}>{r.observacao ?? ''}</td>
                   <td style={tdStyle}>{r.ean ?? ''}</td>
                   <td style={tdStyle}>{r.dun ?? ''}</td>
