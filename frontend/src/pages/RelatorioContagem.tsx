@@ -342,6 +342,48 @@ export default function RelatorioContagem({
     `
     const selectFlatBasicoCompact = selectFlatBasico.replace(/\s+/g, '')
 
+    /**
+     * Mesmo fallback “básico”, mas com origem + metadados de inventário.
+     * Sem isso, o último fallback zerava esses campos e o filtro “Inventário” escondia
+     * linhas salvas em `contagens_estoque` (só passavam IDs ligados em `inventario_planilha_linhas`).
+     */
+    const selectBasicoComOrigemInventario = `
+      id,
+      data_contagem,
+      data_hora_contagem,
+      conferente_id,
+      conferentes(nome),
+      produto_id,
+      codigo_interno,
+      descricao,
+      unidade_medida,
+      quantidade_up,
+      lote,
+      observacao,
+      origem,
+      inventario_repeticao,
+      inventario_numero_contagem
+    `
+    const selectBasicoComOrigemInventarioCompact = selectBasicoComOrigemInventario.replace(/\s+/g, '')
+
+    const selectFlatBasicoComOrigemInventario = `
+      id,
+      data_contagem,
+      data_hora_contagem,
+      conferente_id,
+      produto_id,
+      codigo_interno,
+      descricao,
+      unidade_medida,
+      quantidade_up,
+      lote,
+      observacao,
+      origem,
+      inventario_repeticao,
+      inventario_numero_contagem
+    `
+    const selectFlatBasicoComOrigemInventarioCompact = selectFlatBasicoComOrigemInventario.replace(/\s+/g, '')
+
     /** Mesmo SELECT completo, sem colunas de inventário (banco sem migração). */
     const selectSemColunasInventario = `
       id,
@@ -521,7 +563,19 @@ export default function RelatorioContagem({
         }
       }
       try {
-        const data = await fetchRowsComFallbackEmbed(selectBasicoCompact, selectFlatBasicoCompact, false)
+        let data: ContagemRow[]
+        let basicoEstendidoOk = false
+        try {
+          data = (await fetchRowsComFallbackEmbed(
+            selectBasicoComOrigemInventarioCompact,
+            selectFlatBasicoComOrigemInventarioCompact,
+            false,
+          )) as ContagemRow[]
+          basicoEstendidoOk = true
+        } catch (eExt: unknown) {
+          if (!isColumnMissingErrorRel(eExt)) throw eExt
+          data = (await fetchRowsComFallbackEmbed(selectBasicoCompact, selectFlatBasicoCompact, false)) as ContagemRow[]
+        }
         const mapped = data.map((r) => ({
           ...r,
           data_fabricacao: null,
@@ -530,15 +584,16 @@ export default function RelatorioContagem({
           dun: null,
           up_adicional: null,
           foto_base64: null,
-          origem: null,
-          inventario_repeticao: null,
-          inventario_numero_contagem: null,
-        }))
+          ...(basicoEstendidoOk
+            ? {}
+            : { origem: null, inventario_repeticao: null, inventario_numero_contagem: null }),
+        })) as ContagemRow[]
         return {
-          rows: await enrichPlanilhaEConferente(mapped as ContagemRow[]),
-          successMessage:
-            'Relatório em modo compatível (menos colunas). Execute os scripts SQL do projeto no Supabase para todos os campos.',
-          origemAusenteNoResultado: true,
+          rows: await enrichPlanilhaEConferente(mapped),
+          successMessage: basicoEstendidoOk
+            ? 'Relatório em modo compatível (EAN, fotos e outras colunas omitidas). Inventário e contagem diária seguem o filtro da prévia. Execute os scripts SQL em supabase/sql para o relatório completo.'
+            : 'Relatório em modo compatível (menos colunas). Execute os scripts SQL do projeto no Supabase para todos os campos.',
+          origemAusenteNoResultado: !basicoEstendidoOk,
         }
       } catch (e4: unknown) {
         throw new Error(

@@ -2003,8 +2003,14 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
   }
 
   async function finalizeInternal() {
-    if (!offlineSession || offlineSession.status !== 'aberta') return
-    if (!conferenteId || offlineSession.conferente_id !== conferenteId) return
+    if (!offlineSession || offlineSession.status !== 'aberta') {
+      setChecklistError('Sessão inválida ou já finalizada. Carregue a lista de produtos de novo.')
+      return
+    }
+    if (!conferenteId || offlineSession.conferente_id !== conferenteId) {
+      setChecklistError('Selecione o mesmo conferente da sessão (ou recarregue a lista).')
+      return
+    }
 
     setFinalizing(true)
     try {
