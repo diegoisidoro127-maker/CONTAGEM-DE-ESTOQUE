@@ -1,0 +1,10 @@
+# Blueprint Render: app Vite em frontend/ (monorepo).
+# No painel: conecte este Blueprint ou copie Root Directory + comandos abaixo.
+# Static site = CDN (sem processo Node “dormindo” como no free Web Service).
+services:
+  - type: web
+    name: contagem-de-estoque
+    runtime: static
+    rootDir: frontend
+    buildCommand: npm ci && npm run build
+    staticPublishPath: ./dist

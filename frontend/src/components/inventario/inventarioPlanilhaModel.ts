@@ -1,21 +1,7 @@
 import type { OfflineChecklistItem } from '../../lib/offlineContagemSession'
+import { compareInventarioPlanilhaItens } from '../../lib/armazemInventarioMap'
 
-/**
- * Ordem canônica das linhas dentro de cada aba (grupo) — a mesma usada em POS/Nível ao finalizar
- * (`buildPlanilhaLayoutPorItens` → `inventario_planilha_linhas`).
- */
-export function compareInventarioPlanilhaItens(a: OfflineChecklistItem, b: OfflineChecklistItem): number {
-  const oa = a.planilha_ordem_na_aba
-  const ob = b.planilha_ordem_na_aba
-  if (oa != null && ob != null && oa !== ob) return oa - ob
-  if (oa != null && ob == null) return -1
-  if (oa == null && ob != null) return 1
-  const c = a.codigo_interno.localeCompare(b.codigo_interno, 'pt-BR')
-  if (c !== 0) return c
-  const r = (a.inventario_repeticao ?? 0) - (b.inventario_repeticao ?? 0)
-  if (r !== 0) return r
-  return String(a.key).localeCompare(String(b.key), 'pt-BR')
-}
+export { compareInventarioPlanilhaItens }
 
 export function formatContagemLabel(contagem: number) {
   if (contagem === 1) return '1° CONTAGEM'
