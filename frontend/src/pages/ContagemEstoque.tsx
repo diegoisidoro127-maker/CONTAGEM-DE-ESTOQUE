@@ -1533,45 +1533,63 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
 
       const rawEnriched = await enrichContagemRowsWithPlanilhaLinhas(rawRows, 'ContagemEstoque.preview')
 
-      // Prévia agrupada: uma linha por dia + código + descrição, somando a quantidade.
-      // No inventário, mantém linhas separadas por repetição e por número da rodada (1–4).
-      const grouped = new Map<string, ContagemPreviewRow>()
-      for (const row of rawEnriched) {
-        const day = dayKey
-        const key = inventario
-          ? `${day}|${row.codigo_interno.trim().toLowerCase()}|${row.descricao.trim().toLowerCase()}|inv|${row.inventario_repeticao ?? ''}|nc|${row.inventario_numero_contagem ?? ''}`
-          : `${day}|${row.codigo_interno.trim().toLowerCase()}|${row.descricao.trim().toLowerCase()}`
-        const existing = grouped.get(key)
-        if (!existing) {
-          grouped.set(key, { ...row })
-          continue
+      // Contagem diária: agrupa por dia + código + descrição e soma quantidades.
+      // Inventário: uma linha por registro em `contagens_estoque` (mesma lógica da planilha: mesmo código em POS/Níveis diferentes não pode virar uma linha só).
+      let previewList: ContagemPreviewRow[]
+      if (inventario) {
+        previewList = [...rawEnriched].sort((a, b) => {
+          const g = (a.planilha_grupo_armazem ?? 0) - (b.planilha_grupo_armazem ?? 0)
+          if (g !== 0) return g
+          const ruaCmp = String(a.planilha_rua ?? '').localeCompare(String(b.planilha_rua ?? ''), 'pt-BR')
+          if (ruaCmp !== 0) return ruaCmp
+          const p = (a.planilha_posicao ?? 0) - (b.planilha_posicao ?? 0)
+          if (p !== 0) return p
+          const n = (a.planilha_nivel ?? 0) - (b.planilha_nivel ?? 0)
+          if (n !== 0) return n
+          const rep = (a.inventario_repeticao ?? 0) - (b.inventario_repeticao ?? 0)
+          if (rep !== 0) return rep
+          const nc = (a.inventario_numero_contagem ?? 0) - (b.inventario_numero_contagem ?? 0)
+          if (nc !== 0) return nc
+          return String(a.id).localeCompare(String(b.id), 'pt-BR')
+        })
+      } else {
+        const grouped = new Map<string, ContagemPreviewRow>()
+        for (const row of rawEnriched) {
+          const day = dayKey
+          const key = `${day}|${row.codigo_interno.trim().toLowerCase()}|${row.descricao.trim().toLowerCase()}`
+          const existing = grouped.get(key)
+          if (!existing) {
+            grouped.set(key, { ...row })
+            continue
+          }
+          existing.quantidade_up += Number(row.quantidade_up ?? 0)
+          existing.source_ids = existing.source_ids.concat(row.source_ids)
+          existing.conferente_nome = mergeConferenteNomesUnicos(existing.conferente_nome, row.conferente_nome)
+          if (!existing.foto_base64 && row.foto_base64) existing.foto_base64 = row.foto_base64
+          if (existing.planilha_grupo_armazem == null && row.planilha_grupo_armazem != null) {
+            existing.planilha_grupo_armazem = row.planilha_grupo_armazem
+            existing.planilha_rua = row.planilha_rua ?? null
+            existing.planilha_posicao = row.planilha_posicao ?? null
+            existing.planilha_nivel = row.planilha_nivel ?? null
+          }
+          if (!existing.lote && row.lote) existing.lote = row.lote
+          if (!existing.observacao && row.observacao) existing.observacao = row.observacao
+          if (!existing.unidade_medida && row.unidade_medida) existing.unidade_medida = row.unidade_medida
+          if (!existing.data_fabricacao && row.data_fabricacao) existing.data_fabricacao = row.data_fabricacao
+          if (!existing.data_validade && row.data_validade) existing.data_validade = row.data_validade
+          if (!existing.ean && row.ean) existing.ean = row.ean
+          if (!existing.dun && row.dun) existing.dun = row.dun
+          const av = row.quantidade_up_secundaria
+          if (av != null && Number.isFinite(av)) {
+            const ev = existing.quantidade_up_secundaria
+            existing.quantidade_up_secundaria = (ev != null && Number.isFinite(ev) ? ev : 0) + av
+          }
         }
-        existing.quantidade_up += Number(row.quantidade_up ?? 0)
-        existing.source_ids = existing.source_ids.concat(row.source_ids)
-        existing.conferente_nome = mergeConferenteNomesUnicos(existing.conferente_nome, row.conferente_nome)
-        if (!existing.foto_base64 && row.foto_base64) existing.foto_base64 = row.foto_base64
-        if (existing.planilha_grupo_armazem == null && row.planilha_grupo_armazem != null) {
-          existing.planilha_grupo_armazem = row.planilha_grupo_armazem
-          existing.planilha_rua = row.planilha_rua ?? null
-          existing.planilha_posicao = row.planilha_posicao ?? null
-          existing.planilha_nivel = row.planilha_nivel ?? null
-        }
-        if (!existing.lote && row.lote) existing.lote = row.lote
-        if (!existing.observacao && row.observacao) existing.observacao = row.observacao
-        if (!existing.unidade_medida && row.unidade_medida) existing.unidade_medida = row.unidade_medida
-        if (!existing.data_fabricacao && row.data_fabricacao) existing.data_fabricacao = row.data_fabricacao
-        if (!existing.data_validade && row.data_validade) existing.data_validade = row.data_validade
-        if (!existing.ean && row.ean) existing.ean = row.ean
-        if (!existing.dun && row.dun) existing.dun = row.dun
-        const av = row.quantidade_up_secundaria
-        if (av != null && Number.isFinite(av)) {
-          const ev = existing.quantidade_up_secundaria
-          existing.quantidade_up_secundaria = (ev != null && Number.isFinite(ev) ? ev : 0) + av
-        }
+        previewList = Array.from(grouped.values())
       }
 
       setPreviewQueryDayYmd(dayKey)
-      setPreviewRows(Array.from(grouped.values()))
+      setPreviewRows(previewList)
       window.setTimeout(() => {
         previewSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
       }, 0)
