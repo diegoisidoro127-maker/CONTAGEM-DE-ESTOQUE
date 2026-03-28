@@ -637,9 +637,9 @@ export default function RelatorioContagem({ mode = 'periodo' }: RelatorioContage
                   height: 40,
                   opacity: baseExportLoading ? 0.7 : 1,
                 }}
-                title="Baixar planilha .xlsx com todos os produtos da tabela cadastrada (Todos os Produtos), sem filtro de data"
+                title="Baixar planilha .xlsx da base Todos os Produtos (códigos, EAN, DUN e datas de alteração), sem filtro de data"
               >
-                {baseExportLoading ? 'Exportando base…' : 'Exportar base Todos os Produtos (Excel)'}
+                {baseExportLoading ? 'Exportando…' : 'Exportar Relatorio Alteração DUN/EAN'}
               </button>
             </>
           ) : null}

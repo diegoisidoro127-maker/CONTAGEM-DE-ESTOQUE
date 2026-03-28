@@ -95,6 +95,8 @@ export default function BaseProdutos() {
   const [cadastroSaving, setCadastroSaving] = useState(false)
 
   const [bipCodigoBarras, setBipCodigoBarras] = useState('')
+  /** Quando definido, a tabela mostra só esta linha (produto encontrado pelo bip). */
+  const [bipSoloKey, setBipSoloKey] = useState<string | null>(null)
   const bipInputRef = useRef<HTMLInputElement | null>(null)
   const rowRefs = useRef<Map<string, HTMLTableRowElement | null>>(new Map())
 
@@ -162,6 +164,8 @@ export default function BaseProdutos() {
       setEditSnapshot(null)
       setPage(1)
       setShowAll(false)
+      setBipSoloKey(null)
+      setBipCodigoBarras('')
       setSuccess(`${list.length} produto(s) carregado(s).`)
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e)
@@ -179,12 +183,16 @@ export default function BaseProdutos() {
   const filtered = useMemo(() => {
     const c = filterCodigo.trim().toLowerCase()
     const d = filterDescricao.trim().toLowerCase()
-    return rows.filter((r) => {
+    let list = rows.filter((r) => {
       const okC = !c || r.codigo_interno.toLowerCase().includes(c)
       const okD = !d || r.descricao.toLowerCase().includes(d)
       return okC && okD
     })
-  }, [rows, filterCodigo, filterDescricao])
+    if (bipSoloKey) {
+      list = list.filter((r) => rowKey(r) === bipSoloKey)
+    }
+    return list
+  }, [rows, filterCodigo, filterDescricao, bipSoloKey])
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const pageSafe = Math.min(page, totalPages)
@@ -532,13 +540,21 @@ export default function BaseProdutos() {
       <div style={{ width: '100%', marginBottom: 16 }}>
         <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13 }}>
           <span style={{ color: 'var(--text, #ccc)' }}>
-            <strong>Bipar EAN ou DUN</strong> — encontra o produto na lista e abre para alteração (Enter ou Buscar)
+            <strong>Bipar EAN ou DUN</strong> — mostra só esse produto na lista e abre para edição.{' '}
+            <strong>Limpar</strong> ou campo vazio: lista completa de novo.
           </span>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
             <input
               ref={bipInputRef}
               value={bipCodigoBarras}
-              onChange={(e) => setBipCodigoBarras(e.target.value)}
+              onChange={(e) => {
+                const v = e.target.value
+                setBipCodigoBarras(v)
+                if (v.trim() === '') {
+                  setBipSoloKey(null)
+                  setError('')
+                }
+              }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
                   e.preventDefault()
@@ -577,6 +593,23 @@ export default function BaseProdutos() {
               }}
             >
               Buscar
+            </button>
+            <button
+              type="button"
+              onClick={() => limparBipEFiltroSolo()}
+              disabled={loading}
+              style={{
+                padding: '10px 18px',
+                borderRadius: 8,
+                border: '1px solid #666',
+                background: 'transparent',
+                color: 'var(--text, #eee)',
+                cursor: loading ? 'wait' : 'pointer',
+                fontSize: 13,
+              }}
+              title="Mostrar todos os produtos de novo"
+            >
+              Limpar
             </button>
           </div>
         </label>
