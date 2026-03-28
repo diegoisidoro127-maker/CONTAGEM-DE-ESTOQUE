@@ -30,6 +30,8 @@ export type InventarioPlanilhaTabelaProps = {
   handleLimparQuantidadeOffline: (key: string) => void
   openPhotoModalForCodigo: (codigo: string) => void
   removePhotoFromChecklistItem: (it: OfflineChecklistItem) => void
+  /** Modo planilha em branco: ao sair do campo código, preenche descrição a partir do cadastro. */
+  onPlanilhaCodigoBlur?: (key: string, codigo: string) => void
 }
 
 /**
@@ -59,6 +61,7 @@ export function InventarioPlanilhaTabela(props: InventarioPlanilhaTabelaProps) {
     handleLimparQuantidadeOffline,
     openPhotoModalForCodigo,
     removePhotoFromChecklistItem,
+    onPlanilhaCodigoBlur,
   } = props
 
   const ruaPlanilha = getInventarioRuaArmazem(armazemContagem)
@@ -105,6 +108,10 @@ export function InventarioPlanilhaTabela(props: InventarioPlanilhaTabelaProps) {
                         onChange={(e) =>
                           setChecklistEditDraft((d) => (d ? { ...d, codigo_interno: e.target.value } : d))
                         }
+                        onBlur={() => onPlanilhaCodigoBlur?.(it.key, checklistEditDraft.codigo_interno)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+                        }}
                         style={{ ...checklistQtdInputStyle, width: '100%', minWidth: 100 }}
                         aria-label="Código do produto"
                       />
@@ -242,12 +249,30 @@ export function InventarioPlanilhaTabela(props: InventarioPlanilhaTabelaProps) {
                     <td style={tdStyle}>{pn.pos}</td>
                     <td style={tdStyle}>{pn.nivel}</td>
                     <td style={tdStyle}>
-                      {it.codigo_interno}
-                      {it.inventario_repeticao ? (
-                        <span style={{ marginLeft: 6, fontSize: 11, color: '#0a7', fontWeight: 700 }}>
-                          ({it.inventario_repeticao}ª)
-                        </span>
-                      ) : null}
+                      {onPlanilhaCodigoBlur ? (
+                        <input
+                          value={it.codigo_interno}
+                          onChange={(e) =>
+                            updateOfflineItemFields(it.key, { codigo_interno: e.target.value })
+                          }
+                          onBlur={() => onPlanilhaCodigoBlur(it.key, it.codigo_interno)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+                          }}
+                          style={{ ...checklistQtdInputStyle, width: '100%', minWidth: 100 }}
+                          placeholder="Digite o código"
+                          aria-label="Código do produto"
+                        />
+                      ) : (
+                        <>
+                          {it.codigo_interno}
+                          {it.inventario_repeticao ? (
+                            <span style={{ marginLeft: 6, fontSize: 11, color: '#0a7', fontWeight: 700 }}>
+                              ({it.inventario_repeticao}ª)
+                            </span>
+                          ) : null}
+                        </>
+                      )}
                     </td>
                     <td style={{ ...tdStyle, whiteSpace: 'normal', maxWidth: 420 }}>{it.descricao}</td>
                     {showChecklistColumn('quantidade') ? (

@@ -1,5 +1,5 @@
 -- Tabela dedicada ao inventário físico no layout da planilha (CONTAGEM DE INVENTARIO.xlsx).
--- Campos: RUA, POS, NIVEL, grupo de armazém, número da contagem (1ª–4ª), produto, quantidades, lote/UP, datas.
+-- Campos: RUA, POS, NIVEL, grupo de armazém, número da contagem (1ª–8ª), produto, quantidades, lote/UP, datas.
 -- Opcionalmente referencia `contagens_estoque` quando a linha for espelhada a partir do registro oficial.
 --
 -- Execute no SQL Editor do Supabase (projeto já deve ter `conferentes`, `produtos`, `contagens_estoque`).
@@ -18,18 +18,18 @@ create table if not exists public.inventario_planilha_linhas (
   -- Dia civil do inventário (alinhado a `data_contagem` / uso no Brasil).
   data_inventario date not null,
 
-  -- Grupo armazém 1–4 (abas / CAMARA + RUA na planilha).
+  -- Grupo armazém 1–8 (abas / CAMARA + RUA na planilha).
   grupo_armazem smallint not null,
-  constraint inventario_planilha_linhas_grupo_armazem_chk check (grupo_armazem between 1 and 4),
+  constraint inventario_planilha_linhas_grupo_armazem_chk check (grupo_armazem between 1 and 8),
 
   -- Colunas de posição como na planilha (ex.: RUA V/U/X/Y).
   rua text,
   posicao integer not null default 1,
   nivel integer not null default 1,
 
-  -- Qual contagem do grupo (rótulo tipo 1° / 2° / 3° / 4° CONTAGEM).
+  -- Qual contagem do grupo (rótulo tipo 1° … 8° CONTAGEM).
   numero_contagem smallint not null,
-  constraint inventario_planilha_linhas_numero_contagem_chk check (numero_contagem between 1 and 4),
+  constraint inventario_planilha_linhas_numero_contagem_chk check (numero_contagem between 1 and 8),
 
   codigo_interno text not null,
   descricao text not null,
@@ -56,10 +56,10 @@ comment on table public.inventario_planilha_linhas is
   'Linhas do inventário físico no formato da planilha (RUA, POS, NIVEL, grupo armazém, contagem).';
 
 comment on column public.inventario_planilha_linhas.grupo_armazem is
-  '1–4 conforme divisão por armazém no app (ex.: CAMARA 11 RUA V = 1).';
+  '1–8 conforme divisão por armazém no app (ex.: CAMARA 11 RUA V = 1 … CAMARA 21 RUA B = 8).';
 
 comment on column public.inventario_planilha_linhas.numero_contagem is
-  'Qual contagem do grupo (1° a 4°), alinhado ao cabeçalho da planilha.';
+  'Qual contagem do grupo (1° a 8°), alinhado ao cabeçalho da planilha.';
 
 comment on column public.inventario_planilha_linhas.contagens_estoque_id is
   'Opcional: FK para o registro correspondente em contagens_estoque, se a linha for derivada dele.';

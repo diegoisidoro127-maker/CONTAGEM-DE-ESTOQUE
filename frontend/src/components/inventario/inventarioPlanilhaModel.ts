@@ -13,12 +13,25 @@ function formatArmazemGroupLabel(contagem: number | null) {
   return formatContagemLabel(contagem)
 }
 
+/** Quantidade de abas (grupos) no inventário armazém / planilha — igual ao Excel (2 ruas por câmara). */
+export const INVENTARIO_ARMAZEM_NUM_GRUPOS = 8
+
+/** IDs dos grupos 1..N (abas CAMARA/RUA). */
+export const INVENTARIO_ARMAZEM_GRUPO_IDS: readonly number[] = Array.from(
+  { length: INVENTARIO_ARMAZEM_NUM_GRUPOS },
+  (_, i) => i + 1,
+)
+
 /** Títulos das abas alinhados à planilha `CONTAGEM DE INVENTARIO.xlsx` (uma aba por grupo armazém). */
 export const INVENTARIO_ARMAZEM_ABA_TITULOS: Partial<Record<number, string>> = {
   1: 'CAMARA 11 - RUA V',
   2: 'CAMARA 11 - RUA U',
   3: 'CAMARA 12 - RUA X',
   4: 'CAMARA 12 - RUA Y',
+  5: 'CAMARA 13 - RUA W',
+  6: 'CAMARA 13 - RUA Z',
+  7: 'CAMARA 21 - RUA A',
+  8: 'CAMARA 21 - RUA B',
 }
 
 /** Coluna RUA na planilha (letra da rua por grupo). */
@@ -27,6 +40,10 @@ export const INVENTARIO_ARMAZEM_RUA: Partial<Record<number, string>> = {
   2: 'U',
   3: 'X',
   4: 'Y',
+  5: 'W',
+  6: 'Z',
+  7: 'A',
+  8: 'B',
 }
 
 export function getInventarioRuaArmazem(contagem: number | null | undefined): string {
@@ -73,16 +90,17 @@ export type PlanilhaLayoutMeta = {
 
 /**
  * Calcula RUA, POS, NIVEL e grupo por item da sessão, para gravar em `inventario_planilha_linhas`.
- * `getGrupoContagem` deve retornar 1–4 conforme o mapa de armazém, ou null se o código não estiver no mapa.
+ * `getGrupo` deve retornar 1..N (mapa de armazém por código, `armazem_grupo` na linha em branco, etc.).
  */
 export function buildPlanilhaLayoutPorItens(
   items: OfflineChecklistItem[],
-  getGrupoContagem: (codigo: string) => number | null,
+  getGrupo: (it: OfflineChecklistItem) => number | null,
 ): Map<string, PlanilhaLayoutMeta> {
   const byGrupo = new Map<number, OfflineChecklistItem[]>()
   for (const it of items) {
-    const raw = getGrupoContagem(it.codigo_interno.trim())
-    const g = raw != null ? Math.min(4, Math.max(1, raw)) : 1
+    const raw = getGrupo(it)
+    const g =
+      raw != null ? Math.min(INVENTARIO_ARMAZEM_NUM_GRUPOS, Math.max(1, raw)) : 1
     if (!byGrupo.has(g)) byGrupo.set(g, [])
     byGrupo.get(g)!.push(it)
   }
@@ -90,7 +108,9 @@ export function buildPlanilhaLayoutPorItens(
     arr.sort((a, b) => {
       const c = a.codigo_interno.localeCompare(b.codigo_interno, 'pt-BR')
       if (c !== 0) return c
-      return (a.inventario_repeticao ?? 0) - (b.inventario_repeticao ?? 0)
+      const r = (a.inventario_repeticao ?? 0) - (b.inventario_repeticao ?? 0)
+      if (r !== 0) return r
+      return String(a.key).localeCompare(String(b.key), 'pt-BR')
     })
   }
   const out = new Map<string, PlanilhaLayoutMeta>()

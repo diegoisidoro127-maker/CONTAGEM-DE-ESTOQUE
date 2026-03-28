@@ -24,9 +24,15 @@ export type OfflineChecklistItem = {
   dun?: string | null
   /** No inventário: 1ª, 2ª e 3ª linha do mesmo produto (três contagens). */
   inventario_repeticao?: 1 | 2 | 3
+  /**
+   * Modo planilha em branco: grupo da aba (1–8) sem depender do mapa de códigos do armazém.
+   * Quando preenchido, o item entra na aba correspondente mesmo com código vazio.
+   */
+  /** 1–8: aba (CAMARA 11/12/13/21 × RUA — ver INVENTARIO_ARMAZEM_ABA_TITULOS no frontend). */
+  armazem_grupo?: number
 }
 
-/** `planilha` = mesmo carregamento que `armazém` (grupos 1–4), rótulo para inventário no formato da planilha. */
+/** `planilha` = mesmo carregamento que `armazém` (grupos por câmara/RUA), rótulo para inventário no formato da planilha. */
 export type ChecklistListMode = 'todos' | 'armazem' | 'planilha'
 
 export function isListModeArmazem(m: ChecklistListMode | undefined | null): boolean {

@@ -22,7 +22,11 @@ import {
   InventarioPlanilhaAbas,
   InventarioPlanilhaTabela,
 } from '../components/inventario/inventarioPlanilhaArmazem'
-import { buildPlanilhaLayoutPorItens } from '../components/inventario/inventarioPlanilhaModel'
+import {
+  buildPlanilhaLayoutPorItens,
+  INVENTARIO_ARMAZEM_GRUPO_IDS,
+  INVENTARIO_ARMAZEM_NUM_GRUPOS,
+} from '../components/inventario/inventarioPlanilhaModel'
 
 const PREVIEW_PAGE_SIZE = 15
 const CHECKLIST_PAGE_SIZE = 15
@@ -235,6 +239,14 @@ const ARMAZEM_CONTAGEM_CODES = {
     '01.04.0060',
     '01.04.0061',
   ],
+  /** CAMARA 13 - RUA W (grupo 5). */
+  5: [],
+  /** CAMARA 13 - RUA Z (grupo 6). */
+  6: [],
+  /** CAMARA 21 - RUA A (grupo 7). */
+  7: [],
+  /** CAMARA 21 - RUA B (grupo 8). */
+  8: [],
 } as const satisfies Record<number, string[]>
 
 const ARMAZEM_POS_BY_CODIGO = (() => {
@@ -255,6 +267,24 @@ function getArmazemContagem(codigo: string): number | null {
 
 function getArmazemPos(codigo: string): number {
   return ARMAZEM_POS_BY_CODIGO.get(codigo)?.pos ?? Number.MAX_SAFE_INTEGER
+}
+
+function getArmazemContagemForItem(it: OfflineChecklistItem): number | null {
+  const g = it.armazem_grupo
+  if (g != null && g >= 1 && g <= INVENTARIO_ARMAZEM_NUM_GRUPOS) return g
+  return getArmazemContagem(it.codigo_interno)
+}
+
+function countPendingForSession(session: OfflineSession | null): number {
+  if (!session || session.status !== 'aberta') return 0
+  if (session.listMode === 'planilha') {
+    return session.items.filter((i) => {
+      const c = String(i.codigo_interno ?? '').trim()
+      if (!c) return false
+      return String(i.quantidade_contada ?? '').trim() === ''
+    }).length
+  }
+  return countPendingItems(session.items)
 }
 
 function formatContagemLabel(contagem: number) {
@@ -1454,6 +1484,52 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     setChecklistLoading(true)
     try {
       const listModeEfetivo: ChecklistListMode = checklistListMode
+
+      if (listModeEfetivo === 'planilha' && inventario) {
+        setArmazemMissingCodes([])
+        const LINHAS_POR_ABA = 66
+        const items: OfflineChecklistItem[] = []
+        let seq = 0
+        for (const g of INVENTARIO_ARMAZEM_GRUPO_IDS) {
+          for (let i = 0; i < LINHAS_POR_ABA; i++) {
+            items.push({
+              key: `pl-${g}-${i}-${seq++}`,
+              codigo_interno: '',
+              descricao: '',
+              armazem_grupo: g,
+              quantidade_contada: '',
+              foto_base64: '',
+              up_quantidade: '',
+              lote: '',
+              observacao: '',
+              data_fabricacao: '',
+              data_validade: '',
+              unidade_medida: null,
+              ean: null,
+              dun: null,
+              inventario_repeticao: undefined,
+            })
+          }
+        }
+        const sess: OfflineSession = {
+          sessionId: newSessionId(),
+          data_contagem_ymd: contagemDiaYmd,
+          conferente_id: conferenteId,
+          status: 'aberta',
+          listMode: listModeEfetivo,
+          context: sessionMode,
+          items,
+          updatedAt: new Date().toISOString(),
+        }
+        setOfflineSession(sess)
+        saveOfflineSession(sess, sessionMode)
+        setSaveSuccess(
+          `Planilha em branco: ${items.length} linhas (${INVENTARIO_ARMAZEM_NUM_GRUPOS} abas × ${LINHAS_POR_ABA}). Digite o código em cada linha; ao sair do campo, a descrição é preenchida pelo cadastro.`,
+        )
+        setSaveError('')
+        return
+      }
+
       let itemsRaw = await fetchListaChecklistFromDb()
 
       if (isListModeArmazem(listModeEfetivo)) {
@@ -1461,7 +1537,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         setArmazemMissingCodes(missing)
         if (missing.length > 0) {
           throw new Error(
-            `Modo armazém não está completo: faltam ${missing.length} código(s) para mapear nas 1-4 contagens. ` +
+            `Modo armazém não está completo: faltam ${missing.length} código(s) para mapear nos grupos 1–${INVENTARIO_ARMAZEM_NUM_GRUPOS} (armazém). ` +
               `Ex.: ${missing.slice(0, 10).join(', ')}. ` +
               `Para continuar (sem "OUTROS"), ajuste o mapeamento no app (ARMAZEM_CONTAGEM_CODES).`,
           )
@@ -1664,6 +1740,52 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     cancelChecklistEdit()
   }
 
+  function aplicarCatalogoPorCodigoPlanilha(key: string, codigo: string) {
+    const c = codigo.trim()
+    if (!c) {
+      updateOfflineItemFields(key, {
+        codigo_interno: '',
+        descricao: '',
+        unidade_medida: null,
+        ean: null,
+        dun: null,
+        data_fabricacao: '',
+        data_validade: '',
+      })
+      if (checklistEditingKey === key) {
+        setChecklistEditDraft((d) => (d ? { ...d, codigo_interno: '', descricao: '' } : d))
+      }
+      return
+    }
+    const p = productByCode.get(c)
+    if (p) {
+      updateOfflineItemFields(key, {
+        codigo_interno: p.codigo,
+        descricao: p.descricao,
+        unidade_medida: p.unidade_medida ?? null,
+        ean: p.ean ?? null,
+        dun: p.dun ?? null,
+        data_fabricacao: p.data_fabricacao ? toDateInputValue(p.data_fabricacao) : '',
+        data_validade: p.data_validade ? toDateInputValue(p.data_validade) : '',
+      })
+      if (checklistEditingKey === key) {
+        setChecklistEditDraft((d) =>
+          d ? { ...d, codigo_interno: p.codigo, descricao: p.descricao } : d,
+        )
+      }
+    } else {
+      updateOfflineItemFields(key, {
+        codigo_interno: c,
+        descricao: '— código não encontrado no cadastro —',
+      })
+      if (checklistEditingKey === key) {
+        setChecklistEditDraft((d) =>
+          d ? { ...d, codigo_interno: c, descricao: '— código não encontrado no cadastro —' } : d,
+        )
+      }
+    }
+  }
+
   async function handleFinalizarContagemDiaria() {
     setSaveError('')
     setSaveSuccess('')
@@ -1679,10 +1801,17 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       return
     }
 
-    let itemsSnapshot = offlineSession.items.map((i) => ({ ...i }))
-    let pend = countPendingItems(itemsSnapshot)
+    const itemsSnapshot = offlineSession.items.map((i) => ({ ...i }))
+    const pend = countPendingForSession(offlineSession)
     if (pend > 0) {
-      const missing = itemsSnapshot.filter((i) => String(i.quantidade_contada ?? '').trim() === '')
+      const missing = itemsSnapshot.filter((i) => {
+        if (offlineSession.listMode === 'planilha') {
+          const c = String(i.codigo_interno ?? '').trim()
+          if (!c) return false
+          return String(i.quantidade_contada ?? '').trim() === ''
+        }
+        return String(i.quantidade_contada ?? '').trim() === ''
+      })
       setMissingItemsForFinalize(missing)
       setConfirmFinalizeMissingOpen(true)
       return
@@ -1704,6 +1833,14 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         itemsSnapshot = itemsSnapshot.map((i) =>
           String(i.quantidade_contada ?? '').trim() === '' ? { ...i, quantidade_contada: '0' } : i,
         )
+      }
+
+      itemsSnapshot = itemsSnapshot.filter((it) => String(it.codigo_interno ?? '').trim() !== '')
+      if (itemsSnapshot.length === 0) {
+        setChecklistError(
+          'Nenhuma linha com código informado. Preencha ao menos um produto (código) antes de finalizar.',
+        )
+        return
       }
 
       const dataHoraIso = toISOStringFromDatetimeLocal(dataHoraContagem)
@@ -1780,7 +1917,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         finalizeMeta.push({ it, q, up_adicional, dfRaw, dvRaw, produtoId })
       }
 
-      const planilhaLayout = inventario ? buildPlanilhaLayoutPorItens(itemsSnapshot, getArmazemContagem) : null
+      const planilhaLayout = inventario ? buildPlanilhaLayoutPorItens(itemsSnapshot, getArmazemContagemForItem) : null
 
       setFinalizeProgress('Conectando ao banco...')
       let delQ = supabase
@@ -2673,9 +2810,27 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     )
   }
 
-  const checklistPending = offlineSession?.status === 'aberta' ? countPendingItems(offlineSession.items) : 0
-  const checklistCounted =
-    offlineSession?.status === 'aberta' ? offlineSession.items.length - checklistPending : 0
+  const checklistPending = useMemo(() => countPendingForSession(offlineSession), [offlineSession])
+
+  const checklistProgressTotal = useMemo(() => {
+    if (offlineSession?.status !== 'aberta') return 0
+    if (offlineSession.listMode === 'planilha') {
+      return offlineSession.items.filter((i) => String(i.codigo_interno ?? '').trim() !== '').length
+    }
+    return offlineSession.items.length
+  }, [offlineSession])
+
+  const checklistCounted = useMemo(() => {
+    if (offlineSession?.status !== 'aberta') return 0
+    if (offlineSession.listMode === 'planilha') {
+      return offlineSession.items.filter((i) => {
+        const c = String(i.codigo_interno ?? '').trim()
+        if (!c) return false
+        return String(i.quantidade_contada ?? '').trim() !== ''
+      }).length
+    }
+    return offlineSession.items.length - checklistPending
+  }, [offlineSession, checklistPending])
 
   const filteredChecklistItems =
     offlineSession?.status === 'aberta'
@@ -2686,7 +2841,11 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
           const descOk =
             !checklistFilterDescricao.trim() ||
             it.descricao.toLowerCase().includes(checklistFilterDescricao.trim().toLowerCase())
-          const pend = String(it.quantidade_contada ?? '').trim() === ''
+          const pend =
+            offlineSession.listMode === 'planilha'
+              ? String(it.codigo_interno ?? '').trim() !== '' &&
+                String(it.quantidade_contada ?? '').trim() === ''
+              : String(it.quantidade_contada ?? '').trim() === ''
           const pendOk = !checklistFilterPendentes || pend
           return codOk && descOk && pendOk
         })
@@ -2701,7 +2860,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
 
   const armazemModoIncompleto =
     offlineSession?.status === 'aberta' && isListModeArmazem(offlineSession.listMode)
-      ? offlineSession.items.some((it) => getArmazemContagem(it.codigo_interno) === null)
+      ? offlineSession.items.some((it) => getArmazemContagemForItem(it) === null)
       : false
 
   const checklistDisplayItems: ChecklistDisplayItem[] =
@@ -2711,7 +2870,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
           let lastContagem: number | null = null
           let hdrSeq = 0
           for (const it of filteredChecklistItems) {
-            const contagem = getArmazemContagem(it.codigo_interno)
+            const contagem = getArmazemContagemForItem(it)
             if (contagem === null) continue // deveria não acontecer (validação na carga)
             if (contagem !== lastContagem) {
               out.push({
@@ -2735,10 +2894,10 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     !armazemModoIncompleto
 
   const armazemGrupos = isArmazemPaginado
-    ? [1, 2, 3, 4]
+    ? [...INVENTARIO_ARMAZEM_GRUPO_IDS]
         .map((contagem) => ({
           contagem,
-          items: filteredChecklistItems.filter((it) => getArmazemContagem(it.codigo_interno) === contagem),
+          items: filteredChecklistItems.filter((it) => getArmazemContagemForItem(it) === contagem),
         }))
         .filter((g) => g.items.length > 0)
     : []
@@ -3042,7 +3201,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                 disabled={!!offlineSession && offlineSession.status === 'aberta'}
               >
                 <option value="todos">Todos os Produtos (cadastro)</option>
-                <option value="armazem">Armazém (dividida por contagem 1–4)</option>
+                <option value="armazem">Armazém (dividida por grupo 1–{INVENTARIO_ARMAZEM_NUM_GRUPOS})</option>
                 {inventario ? (
                   <option value="planilha">Inventário — formato planilha (CAMARA/RUA, abas)</option>
                 ) : null}
@@ -3129,7 +3288,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
               }}
             >
               <div style={{ fontSize: 14 }}>
-                Progresso: <strong>{checklistCounted}</strong> contados / <strong>{offlineSession.items.length}</strong> total
+                Progresso: <strong>{checklistCounted}</strong> contados / <strong>{checklistProgressTotal}</strong> total
                 {checklistPending > 0 ? (
                   <span style={{ color: '#a60', marginLeft: 8 }}>({checklistPending} pendente(s))</span>
                 ) : (
@@ -3537,6 +3696,9 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                       handleLimparQuantidadeOffline={handleLimparQuantidadeOffline}
                       openPhotoModalForCodigo={openPhotoModalForCodigo}
                       removePhotoFromChecklistItem={removePhotoFromChecklistItem}
+                      onPlanilhaCodigoBlur={
+                        offlineSession?.listMode === 'planilha' ? aplicarCatalogoPorCodigoPlanilha : undefined
+                      }
                     />
                   </section>
                 ) : (
