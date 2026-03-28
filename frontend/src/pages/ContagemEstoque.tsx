@@ -36,6 +36,7 @@ import {
   getArmazemPos,
 } from '../lib/armazemInventarioMap'
 import { enrichContagemRowsWithPlanilhaLinhas } from '../lib/enrichContagemRowsWithPlanilhaLinhas'
+import { isVencimentoAntesFabricacao } from '../lib/contagemDatasValidacao'
 import {
   deleteInventarioPlanilhaLinhasForContagensIds,
   deleteInventarioPlanilhaLinhasForDay,
@@ -44,6 +45,7 @@ import {
   CHECKLIST_VISIBLE_COLS_STORAGE,
   loadChecklistVisibleColsFromStorage,
 } from '../lib/checklistVisibleCols'
+import { fetchConferentesNomesPorIds } from '../lib/conferentesNomesBatch'
 
 const PREVIEW_PAGE_SIZE = 15
 /** Colunas fixas na prévia (Câmara / Rua / POS / Nível / Conferente), alinhadas ao relatório completo. */
@@ -1032,11 +1034,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
   }, [codigoInterno, productByCode])
 
   const canSubmit = useMemo(() => {
-    const datasOk = (() => {
-      if (!dataFabricacao || !dataVencimento) return true
-      // Formato do input é YYYY-MM-DD, então comparação lexicográfica funciona como data.
-      return dataVencimento >= dataFabricacao
-    })()
+    const datasOk = !isVencimentoAntesFabricacao(dataFabricacao, dataVencimento)
     const descricaoFinal = (descricaoInput.trim() || produto?.descricao || '').trim()
     const codigoFinal = (() => {
       const code = codigoInterno.trim()
@@ -1140,7 +1138,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       return
     }
 
-    if (dataFabricacao && dataVencimento && dataVencimento < dataFabricacao) {
+    if (isVencimentoAntesFabricacao(dataFabricacao, dataVencimento)) {
       setSaveError('Data de vencimento não pode ser menor que a data de fabricação.')
       return
     }
@@ -1410,11 +1408,17 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
 
       const rawEnriched = await enrichContagemRowsWithPlanilhaLinhas(rawRows, 'ContagemEstoque.preview')
 
+      const nomePorId = await fetchConferentesNomesPorIds(rawEnriched.map((r) => r.conferente_id))
+      const rawPreviewLinhas: ContagemPreviewRow[] = rawEnriched.map((r) => {
+        const nome = nomePorId.get(r.conferente_id)?.trim()
+        return nome ? { ...r, conferente_nome: nome } : r
+      })
+
       // Contagem diária: agrupa por dia + código + descrição e soma quantidades.
       // Inventário: uma linha por registro em `contagens_estoque` (mesma lógica da planilha: mesmo código em POS/Níveis diferentes não pode virar uma linha só).
       let previewList: ContagemPreviewRow[]
       if (inventario) {
-        previewList = [...rawEnriched].sort((a, b) => {
+        previewList = [...rawPreviewLinhas].sort((a, b) => {
           const g = (a.planilha_grupo_armazem ?? 0) - (b.planilha_grupo_armazem ?? 0)
           if (g !== 0) return g
           const ruaCmp = String(a.planilha_rua ?? '').localeCompare(String(b.planilha_rua ?? ''), 'pt-BR')
@@ -1431,7 +1435,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         })
       } else {
         const grouped = new Map<string, ContagemPreviewRow>()
-        for (const row of rawEnriched) {
+        for (const row of rawPreviewLinhas) {
           const day = dayKey
           const key = `${day}|${row.codigo_interno.trim().toLowerCase()}|${row.descricao.trim().toLowerCase()}`
           const existing = grouped.get(key)
@@ -1975,7 +1979,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         }
         const dfRaw = String(it.data_fabricacao ?? '').trim()
         const dvRaw = String(it.data_validade ?? '').trim()
-        if (dfRaw && dvRaw && dvRaw < dfRaw) {
+        if (isVencimentoAntesFabricacao(dfRaw, dvRaw)) {
           setChecklistError(
             `Datas inválidas para ${it.codigo_interno}${it.inventario_repeticao ? ` (${it.inventario_repeticao}ª contagem)` : ''}: vencimento antes da fabricação.`,
           )
@@ -2687,14 +2691,15 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
           <div style={{ display: 'grid', gap: 12, marginTop: 14 }}>
             {displayPreviewRows.map((r) => {
               const hasPhoto = Boolean(String(r.foto_base64 ?? '').trim())
+              const datasOrdemInvalida = isVencimentoAntesFabricacao(r.data_fabricacao, r.data_validade)
               return (
                 <div
                   key={r.id}
                   style={{
-                    border: '1px solid var(--border, #ccc)',
+                    border: datasOrdemInvalida ? '1px solid #c62828' : '1px solid var(--border, #ccc)',
                     borderRadius: 12,
                     padding: 12,
-                    background: 'rgba(255, 255, 255, 0.02)',
+                    background: datasOrdemInvalida ? 'rgba(198, 40, 40, 0.14)' : 'rgba(255, 255, 255, 0.02)',
                   }}
                 >
                   <div style={{ minWidth: 0 }}>
@@ -2918,8 +2923,16 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
           <tbody>
             {displayPreviewRows.map((r) => {
               const hasPhoto = Boolean(String(r.foto_base64 ?? '').trim())
+              const datasOrdemInvalida = isVencimentoAntesFabricacao(r.data_fabricacao, r.data_validade)
               return (
-                <tr key={r.id}>
+                <tr
+                  key={r.id}
+                  style={
+                    datasOrdemInvalida
+                      ? { background: 'rgba(198, 40, 40, 0.14)', boxShadow: 'inset 0 0 0 1px rgba(198, 40, 40, 0.55)' }
+                      : undefined
+                  }
+                >
                   <td style={tdStyle}>{inventarioCamaraLabelFromGrupo(r.planilha_grupo_armazem)}</td>
                   <td style={tdStyle}>
                     {r.planilha_rua != null && String(r.planilha_rua).trim() !== '' ? r.planilha_rua : '—'}
@@ -3732,9 +3745,18 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                       const hasPhoto = Boolean(String(it.foto_base64 ?? '').trim())
                       const pend = String(it.quantidade_contada ?? '').trim() === ''
                       const isEditing = checklistEditingKey === it.key && checklistEditDraft
+                      const datasOrdemInvalida = isVencimentoAntesFabricacao(it.data_fabricacao, it.data_validade)
 
                       return (
-                        <div key={it.key} style={{ border: '1px solid var(--border, #ccc)', borderRadius: 10, padding: 8 }}>
+                        <div
+                          key={it.key}
+                          style={{
+                            border: datasOrdemInvalida ? '1px solid #c62828' : '1px solid var(--border, #ccc)',
+                            borderRadius: 10,
+                            padding: 8,
+                            background: datasOrdemInvalida ? 'rgba(198, 40, 40, 0.12)' : undefined,
+                          }}
+                        >
                           {isEditing && checklistEditDraft ? (
                             <>
                               <div style={{ display: 'grid', gap: 8 }}>
@@ -3995,12 +4017,13 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                       marginTop: 12,
                       padding: 12,
                       borderRadius: 10,
-                      border: '1px solid var(--border, #ccc)',
-                      background: 'var(--panel-bg, rgba(0,0,0,.03))',
+                      border: '1px solid rgba(255, 235, 59, 0.35)',
+                      background: 'rgba(35, 35, 12, 0.55)',
+                      color: '#fff59d',
                     }}
                     aria-label="Inventário no formato da planilha"
                   >
-                    <h4 style={{ margin: '0 0 10px', fontSize: 15, fontWeight: 700, color: 'var(--text, #111)' }}>
+                    <h4 style={{ margin: '0 0 10px', fontSize: 15, fontWeight: 700, color: '#fff59d' }}>
                       Inventário — tabela no formato da planilha
                     </h4>
                     <InventarioPlanilhaTabela
@@ -4039,7 +4062,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                           gap: 10,
                           marginTop: 12,
                           fontSize: 13,
-                          color: 'var(--text, #888)',
+                          color: '#fff59d',
                         }}
                       >
                         <span>
@@ -4127,8 +4150,19 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                           const hasPhoto = Boolean(String(it.foto_base64 ?? '').trim())
                           const pend = String(it.quantidade_contada ?? '').trim() === ''
                           const isEditing = checklistEditingKey === it.key && checklistEditDraft
+                          const datasOrdemInvalida = isVencimentoAntesFabricacao(it.data_fabricacao, it.data_validade)
                           return (
-                            <tr key={it.key}>
+                            <tr
+                              key={it.key}
+                              style={
+                                datasOrdemInvalida
+                                  ? {
+                                      background: 'rgba(198, 40, 40, 0.12)',
+                                      boxShadow: 'inset 0 0 0 1px rgba(198, 40, 40, 0.45)',
+                                    }
+                                  : undefined
+                              }
+                            >
                               {isEditing && checklistEditDraft ? (
                                 <>
                                   {showChecklistColumn('conferente') ? (
@@ -5014,7 +5048,23 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
             />
           </label>
 
-          <div style={{ gridColumn: isMobile ? 'auto' : 'span 3' }}>
+          <div
+            style={{
+              gridColumn: isMobile ? 'auto' : 'span 6',
+              display: 'grid',
+              gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, minmax(0, 1fr))',
+              gap: 12,
+              ...(isVencimentoAntesFabricacao(dataFabricacao, dataVencimento)
+                ? {
+                    padding: '10px 12px',
+                    borderRadius: 8,
+                    border: '1px solid #c62828',
+                    background: 'rgba(198, 40, 40, 0.1)',
+                    boxSizing: 'border-box',
+                  }
+                : {}),
+            }}
+          >
             <label style={labelStyle}>
               Data de fabricação
               <input
@@ -5024,9 +5074,6 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                 style={inputStyle}
               />
             </label>
-          </div>
-
-          <div style={{ gridColumn: isMobile ? 'auto' : 'span 3' }}>
             <label style={labelStyle}>
               Data de vencimento
               <input

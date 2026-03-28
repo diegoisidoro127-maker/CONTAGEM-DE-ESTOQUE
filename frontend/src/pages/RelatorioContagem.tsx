@@ -4,6 +4,7 @@ import * as XLSX from 'xlsx'
 import { supabase } from '../lib/supabaseClient'
 import { loadChecklistVisibleColsFromStorage } from '../lib/checklistVisibleCols'
 import { enrichContagemRowsWithPlanilhaLinhas } from '../lib/enrichContagemRowsWithPlanilhaLinhas'
+import { fetchConferentesNomesPorIds } from '../lib/conferentesNomesBatch'
 import {
   agruparContagemDiariaComoPrevia,
   fetchPlanilhaContagemIdsParaIntervalo,
@@ -12,6 +13,7 @@ import {
 } from '../lib/contagemListagemCompat'
 import { formatContagemLabel, inventarioCamaraLabelFromGrupo } from '../components/inventario/inventarioPlanilhaModel'
 import { deleteInventarioPlanilhaLinhasForContagensIds } from '../lib/inventarioPlanilhaLinhasDelete'
+import { isVencimentoAntesFabricacao } from '../lib/contagemDatasValidacao'
 
 type ContagemRow = {
   id: string
@@ -102,6 +104,22 @@ function conferenteNomeRelatorio(r: ContagemRow): string {
   }
   const id = String(r.conferente_id ?? '').trim()
   return id !== '' ? id : '—'
+}
+
+/** Garante nome legível quando o embed `conferentes(nome)` não veio (RLS / PostgREST). */
+async function enrichRelatorioRowsConferenteNomes(rows: ContagemRow[]): Promise<ContagemRow[]> {
+  const ids = rows.map((r) => r.conferente_id).filter(Boolean) as string[]
+  const map = await fetchConferentesNomesPorIds(ids)
+  return rows.map((r) => {
+    const id = String(r.conferente_id ?? '').trim()
+    const nome = id ? map.get(id)?.trim() : ''
+    if (!nome) return r
+    return { ...r, conferentes: { nome } }
+  })
+}
+
+async function enrichPlanilhaEConferente(rows: ContagemRow[]): Promise<ContagemRow[]> {
+  return enrichContagemRowsWithPlanilhaLinhas(await enrichRelatorioRowsConferenteNomes(rows), 'RelatorioContagem')
 }
 
 function mergeContagemRowsById(
@@ -255,6 +273,69 @@ export default function RelatorioContagem({
     `
     const selectBasicoCompact = selectBasico.replace(/\s+/g, '')
 
+    /** Mesmas colunas do SELECT completo, sem embed `conferentes(nome)` (fallback quando o join falha). */
+    const selectFlatCompleto = `
+      id,
+      data_contagem,
+      data_hora_contagem,
+      conferente_id,
+      produto_id,
+      codigo_interno,
+      descricao,
+      unidade_medida,
+      quantidade_up,
+      up_adicional,
+      lote,
+      observacao,
+      data_fabricacao,
+      data_validade,
+      ean,
+      dun,
+      foto_base64,
+      origem,
+      inventario_repeticao,
+      inventario_numero_contagem
+    `
+    const selectFlatCompletoCompact = selectFlatCompleto.replace(/\s+/g, '')
+
+    /** Mesmo SELECT sem colunas de inventário, sem embed de conferente. */
+    const selectFlatSemColunasInventario = `
+      id,
+      data_contagem,
+      data_hora_contagem,
+      conferente_id,
+      produto_id,
+      codigo_interno,
+      descricao,
+      unidade_medida,
+      quantidade_up,
+      up_adicional,
+      lote,
+      observacao,
+      data_fabricacao,
+      data_validade,
+      ean,
+      dun,
+      foto_base64,
+      inventario_repeticao
+    `
+    const selectFlatSemColunasInventarioCompact = selectFlatSemColunasInventario.replace(/\s+/g, '')
+
+    const selectFlatBasico = `
+      id,
+      data_contagem,
+      data_hora_contagem,
+      conferente_id,
+      produto_id,
+      codigo_interno,
+      descricao,
+      unidade_medida,
+      quantidade_up,
+      lote,
+      observacao
+    `
+    const selectFlatBasicoCompact = selectFlatBasico.replace(/\s+/g, '')
+
     /** Mesmo SELECT completo, sem colunas de inventário (banco sem migração). */
     const selectSemColunasInventario = `
       id,
@@ -365,10 +446,23 @@ export default function RelatorioContagem({
       return data.map((r) => ({ ...r, origem: null, inventario_numero_contagem: n }))
     }
 
+    async function fetchRowsComFallbackEmbed(
+      selectComEmbed: string,
+      selectSemEmbed: string,
+      withNumeroFilter: boolean,
+    ): Promise<ContagemRow[]> {
+      try {
+        return (await fetchRows(selectComEmbed, withNumeroFilter)) as ContagemRow[]
+      } catch (err: unknown) {
+        if (isColumnMissingErrorRel(err)) throw err
+        return (await fetchRows(selectSemEmbed, withNumeroFilter)) as ContagemRow[]
+      }
+    }
+
     try {
-      const data = await fetchRows(selectCompletoCompact, true)
+      const data = await fetchRowsComFallbackEmbed(selectCompletoCompact, selectFlatCompletoCompact, true)
       return {
-        rows: await enrichContagemRowsWithPlanilhaLinhas(mapSemOrigem(data as ContagemRow[]), 'RelatorioContagem'),
+        rows: await enrichPlanilhaEConferente(mapSemOrigem(data)),
         origemAusenteNoResultado: false,
       }
     } catch (e: unknown) {
@@ -376,12 +470,13 @@ export default function RelatorioContagem({
         throw new Error(e && typeof e === 'object' && 'message' in e ? String((e as Error).message) : 'Erro ao carregar relatório.')
       }
       try {
-        const data = await fetchRows(selectSemColunasInventarioCompact, true)
+        const data = await fetchRowsComFallbackEmbed(
+          selectSemColunasInventarioCompact,
+          selectFlatSemColunasInventarioCompact,
+          true,
+        )
         return {
-          rows: await enrichContagemRowsWithPlanilhaLinhas(
-            mapSemOrigem(injectNumeroSeFiltroAtivo(data as ContagemRow[])),
-            'RelatorioContagem',
-          ),
+          rows: await enrichPlanilhaEConferente(mapSemOrigem(injectNumeroSeFiltroAtivo(data))),
           successMessage:
             'Colunas origem / nº contagem ausentes no SELECT (migre com os SQL em supabase/sql). O filtro por nº da contagem foi aplicado no servidor.',
           origemAusenteNoResultado: true,
@@ -394,16 +489,19 @@ export default function RelatorioContagem({
         }
       }
       try {
-        const data = await fetchRows(selectSemColunasInventarioCompact, false)
+        const data = await fetchRowsComFallbackEmbed(
+          selectSemColunasInventarioCompact,
+          selectFlatSemColunasInventarioCompact,
+          false,
+        )
         return {
-          rows: await enrichContagemRowsWithPlanilhaLinhas(
+          rows: await enrichPlanilhaEConferente(
             (data as ContagemRow[]).map((r) => ({
               ...r,
               origem: null,
               inventario_repeticao: null,
               inventario_numero_contagem: null,
             })) as ContagemRow[],
-            'RelatorioContagem',
           ),
           successMessage:
             'Colunas de inventário ausentes no Supabase: relatório sem filtro por nº da contagem. Execute alter_contagens_estoque_origem_inventario.sql e alter_contagens_estoque_inventario_numero_contagem.sql.',
@@ -417,7 +515,7 @@ export default function RelatorioContagem({
         }
       }
       try {
-        const data = await fetchRows(selectBasicoCompact, false)
+        const data = await fetchRowsComFallbackEmbed(selectBasicoCompact, selectFlatBasicoCompact, false)
         const mapped = data.map((r) => ({
           ...r,
           data_fabricacao: null,
@@ -431,7 +529,7 @@ export default function RelatorioContagem({
           inventario_numero_contagem: null,
         }))
         return {
-          rows: await enrichContagemRowsWithPlanilhaLinhas(mapped as ContagemRow[], 'RelatorioContagem'),
+          rows: await enrichPlanilhaEConferente(mapped as ContagemRow[]),
           successMessage:
             'Relatório em modo compatível (menos colunas). Execute os scripts SQL do projeto no Supabase para todos os campos.',
           origemAusenteNoResultado: true,
@@ -1021,8 +1119,19 @@ export default function RelatorioContagem({
               <tbody>
                 {displayRows.map((r) => {
                   const hasPhoto = Boolean(String(r.foto_base64 ?? '').trim())
+                  const datasOrdemInvalida = isVencimentoAntesFabricacao(r.data_fabricacao, r.data_validade)
                   return (
-                  <tr key={r.id}>
+                  <tr
+                    key={r.id}
+                    style={
+                      datasOrdemInvalida
+                        ? {
+                            background: 'rgba(198, 40, 40, 0.14)',
+                            boxShadow: 'inset 0 0 0 1px rgba(198, 40, 40, 0.45)',
+                          }
+                        : undefined
+                    }
+                  >
                     <td style={tdStyle}>{inventarioCamaraLabelFromGrupo(r.planilha_grupo_armazem)}</td>
                     <td style={tdStyle}>
                       {r.planilha_rua != null && String(r.planilha_rua).trim() !== '' ? r.planilha_rua : '—'}

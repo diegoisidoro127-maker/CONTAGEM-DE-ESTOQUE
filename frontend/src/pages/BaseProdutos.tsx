@@ -380,11 +380,53 @@ export default function BaseProdutos() {
     setError('')
     setSuccess('')
     try {
-      let q = supabase.from(TABELA_PRODUTOS).delete()
-      q = buildFilterForRow(r)(q)
-      const { error: dErr } = await q
-      if (dErr) throw dErr
-      setSuccess(`Produto ${r.codigo_interno} excluído do banco.`)
+      const trimmedCod = r.codigo_interno.trim()
+
+      if (r.id && String(r.id).trim() !== '') {
+        const { data: del, error: dErr } = await supabase
+          .from(TABELA_PRODUTOS)
+          .delete()
+          .eq('id', r.id)
+          .select('id')
+        if (dErr) throw dErr
+        if (!del?.length) throw new Error('Nenhuma linha excluída (id não encontrado no banco).')
+      } else {
+        const { data: delExact, error: e1 } = await supabase
+          .from(TABELA_PRODUTOS)
+          .delete()
+          .eq('codigo_interno', trimmedCod)
+          .select('id')
+        if (e1) throw e1
+        if (!delExact?.length) {
+          const { data: all, error: lErr } = await supabase.from(TABELA_PRODUTOS).select('id,codigo_interno').limit(20000)
+          if (lErr) throw lErr
+          const exactValues = [
+            ...new Set(
+              (all ?? [])
+                .filter((row) => String(row.codigo_interno ?? '').trim() === trimmedCod)
+                .map((row) => String(row.codigo_interno ?? '')),
+            ),
+          ]
+          if (exactValues.length === 0) {
+            throw new Error(
+              'Nenhuma linha com esse código. Se no Supabase o código parece igual ao digitado, ele pode ter espaços — rode supabase/sql/normalize_todos_os_produtos_codigo_trim.sql ou use delete com trim() no SQL Editor.',
+            )
+          }
+          let total = 0
+          for (const exact of exactValues) {
+            const { data: del, error: de } = await supabase
+              .from(TABELA_PRODUTOS)
+              .delete()
+              .eq('codigo_interno', exact)
+              .select('id')
+            if (de) throw de
+            total += del?.length ?? 0
+          }
+          if (total === 0) throw new Error('Exclusão não removeu linhas.')
+        }
+      }
+
+      setSuccess(`Produto ${trimmedCod} excluído do banco.`)
       if (editingKey === k) {
         setEditingKey(null)
         setEditSnapshot(null)
@@ -479,8 +521,14 @@ export default function BaseProdutos() {
         confirmada no banco (se o Supabase retornar 0 linhas, aparece aviso de RLS). As colunas{' '}
         <strong>Alteração EAN</strong> e <strong>Alteração DUN</strong> mostram o dia da última alteração de cada código
         (execute <code style={{ fontSize: 12 }}>supabase/sql/alter_todos_os_produtos_ean_dun_alterado_em.sql</code> no
-        Supabase se necessário). <strong>Excluir</strong> remove a linha. Permissões INSERT/UPDATE/DELETE via RLS. Se aparecer{' '}
-        <strong>0 linhas</strong> ao salvar, execute no SQL Editor o arquivo{' '}
+        Supabase se necessário).         <strong>Excluir</strong> remove a linha. No painel Supabase (Table Editor), a exclusão exige{' '}
+        <strong>chave primária</strong> em <code style={{ fontSize: 12 }}>id</code> e linhas sem{' '}
+        <code style={{ fontSize: 12 }}>id</code> não podem ser apagadas pela UI — rode{' '}
+        <code style={{ fontSize: 12 }}>supabase/sql/alter_todos_os_produtos_primary_key.sql</code>. Se o DELETE no
+        SQL com <code style={{ fontSize: 12 }}>where codigo_interno = &apos;…&apos;</code> afetar 0 linhas, o código
+        no banco pode ter espaços — use <code style={{ fontSize: 12 }}>trim(both from codigo_interno)</code> ou rode{' '}
+        <code style={{ fontSize: 12 }}>supabase/sql/normalize_todos_os_produtos_codigo_trim.sql</code>. Permissões
+        INSERT/UPDATE/DELETE via RLS. Se aparecer <strong>0 linhas</strong> ao salvar, execute no SQL Editor o arquivo{' '}
         <code style={{ fontSize: 12 }}>supabase/sql/rls_todos_os_produtos_crud.sql</code>.
       </p>
 

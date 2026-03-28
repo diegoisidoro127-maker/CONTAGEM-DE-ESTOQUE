@@ -1,5 +1,6 @@
 import type { CSSProperties, Dispatch, SetStateAction } from 'react'
 import type { OfflineChecklistItem } from '../../lib/offlineContagemSession'
+import { isVencimentoAntesFabricacao } from '../../lib/contagemDatasValidacao'
 import { getInventarioRuaArmazem, inventarioArmazemPosNivel } from './inventarioPlanilhaModel'
 
 export type ChecklistEditDraft = {
@@ -69,30 +70,61 @@ export function InventarioPlanilhaTabela(props: InventarioPlanilhaTabelaProps) {
 
   const ruaPlanilha = getInventarioRuaArmazem(armazemContagem)
 
+  /** Texto amarelo no painel da planilha + cabeçalho congelado ao rolar. */
+  const corPainelAmarelo = '#fff59d'
+  const thPlanilha: CSSProperties = {
+    ...thStyle,
+    position: 'sticky',
+    top: 0,
+    zIndex: 2,
+    background: '#4a4a1c',
+    color: corPainelAmarelo,
+    borderBottom: '1px solid rgba(255, 235, 59, 0.35)',
+    boxShadow: '0 1px 0 rgba(0,0,0,.2)',
+  }
+  const tdPlanilha: CSSProperties = {
+    ...tdStyle,
+    color: corPainelAmarelo,
+    borderBottom: '1px solid rgba(255, 235, 59, 0.12)',
+  }
+  const inputPlanilha: CSSProperties = {
+    ...checklistQtdInputStyle,
+    color: corPainelAmarelo,
+    background: 'rgba(0,0,0,0.28)',
+    borderColor: 'rgba(255, 235, 59, 0.45)',
+  }
+
   return (
-    <div style={{ overflowX: 'auto', marginTop: 0 }}>
+    <div
+      style={{
+        overflow: 'auto',
+        overflowX: 'auto',
+        maxHeight: 'min(72vh, 640px)',
+        marginTop: 0,
+      }}
+    >
       <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 1660 }}>
         <thead>
           <tr>
-            <th style={thStyle}>RUA</th>
-            <th style={thStyle}>POS</th>
-            <th style={thStyle}>NIVEL</th>
-            {showChecklistColumn('conferente') ? <th style={thStyle}>Conferente</th> : null}
-            <th style={thStyle}>CÓDIGO</th>
-            <th style={thStyle}>DESCRIÇÃO</th>
-            {showChecklistColumn('unidade') ? <th style={thStyle}>UNIDADE</th> : null}
+            <th style={thPlanilha}>RUA</th>
+            <th style={thPlanilha}>POS</th>
+            <th style={thPlanilha}>NIVEL</th>
+            {showChecklistColumn('conferente') ? <th style={thPlanilha}>Conferente</th> : null}
+            <th style={thPlanilha}>CÓDIGO</th>
+            <th style={thPlanilha}>DESCRIÇÃO</th>
+            {showChecklistColumn('unidade') ? <th style={thPlanilha}>UNIDADE</th> : null}
             {showChecklistColumn('quantidade') ? (
-              <th style={thStyle}>{planilhaQtdContagemHeader}</th>
+              <th style={thPlanilha}>{planilhaQtdContagemHeader}</th>
             ) : null}
-            {showChecklistColumn('data_fabricacao') ? <th style={thStyle}>FABRICAÇÃO</th> : null}
-            {showChecklistColumn('data_validade') ? <th style={thStyle}>VENCIMENTO</th> : null}
-            {showChecklistColumn('lote') ? <th style={thStyle}>LOTE</th> : null}
-            {showChecklistColumn('up') ? <th style={thStyle}>UP</th> : null}
-            {showChecklistColumn('observacao') ? <th style={thStyle}>Observação</th> : null}
-            {showChecklistColumn('ean') ? <th style={thStyle}>EAN</th> : null}
-            {showChecklistColumn('dun') ? <th style={thStyle}>DUN</th> : null}
-            {showChecklistColumn('foto') ? <th style={thStyle}>Foto</th> : null}
-            {showChecklistColumn('acoes') ? <th style={thStyle}>Ações</th> : null}
+            {showChecklistColumn('data_fabricacao') ? <th style={thPlanilha}>FABRICAÇÃO</th> : null}
+            {showChecklistColumn('data_validade') ? <th style={thPlanilha}>VENCIMENTO</th> : null}
+            {showChecklistColumn('lote') ? <th style={thPlanilha}>LOTE</th> : null}
+            {showChecklistColumn('up') ? <th style={thPlanilha}>UP</th> : null}
+            {showChecklistColumn('observacao') ? <th style={thPlanilha}>Observação</th> : null}
+            {showChecklistColumn('ean') ? <th style={thPlanilha}>EAN</th> : null}
+            {showChecklistColumn('dun') ? <th style={thPlanilha}>DUN</th> : null}
+            {showChecklistColumn('foto') ? <th style={thPlanilha}>Foto</th> : null}
+            {showChecklistColumn('acoes') ? <th style={thPlanilha}>Ações</th> : null}
           </tr>
         </thead>
         <tbody>
@@ -101,19 +133,30 @@ export function InventarioPlanilhaTabela(props: InventarioPlanilhaTabelaProps) {
             const isEditing = checklistEditingKey === it.key && checklistEditDraft
             const pn =
               armazemItemsSorted.length > 0 ? inventarioArmazemPosNivel(armazemItemsSorted, it) : { pos: 0, nivel: 0 }
+            const datasOrdemInvalida = isVencimentoAntesFabricacao(it.data_fabricacao, it.data_validade)
             return (
-              <tr key={it.key}>
+              <tr
+                key={it.key}
+                style={
+                  datasOrdemInvalida
+                    ? {
+                        background: 'rgba(120, 20, 20, 0.42)',
+                        boxShadow: 'inset 0 0 0 1px rgba(255, 120, 120, 0.5)',
+                      }
+                    : undefined
+                }
+              >
                 {isEditing && checklistEditDraft ? (
                   <>
-                    <td style={tdStyle}>{ruaPlanilha}</td>
-                    <td style={tdStyle}>{pn.pos}</td>
-                    <td style={tdStyle}>{pn.nivel}</td>
+                    <td style={tdPlanilha}>{ruaPlanilha}</td>
+                    <td style={tdPlanilha}>{pn.pos}</td>
+                    <td style={tdPlanilha}>{pn.nivel}</td>
                     {showChecklistColumn('conferente') ? (
-                      <td style={{ ...tdStyle, color: 'var(--text-muted, #888)', maxWidth: 140 }} title="Conferente da sessão">
+                      <td style={{ ...tdPlanilha, maxWidth: 140 }} title="Conferente da sessão">
                         {conferenteLabel}
                       </td>
                     ) : null}
-                    <td style={tdStyle}>
+                    <td style={tdPlanilha}>
                       <input
                         value={checklistEditDraft.codigo_interno}
                         onChange={(e) =>
@@ -123,11 +166,11 @@ export function InventarioPlanilhaTabela(props: InventarioPlanilhaTabelaProps) {
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
                         }}
-                        style={{ ...checklistQtdInputStyle, width: '100%', minWidth: 100 }}
+                        style={{ ...inputPlanilha, width: '100%', minWidth: 100 }}
                         aria-label="Código do produto"
                       />
                     </td>
-                    <td style={{ ...tdStyle, whiteSpace: 'normal', maxWidth: 420 }}>
+                    <td style={{ ...tdPlanilha, whiteSpace: 'normal', maxWidth: 420 }}>
                       <textarea
                         value={checklistEditDraft.descricao}
                         onChange={(e) =>
@@ -135,7 +178,7 @@ export function InventarioPlanilhaTabela(props: InventarioPlanilhaTabelaProps) {
                         }
                         rows={2}
                         style={{
-                          ...checklistQtdInputStyle,
+                          ...inputPlanilha,
                           width: '100%',
                           minWidth: 160,
                           resize: 'vertical',
@@ -145,7 +188,7 @@ export function InventarioPlanilhaTabela(props: InventarioPlanilhaTabelaProps) {
                       />
                     </td>
                     {showChecklistColumn('unidade') ? (
-                      <td style={tdStyle}>
+                      <td style={tdPlanilha}>
                         <input
                           type="text"
                           value={it.unidade_medida ?? ''}
@@ -154,14 +197,14 @@ export function InventarioPlanilhaTabela(props: InventarioPlanilhaTabelaProps) {
                               unidade_medida: e.target.value.trim() === '' ? null : e.target.value,
                             })
                           }
-                          style={{ ...checklistQtdInputStyle, width: 72, minWidth: 56 }}
+                          style={{ ...inputPlanilha, width: 72, minWidth: 56 }}
                           placeholder="—"
                           aria-label="Unidade de medida"
                         />
                       </td>
                     ) : null}
                     {showChecklistColumn('quantidade') ? (
-                      <td style={tdStyle}>
+                      <td style={tdPlanilha}>
                         <input
                           type="text"
                           inputMode="decimal"
@@ -171,52 +214,52 @@ export function InventarioPlanilhaTabela(props: InventarioPlanilhaTabelaProps) {
                               d ? { ...d, quantidade_contada: e.target.value } : d,
                             )
                           }
-                          style={checklistQtdInputStyle}
+                          style={inputPlanilha}
                           placeholder="—"
                           aria-label="Quantidade"
                         />
                       </td>
                     ) : null}
                     {showChecklistColumn('data_fabricacao') ? (
-                      <td style={tdStyle}>
+                      <td style={tdPlanilha}>
                         <input
                           type="date"
                           value={it.data_fabricacao ?? ''}
                           onChange={(e) =>
                             updateOfflineItemFields(it.key, { data_fabricacao: e.target.value })
                           }
-                          style={{ ...checklistQtdInputStyle, width: 145 }}
+                          style={{ ...inputPlanilha, width: 145 }}
                           aria-label={`Data de fabricação ${it.codigo_interno}`}
                         />
                       </td>
                     ) : null}
                     {showChecklistColumn('data_validade') ? (
-                      <td style={tdStyle}>
+                      <td style={tdPlanilha}>
                         <input
                           type="date"
                           value={it.data_validade ?? ''}
                           onChange={(e) =>
                             updateOfflineItemFields(it.key, { data_validade: e.target.value })
                           }
-                          style={{ ...checklistQtdInputStyle, width: 145 }}
+                          style={{ ...inputPlanilha, width: 145 }}
                           aria-label={`Data de vencimento ${it.codigo_interno}`}
                         />
                       </td>
                     ) : null}
                     {showChecklistColumn('lote') ? (
-                      <td style={tdStyle}>
+                      <td style={tdPlanilha}>
                         <input
                           type="text"
                           value={it.lote ?? ''}
                           onChange={(e) => updateOfflineItemFields(it.key, { lote: e.target.value })}
-                          style={{ ...checklistQtdInputStyle, width: '100%', minWidth: 88 }}
+                          style={{ ...inputPlanilha, width: '100%', minWidth: 88 }}
                           placeholder="—"
                           aria-label={`Lote ${it.codigo_interno}`}
                         />
                       </td>
                     ) : null}
                     {showChecklistColumn('up') ? (
-                      <td style={tdStyle}>
+                      <td style={tdPlanilha}>
                         <input
                           type="text"
                           inputMode="decimal"
@@ -224,28 +267,28 @@ export function InventarioPlanilhaTabela(props: InventarioPlanilhaTabelaProps) {
                           onChange={(e) =>
                             updateOfflineItemFields(it.key, { up_quantidade: e.target.value })
                           }
-                          style={{ ...checklistQtdInputStyle, width: '100%', minWidth: 72 }}
+                          style={{ ...inputPlanilha, width: '100%', minWidth: 72 }}
                           placeholder="—"
                           aria-label={`UP ${it.codigo_interno}`}
                         />
                       </td>
                     ) : null}
                     {showChecklistColumn('observacao') ? (
-                      <td style={tdStyle}>
+                      <td style={tdPlanilha}>
                         <input
                           type="text"
                           value={it.observacao ?? ''}
                           onChange={(e) =>
                             updateOfflineItemFields(it.key, { observacao: e.target.value })
                           }
-                          style={{ ...checklistQtdInputStyle, width: 180 }}
+                          style={{ ...inputPlanilha, width: 180 }}
                           placeholder="—"
                           aria-label={`Observação ${it.codigo_interno}`}
                         />
                       </td>
                     ) : null}
                     {showChecklistColumn('ean') ? (
-                      <td style={tdStyle}>
+                      <td style={tdPlanilha}>
                         <input
                           type="text"
                           inputMode="numeric"
@@ -255,14 +298,14 @@ export function InventarioPlanilhaTabela(props: InventarioPlanilhaTabelaProps) {
                               ean: e.target.value.trim() === '' ? null : e.target.value,
                             })
                           }
-                          style={{ ...checklistQtdInputStyle, width: 130, minWidth: 100 }}
+                          style={{ ...inputPlanilha, width: 130, minWidth: 100 }}
                           placeholder="—"
                           aria-label={`EAN ${it.codigo_interno}`}
                         />
                       </td>
                     ) : null}
                     {showChecklistColumn('dun') ? (
-                      <td style={tdStyle}>
+                      <td style={tdPlanilha}>
                         <input
                           type="text"
                           inputMode="numeric"
@@ -272,17 +315,17 @@ export function InventarioPlanilhaTabela(props: InventarioPlanilhaTabelaProps) {
                               dun: e.target.value.trim() === '' ? null : e.target.value,
                             })
                           }
-                          style={{ ...checklistQtdInputStyle, width: 130, minWidth: 100 }}
+                          style={{ ...inputPlanilha, width: 130, minWidth: 100 }}
                           placeholder="—"
                           aria-label={`DUN ${it.codigo_interno}`}
                         />
                       </td>
                     ) : null}
                     {showChecklistColumn('foto') ? (
-                      <td style={tdStyle}>{hasPhoto ? 'Com foto' : 'Sem foto'}</td>
+                      <td style={tdPlanilha}>{hasPhoto ? 'Com foto' : 'Sem foto'}</td>
                     ) : null}
                     {showChecklistColumn('acoes') ? (
-                      <td style={{ ...tdStyle, whiteSpace: 'normal' }}>
+                      <td style={{ ...tdPlanilha, whiteSpace: 'normal' }}>
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                           <button
                             type="button"
@@ -304,15 +347,15 @@ export function InventarioPlanilhaTabela(props: InventarioPlanilhaTabelaProps) {
                   </>
                 ) : (
                   <>
-                    <td style={tdStyle}>{ruaPlanilha}</td>
-                    <td style={tdStyle}>{pn.pos}</td>
-                    <td style={tdStyle}>{pn.nivel}</td>
+                    <td style={tdPlanilha}>{ruaPlanilha}</td>
+                    <td style={tdPlanilha}>{pn.pos}</td>
+                    <td style={tdPlanilha}>{pn.nivel}</td>
                     {showChecklistColumn('conferente') ? (
-                      <td style={{ ...tdStyle, color: 'var(--text-muted, #888)', maxWidth: 140 }} title="Conferente da sessão">
+                      <td style={{ ...tdPlanilha, maxWidth: 140 }} title="Conferente da sessão">
                         {conferenteLabel}
                       </td>
                     ) : null}
-                    <td style={tdStyle}>
+                    <td style={tdPlanilha}>
                       {onPlanilhaCodigoBlur ? (
                         <input
                           value={it.codigo_interno}
@@ -323,7 +366,7 @@ export function InventarioPlanilhaTabela(props: InventarioPlanilhaTabelaProps) {
                           onKeyDown={(e) => {
                             if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
                           }}
-                          style={{ ...checklistQtdInputStyle, width: '100%', minWidth: 100 }}
+                          style={{ ...inputPlanilha, width: '100%', minWidth: 100 }}
                           placeholder="Digite o código"
                           aria-label="Código do produto"
                         />
@@ -338,9 +381,9 @@ export function InventarioPlanilhaTabela(props: InventarioPlanilhaTabelaProps) {
                         </>
                       )}
                     </td>
-                    <td style={{ ...tdStyle, whiteSpace: 'normal', maxWidth: 420 }}>{it.descricao}</td>
+                    <td style={{ ...tdPlanilha, whiteSpace: 'normal', maxWidth: 420 }}>{it.descricao}</td>
                     {showChecklistColumn('unidade') ? (
-                      <td style={tdStyle}>
+                      <td style={tdPlanilha}>
                         <input
                           type="text"
                           value={it.unidade_medida ?? ''}
@@ -349,21 +392,21 @@ export function InventarioPlanilhaTabela(props: InventarioPlanilhaTabelaProps) {
                               unidade_medida: e.target.value.trim() === '' ? null : e.target.value,
                             })
                           }
-                          style={{ ...checklistQtdInputStyle, width: 72, minWidth: 56 }}
+                          style={{ ...inputPlanilha, width: 72, minWidth: 56 }}
                           placeholder="—"
                           aria-label={`Unidade ${it.codigo_interno}`}
                         />
                       </td>
                     ) : null}
                     {showChecklistColumn('quantidade') ? (
-                      <td style={tdStyle}>
+                      <td style={tdPlanilha}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                           <input
                             type="text"
                             inputMode="decimal"
                             value={it.quantidade_contada}
                             onChange={(e) => updateOfflineItemQty(it.key, e.target.value)}
-                            style={checklistQtdInputStyle}
+                            style={inputPlanilha}
                             placeholder="—"
                             aria-label={`Quantidade ${it.codigo_interno}${it.inventario_repeticao ? ` ${it.inventario_repeticao}ª` : ''}`}
                           />
@@ -374,45 +417,45 @@ export function InventarioPlanilhaTabela(props: InventarioPlanilhaTabelaProps) {
                       </td>
                     ) : null}
                     {showChecklistColumn('data_fabricacao') ? (
-                      <td style={tdStyle}>
+                      <td style={tdPlanilha}>
                         <input
                           type="date"
                           value={it.data_fabricacao ?? ''}
                           onChange={(e) =>
                             updateOfflineItemFields(it.key, { data_fabricacao: e.target.value })
                           }
-                          style={{ ...checklistQtdInputStyle, width: 145 }}
+                          style={{ ...inputPlanilha, width: 145 }}
                           aria-label={`Data de fabricação ${it.codigo_interno}`}
                         />
                       </td>
                     ) : null}
                     {showChecklistColumn('data_validade') ? (
-                      <td style={tdStyle}>
+                      <td style={tdPlanilha}>
                         <input
                           type="date"
                           value={it.data_validade ?? ''}
                           onChange={(e) =>
                             updateOfflineItemFields(it.key, { data_validade: e.target.value })
                           }
-                          style={{ ...checklistQtdInputStyle, width: 145 }}
+                          style={{ ...inputPlanilha, width: 145 }}
                           aria-label={`Data de vencimento ${it.codigo_interno}`}
                         />
                       </td>
                     ) : null}
                     {showChecklistColumn('lote') ? (
-                      <td style={tdStyle}>
+                      <td style={tdPlanilha}>
                         <input
                           type="text"
                           value={it.lote ?? ''}
                           onChange={(e) => updateOfflineItemFields(it.key, { lote: e.target.value })}
-                          style={{ ...checklistQtdInputStyle, width: '100%', minWidth: 88 }}
+                          style={{ ...inputPlanilha, width: '100%', minWidth: 88 }}
                           placeholder="—"
                           aria-label={`Lote ${it.codigo_interno}`}
                         />
                       </td>
                     ) : null}
                     {showChecklistColumn('up') ? (
-                      <td style={tdStyle}>
+                      <td style={tdPlanilha}>
                         <input
                           type="text"
                           inputMode="decimal"
@@ -420,28 +463,28 @@ export function InventarioPlanilhaTabela(props: InventarioPlanilhaTabelaProps) {
                           onChange={(e) =>
                             updateOfflineItemFields(it.key, { up_quantidade: e.target.value })
                           }
-                          style={{ ...checklistQtdInputStyle, width: '100%', minWidth: 72 }}
+                          style={{ ...inputPlanilha, width: '100%', minWidth: 72 }}
                           placeholder="—"
                           aria-label={`UP ${it.codigo_interno}`}
                         />
                       </td>
                     ) : null}
                     {showChecklistColumn('observacao') ? (
-                      <td style={tdStyle}>
+                      <td style={tdPlanilha}>
                         <input
                           type="text"
                           value={it.observacao ?? ''}
                           onChange={(e) =>
                             updateOfflineItemFields(it.key, { observacao: e.target.value })
                           }
-                          style={{ ...checklistQtdInputStyle, width: 180 }}
+                          style={{ ...inputPlanilha, width: 180 }}
                           placeholder="—"
                           aria-label={`Observação ${it.codigo_interno}`}
                         />
                       </td>
                     ) : null}
                     {showChecklistColumn('ean') ? (
-                      <td style={tdStyle}>
+                      <td style={tdPlanilha}>
                         <input
                           type="text"
                           inputMode="numeric"
@@ -451,14 +494,14 @@ export function InventarioPlanilhaTabela(props: InventarioPlanilhaTabelaProps) {
                               ean: e.target.value.trim() === '' ? null : e.target.value,
                             })
                           }
-                          style={{ ...checklistQtdInputStyle, width: 130, minWidth: 100 }}
+                          style={{ ...inputPlanilha, width: 130, minWidth: 100 }}
                           placeholder="—"
                           aria-label={`EAN ${it.codigo_interno}`}
                         />
                       </td>
                     ) : null}
                     {showChecklistColumn('dun') ? (
-                      <td style={tdStyle}>
+                      <td style={tdPlanilha}>
                         <input
                           type="text"
                           inputMode="numeric"
@@ -468,17 +511,17 @@ export function InventarioPlanilhaTabela(props: InventarioPlanilhaTabelaProps) {
                               dun: e.target.value.trim() === '' ? null : e.target.value,
                             })
                           }
-                          style={{ ...checklistQtdInputStyle, width: 130, minWidth: 100 }}
+                          style={{ ...inputPlanilha, width: 130, minWidth: 100 }}
                           placeholder="—"
                           aria-label={`DUN ${it.codigo_interno}`}
                         />
                       </td>
                     ) : null}
                     {showChecklistColumn('foto') ? (
-                      <td style={tdStyle}>{hasPhoto ? 'Com foto' : 'Sem foto'}</td>
+                      <td style={tdPlanilha}>{hasPhoto ? 'Com foto' : 'Sem foto'}</td>
                     ) : null}
                     {showChecklistColumn('acoes') ? (
-                      <td style={{ ...tdStyle, whiteSpace: 'normal' }}>
+                      <td style={{ ...tdPlanilha, whiteSpace: 'normal' }}>
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                           <button
                             type="button"

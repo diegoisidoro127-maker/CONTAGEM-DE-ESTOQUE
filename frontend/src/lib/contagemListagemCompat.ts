@@ -86,6 +86,25 @@ type RowMergeContagemDiaria = Record<string, unknown> & {
   source_ids?: string[]
 }
 
+function nomeConferenteJoinRow(r: Record<string, unknown>): string {
+  const c = r.conferentes as { nome?: string } | Array<{ nome?: string }> | null | undefined
+  if (!c) return ''
+  if (Array.isArray(c)) return String(c[0]?.nome ?? '').trim()
+  return String((c as { nome?: string }).nome ?? '').trim()
+}
+
+/** Mesma ideia da prévia: vários conferentes no mesmo grupo viram lista única ordenada. */
+function mergeConferenteNomesUnicos(a: string, b: string): string {
+  const parts = new Set<string>()
+  for (const s of [a, b]) {
+    for (const part of String(s ?? '').split(',')) {
+      const t = part.trim()
+      if (t) parts.add(t)
+    }
+  }
+  return Array.from(parts).sort((x, y) => x.localeCompare(y, 'pt-BR')).join(', ')
+}
+
 /**
  * Agrupa como a prévia da contagem diária: mesmo dia civil + código + descrição, somando quantidades.
  */
@@ -120,6 +139,15 @@ export function agruparContagemDiariaComoPrevia<T extends RowMergeContagemDiaria
     if (!existing.ean && row.ean) existing.ean = row.ean
     if (!existing.dun && row.dun) existing.dun = row.dun
     if (!existing.foto_base64 && row.foto_base64) existing.foto_base64 = row.foto_base64
+    const ex = existing as Record<string, unknown>
+    const n1 = nomeConferenteJoinRow(ex)
+    const n2 = nomeConferenteJoinRow(row as Record<string, unknown>)
+    const merged = mergeConferenteNomesUnicos(n1, n2)
+    if (merged && merged !== n1) {
+      ex.conferentes = { nome: merged }
+    } else if (!n1 && n2) {
+      ex.conferentes = (row as Record<string, unknown>).conferentes
+    }
   }
   return Array.from(grouped.values())
 }

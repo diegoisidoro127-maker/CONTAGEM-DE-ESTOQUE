@@ -31,14 +31,14 @@ export async function enrichContagemRowsWithPlanilhaLinhas<T extends { id: strin
   if (ids.length === 0) return rows.map(withNullPlanilha)
   const byContagem = new Map<
     string,
-    { grupo_armazem: number; rua: string | null; posicao: number; nivel: number }
+    { grupo_armazem: number; rua: string | null; posicao: number; nivel: number; numero_contagem: number | null }
   >()
   try {
     for (let i = 0; i < ids.length; i += PLANILHA_ENRICH_CHUNK) {
       const chunk = ids.slice(i, i + PLANILHA_ENRICH_CHUNK)
       const { data, error } = await supabase
         .from('inventario_planilha_linhas')
-        .select('contagens_estoque_id, grupo_armazem, rua, posicao, nivel')
+        .select('contagens_estoque_id, grupo_armazem, rua, posicao, nivel, numero_contagem')
         .in('contagens_estoque_id', chunk)
       if (error) {
         console.warn(`[${logLabel}] inventario_planilha_linhas:`, error)
@@ -47,11 +47,13 @@ export async function enrichContagemRowsWithPlanilhaLinhas<T extends { id: strin
       for (const row of data ?? []) {
         const cid = row.contagens_estoque_id != null ? String(row.contagens_estoque_id) : ''
         if (!cid || byContagem.has(cid)) continue
+        const nc = row.numero_contagem
         byContagem.set(cid, {
           grupo_armazem: Number(row.grupo_armazem),
           rua: row.rua != null ? String(row.rua) : null,
           posicao: Number(row.posicao),
           nivel: Number(row.nivel),
+          numero_contagem: nc != null && nc !== '' && Number.isFinite(Number(nc)) ? Number(nc) : null,
         })
       }
     }
@@ -62,12 +64,19 @@ export async function enrichContagemRowsWithPlanilhaLinhas<T extends { id: strin
   return rows.map((r) => {
     const p = byContagem.get(r.id)
     if (!p) return withNullPlanilha(r)
+    const existingNc = (r as { inventario_numero_contagem?: number | null }).inventario_numero_contagem
+    const hasNc =
+      existingNc != null &&
+      String(existingNc).trim() !== '' &&
+      Number.isFinite(Number(existingNc))
     return {
       ...r,
       planilha_grupo_armazem: p.grupo_armazem,
       planilha_rua: p.rua,
       planilha_posicao: p.posicao,
       planilha_nivel: p.nivel,
+      /** Rodada 1ª–4ª: usa `contagens_estoque` se existir; senão espelha a planilha. */
+      inventario_numero_contagem: hasNc ? Number(existingNc) : p.numero_contagem,
     }
   })
 }
