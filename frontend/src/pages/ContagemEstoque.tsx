@@ -389,8 +389,16 @@ function dataContagemYmdFromIso(isoLike: string) {
 
 /** Erro PostgREST / Postgres: coluna inexistente (ex.: migração `origem` ainda não aplicada). */
 function isMissingDbColumnError(e: unknown, columnSqlName: string): boolean {
-  const code = e && typeof e === 'object' && 'code' in e ? String((e as { code: unknown }).code) : ''
-  const msg = (e && typeof e === 'object' && 'message' in e ? String((e as { message: unknown }).message) : String(e)).toLowerCase()
+  const o = e && typeof e === 'object' ? (e as Record<string, unknown>) : null
+  const code = o && 'code' in o ? String(o.code) : ''
+  const msg = [
+    o && 'message' in o ? String(o.message) : '',
+    o && 'details' in o ? String(o.details) : '',
+    o && 'hint' in o ? String(o.hint) : '',
+    String(e),
+  ]
+    .join(' ')
+    .toLowerCase()
   const col = columnSqlName.toLowerCase()
   return (
     code === '42703' ||
@@ -1324,46 +1332,82 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       'id,data_hora_contagem,data_contagem,conferente_id,conferentes(nome),codigo_interno,descricao,unidade_medida,quantidade_up,up_adicional,lote,observacao,data_fabricacao,data_validade,ean,dun,foto_base64,origem,inventario_repeticao,inventario_numero_contagem'
     const previewSelectSemNc =
       'id,data_hora_contagem,data_contagem,conferente_id,conferentes(nome),codigo_interno,descricao,unidade_medida,quantidade_up,up_adicional,lote,observacao,data_fabricacao,data_validade,ean,dun,foto_base64,origem,inventario_repeticao'
-    let { data, error } = await supabase
-      .from('contagens_estoque')
-      .select(previewSelectFull)
-      .eq('data_contagem', dayKey)
-      .order('data_hora_contagem', { ascending: false })
-      .limit(2000)
+    /** Sem `origem` no SELECT (coluna inexistente no banco) — mantém repetição e nº para agrupar a prévia. */
+    const previewSelectSemOrigem =
+      'id,data_hora_contagem,data_contagem,conferente_id,conferentes(nome),codigo_interno,descricao,unidade_medida,quantidade_up,up_adicional,lote,observacao,data_fabricacao,data_validade,ean,dun,foto_base64,inventario_repeticao,inventario_numero_contagem'
+    const previewSelectSemOrigemSemNc =
+      'id,data_hora_contagem,data_contagem,conferente_id,conferentes(nome),codigo_interno,descricao,unidade_medida,quantidade_up,up_adicional,lote,observacao,data_fabricacao,data_validade,ean,dun,foto_base64,inventario_repeticao'
+    /** Sem repetição (último fallback antes do legado mínimo). */
+    const previewSelectSemOrigemSemRepSemNc =
+      'id,data_hora_contagem,data_contagem,conferente_id,conferentes(nome),codigo_interno,descricao,unidade_medida,quantidade_up,up_adicional,lote,observacao,data_fabricacao,data_validade,ean,dun,foto_base64,inventario_numero_contagem'
+    const previewSelectSemRepSemNcComOrigem =
+      'id,data_hora_contagem,data_contagem,conferente_id,conferentes(nome),codigo_interno,descricao,unidade_medida,quantidade_up,up_adicional,lote,observacao,data_fabricacao,data_validade,ean,dun,foto_base64,origem,inventario_numero_contagem'
 
-    if (error && isMissingDbColumnError(error, 'inventario_numero_contagem')) {
-      const rNc = await supabase
+    let previewOrigemAusenteNoResultado = false
+
+    const queryPreview = (selectStr: string) =>
+      supabase
         .from('contagens_estoque')
-        .select(previewSelectSemNc)
+        .select(selectStr)
         .eq('data_contagem', dayKey)
         .order('data_hora_contagem', { ascending: false })
         .limit(2000)
+
+    let { data, error } = await queryPreview(previewSelectFull)
+
+    if (error && isMissingDbColumnError(error, 'origem')) {
+      previewOrigemAusenteNoResultado = true
+      const r = await queryPreview(previewSelectSemOrigem)
+      data = r.data
+      error = r.error
+    }
+
+    if (error && isMissingDbColumnError(error, 'inventario_numero_contagem')) {
+      const sel = previewOrigemAusenteNoResultado ? previewSelectSemOrigemSemNc : previewSelectSemNc
+      const rNc = await queryPreview(sel)
       data = rNc.data
       error = rNc.error
+    }
+
+    /** Ex.: SELECT completo falhou por `inventario_numero_contagem`; o retry com `semNc` ainda pedia `origem`. */
+    if (error && isMissingDbColumnError(error, 'origem') && !previewOrigemAusenteNoResultado) {
+      previewOrigemAusenteNoResultado = true
+      const rO = await queryPreview(previewSelectSemOrigemSemNc)
+      data = rO.data
+      error = rO.error
+    }
+
+    if (error && isMissingDbColumnError(error, 'inventario_repeticao')) {
+      const sel = previewOrigemAusenteNoResultado ? previewSelectSemOrigemSemRepSemNc : previewSelectSemRepSemNcComOrigem
+      const rRep = await queryPreview(sel)
+      data = rRep.data
+      error = rRep.error
     }
 
     if (error) {
       const legacySelect =
         'id,data_hora_contagem,data_contagem,conferente_id,conferentes(nome),codigo_interno,descricao,unidade_medida,quantidade_up,up_adicional,lote,observacao,data_fabricacao,data_validade,ean,dun,foto_base64'
-      const leg = await supabase
-        .from('contagens_estoque')
-        .select(legacySelect)
-        .eq('data_contagem', dayKey)
-        .order('data_hora_contagem', { ascending: false })
-        .limit(2000)
+      const leg = await queryPreview(legacySelect)
       if (leg.error) {
-        setSaveError(`Erro ao carregar prévia: ${error.message}`)
+        setSaveError(`Erro ao carregar prévia: ${leg.error.message}`)
         setPreviewLoading(false)
         return
       }
       data = leg.data
       error = null
+      previewOrigemAusenteNoResultado = true
     }
 
     if (!error) {
       const byOrigem = (r: Record<string, unknown>) => {
         const o = r.origem != null ? String(r.origem) : ''
-        return inventario ? o === 'inventario' : o !== 'inventario'
+        if (!inventario) return o !== 'inventario'
+        if (o === 'inventario') return true
+        if (previewOrigemAusenteNoResultado) return true
+        const hasInvMeta =
+          (r.inventario_repeticao != null && String(r.inventario_repeticao).trim() !== '') ||
+          (r.inventario_numero_contagem != null && String(r.inventario_numero_contagem).trim() !== '')
+        return hasInvMeta
       }
       const rawRows = (data ?? []).filter(byOrigem).map((r: Record<string, any>) => {
         const nomeJoin = conferenteNomeFromJoin(r)

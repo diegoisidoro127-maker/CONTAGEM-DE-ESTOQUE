@@ -49,12 +49,22 @@ function formatDateBRFromYmd(ymd: string | null | undefined): string {
 }
 
 function isColumnMissingErrorRel(e: unknown): boolean {
-  const code =
-    e && typeof e === 'object' && 'code' in e ? String((e as { code: unknown }).code) : ''
-  const msg = (
-    e && typeof e === 'object' && 'message' in e ? String((e as { message: unknown }).message) : String(e)
-  ).toLowerCase()
-  return code === '42703' || msg.includes('does not exist')
+  const o = e && typeof e === 'object' ? (e as Record<string, unknown>) : null
+  const code = o && 'code' in o ? String(o.code) : ''
+  const msg = [
+    o && 'message' in o ? String(o.message) : '',
+    o && 'details' in o ? String(o.details) : '',
+    o && 'hint' in o ? String(o.hint) : '',
+    String(e),
+  ]
+    .join(' ')
+    .toLowerCase()
+  return (
+    code === '42703' ||
+    msg.includes('does not exist') ||
+    msg.includes('could not find') ||
+    msg.includes('schema cache')
+  )
 }
 
 const TABELA_PRODUTOS_REL = 'Todos os Produtos'
@@ -221,18 +231,42 @@ export default function RelatorioContagem({ mode = 'periodo' }: RelatorioContage
       unidade_medida,
       quantidade_up,
       lote,
-      observacao,
-      origem,
-      inventario_numero_contagem
+      observacao
     `
     const selectBasicoCompact = selectBasico.replace(/\s+/g, '')
 
-    const applyNumeroInventario = (q: ReturnType<typeof supabase.from<'contagens_estoque'>>) => {
-      if (numeroContagemFilter === 'todas') return q
+    /** Mesmo SELECT completo, sem colunas de inventário (banco sem migração). */
+    const selectSemColunasInventario = `
+      id,
+      data_contagem,
+      data_hora_contagem,
+      conferente_id,
+      conferentes(nome),
+      produto_id,
+      codigo_interno,
+      descricao,
+      unidade_medida,
+      quantidade_up,
+      up_adicional,
+      lote,
+      observacao,
+      data_fabricacao,
+      data_validade,
+      ean,
+      dun,
+      foto_base64
+    `
+    const selectSemColunasInventarioCompact = selectSemColunasInventario.replace(/\s+/g, '')
+
+    const applyNumeroInventario = (
+      q: ReturnType<typeof supabase.from<'contagens_estoque'>>,
+      withNumeroFilter: boolean,
+    ) => {
+      if (!withNumeroFilter || numeroContagemFilter === 'todas') return q
       return q.eq('inventario_numero_contagem', Number(numeroContagemFilter))
     }
 
-    async function fetchRows(selectCompact: string): Promise<ContagemRow[]> {
+    async function fetchRows(selectCompact: string, withNumeroFilter: boolean): Promise<ContagemRow[]> {
       const base = () =>
         applyNumeroInventario(
           supabase
@@ -240,6 +274,7 @@ export default function RelatorioContagem({ mode = 'periodo' }: RelatorioContage
             .select(selectCompact)
             .order('codigo_interno', { ascending: true })
             .order('data_hora_contagem', { ascending: true }),
+          withNumeroFilter,
         )
 
       if (allTime) {
@@ -275,33 +310,85 @@ export default function RelatorioContagem({ mode = 'periodo' }: RelatorioContage
       return mergeContagemRowsById(r1.data as ContagemRow[], r2.data as ContagemRow[])
     }
 
+    const mapSemOrigem = (data: ContagemRow[]): ContagemRow[] =>
+      data.map((r) => ({
+        ...r,
+        origem: r.origem ?? null,
+        inventario_numero_contagem: r.inventario_numero_contagem ?? null,
+      }))
+
+    /** SELECT sem `inventario_numero_contagem` não devolve o campo; se filtramos por nº no servidor, preenche para exibição. */
+    const injectNumeroSeFiltroAtivo = (data: ContagemRow[]): ContagemRow[] => {
+      if (numeroContagemFilter === 'todas') {
+        return data.map((r) => ({ ...r, origem: null }))
+      }
+      const n = Number(numeroContagemFilter)
+      return data.map((r) => ({ ...r, origem: null, inventario_numero_contagem: n }))
+    }
+
     try {
-      const data = await fetchRows(selectCompletoCompact)
-      setRows(data)
+      const data = await fetchRows(selectCompletoCompact, true)
+      setRows(mapSemOrigem(data as ContagemRow[]))
     } catch (e: any) {
-      const msg = e?.message ? String(e.message) : ''
-      if (String(e?.code ?? '') === '42703' || msg.toLowerCase().includes('does not exist')) {
-        try {
-          const data = await fetchRows(selectBasicoCompact)
-          const mapped = data.map((r) => ({
-            ...r,
-            data_fabricacao: null,
-            data_validade: null,
-            ean: null,
-            dun: null,
-            up_adicional: null,
-            foto_base64: null,
-          }))
-          setRows(mapped as ContagemRow[])
-          setError('')
-          return
-        } catch (e2: any) {
-          setError(e2?.message ? String(e2.message) : 'Erro ao carregar relatório (fallback).')
+      if (!isColumnMissingErrorRel(e)) {
+        setError(e?.message ? String(e.message) : 'Erro ao carregar relatório.')
+        return
+      }
+      try {
+        const data = await fetchRows(selectSemColunasInventarioCompact, true)
+        setRows(mapSemOrigem(injectNumeroSeFiltroAtivo(data as ContagemRow[])))
+        setSuccess(
+          'Colunas origem / nº contagem ausentes no SELECT (migre com os SQL em supabase/sql). O filtro por nº da contagem foi aplicado no servidor.',
+        )
+        setError('')
+        return
+      } catch (e2: any) {
+        if (!isColumnMissingErrorRel(e2)) {
+          setError(e2?.message ? String(e2.message) : 'Erro ao carregar relatório.')
           return
         }
       }
-
-      setError(e?.message ? String(e.message) : 'Erro ao carregar relatório.')
+      try {
+        const data = await fetchRows(selectSemColunasInventarioCompact, false)
+        setRows(
+          (data as ContagemRow[]).map((r) => ({
+            ...r,
+            origem: null,
+            inventario_numero_contagem: null,
+          })) as ContagemRow[],
+        )
+        setSuccess(
+          'Colunas de inventário ausentes no Supabase: relatório sem filtro por nº da contagem. Execute alter_contagens_estoque_origem_inventario.sql e alter_contagens_estoque_inventario_numero_contagem.sql.',
+        )
+        setError('')
+        return
+      } catch (e3: any) {
+        if (!isColumnMissingErrorRel(e3)) {
+          setError(e3?.message ? String(e3.message) : 'Erro ao carregar relatório.')
+          return
+        }
+      }
+      try {
+        const data = await fetchRows(selectBasicoCompact, false)
+        const mapped = data.map((r) => ({
+          ...r,
+          data_fabricacao: null,
+          data_validade: null,
+          ean: null,
+          dun: null,
+          up_adicional: null,
+          foto_base64: null,
+          origem: null,
+          inventario_numero_contagem: null,
+        }))
+        setRows(mapped as ContagemRow[])
+        setSuccess(
+          'Relatório em modo compatível (menos colunas). Execute os scripts SQL do projeto no Supabase para todos os campos.',
+        )
+        setError('')
+      } catch (e4: any) {
+        setError(e4?.message ? String(e4.message) : 'Erro ao carregar relatório (fallback).')
+      }
     } finally {
       setLoading(false)
     }
