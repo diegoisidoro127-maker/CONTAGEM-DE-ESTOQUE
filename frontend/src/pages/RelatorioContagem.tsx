@@ -25,6 +25,10 @@ type ContagemRow = {
   ean: string | null
   dun: string | null
   foto_base64?: string | null
+  /** contagem_diaria | inventario — quando existir na tabela */
+  origem?: string | null
+  /** 1–4 na rodada de inventário; contagem diária costuma ser null */
+  inventario_numero_contagem?: number | null
 }
 
 function toISODateLocal(d: Date) {
@@ -80,6 +84,27 @@ function diaContagemLabel(r: ContagemRow) {
   return formatDateBR(ymd)
 }
 
+function mergeContagemRowsById(
+  a: ContagemRow[] | null | undefined,
+  b: ContagemRow[] | null | undefined,
+): ContagemRow[] {
+  const map = new Map<string, ContagemRow>()
+  for (const r of a ?? []) map.set(r.id, r)
+  for (const r of b ?? []) map.set(r.id, r)
+  return Array.from(map.values()).sort((x, y) => {
+    const c = String(x.codigo_interno).localeCompare(String(y.codigo_interno), 'pt-BR')
+    if (c !== 0) return c
+    return new Date(x.data_hora_contagem).getTime() - new Date(y.data_hora_contagem).getTime()
+  })
+}
+
+function origemLabel(r: ContagemRow): string {
+  const o = String(r.origem ?? '').trim().toLowerCase()
+  if (o === 'inventario') return 'Inventário'
+  if (o === 'contagem_diaria' || o === '') return 'Contagem diária'
+  return r.origem ?? '—'
+}
+
 /** Monta data URL para exibição (base64 puro ou já com prefixo). */
 function fotoDataUrl(b64: string | null | undefined): string | null {
   const s = String(b64 ?? '').trim()
@@ -114,6 +139,8 @@ export default function RelatorioContagem({ mode = 'periodo' }: RelatorioContage
   const [allTime, setAllTime] = useState(false)
   const [useSingleDay, setUseSingleDay] = useState(false)
   const [singleDay, setSingleDay] = useState(() => toISODateLocal(new Date()))
+  /** Filtro opcional: qual das 4 contagens da rodada de inventário (linhas sem número = contagem diária). */
+  const [numeroContagemFilter, setNumeroContagemFilter] = useState<'todas' | '1' | '2' | '3' | '4'>('todas')
   const [rows, setRows] = useState<ContagemRow[]>([])
   const [relatorioPage, setRelatorioPage] = useState(1)
   const [relatorioShowAll, setRelatorioShowAll] = useState(false)
@@ -158,109 +185,105 @@ export default function RelatorioContagem({ mode = 'periodo' }: RelatorioContage
     setSuccess('')
     setRows([])
 
+    const selectCompleto = `
+      id,
+      data_contagem,
+      data_hora_contagem,
+      conferente_id,
+      conferentes(nome),
+      produto_id,
+      codigo_interno,
+      descricao,
+      unidade_medida,
+      quantidade_up,
+      up_adicional,
+      lote,
+      observacao,
+      data_fabricacao,
+      data_validade,
+      ean,
+      dun,
+      foto_base64,
+      origem,
+      inventario_numero_contagem
+    `
+    const selectCompletoCompact = selectCompleto.replace(/\s+/g, '')
+
+    const selectBasico = `
+      id,
+      data_contagem,
+      data_hora_contagem,
+      conferente_id,
+      conferentes(nome),
+      produto_id,
+      codigo_interno,
+      descricao,
+      unidade_medida,
+      quantidade_up,
+      lote,
+      observacao,
+      origem,
+      inventario_numero_contagem
+    `
+    const selectBasicoCompact = selectBasico.replace(/\s+/g, '')
+
+    const applyNumeroInventario = (q: ReturnType<typeof supabase.from<'contagens_estoque'>>) => {
+      if (numeroContagemFilter === 'todas') return q
+      return q.eq('inventario_numero_contagem', Number(numeroContagemFilter))
+    }
+
+    async function fetchRows(selectCompact: string): Promise<ContagemRow[]> {
+      const base = () =>
+        applyNumeroInventario(
+          supabase
+            .from('contagens_estoque')
+            .select(selectCompact)
+            .order('codigo_interno', { ascending: true })
+            .order('data_hora_contagem', { ascending: true }),
+        )
+
+      if (allTime) {
+        const { data, error: qError } = await base().limit(20000)
+        if (qError) throw qError
+        return (data ?? []) as unknown as ContagemRow[]
+      }
+
+      if (useSingleDay) {
+        const startIso = `${singleDay}T00:00:00`
+        const endIso = `${singleDay}T23:59:59`
+        const qComDia = base().eq('data_contagem', singleDay)
+        const qLegado = base()
+          .is('data_contagem', null)
+          .gte('data_hora_contagem', startIso)
+          .lte('data_hora_contagem', endIso)
+        const [r1, r2] = await Promise.all([qComDia.limit(20000), qLegado.limit(20000)])
+        if (r1.error) throw r1.error
+        if (r2.error) throw r2.error
+        return mergeContagemRowsById(r1.data as ContagemRow[], r2.data as ContagemRow[])
+      }
+
+      const startIso = `${startDate}T00:00:00`
+      const endIso = `${endDate}T23:59:59`
+      const qComDia = base().gte('data_contagem', startDate).lte('data_contagem', endDate)
+      const qLegado = base()
+        .is('data_contagem', null)
+        .gte('data_hora_contagem', startIso)
+        .lte('data_hora_contagem', endIso)
+      const [r1, r2] = await Promise.all([qComDia.limit(20000), qLegado.limit(20000)])
+      if (r1.error) throw r1.error
+      if (r2.error) throw r2.error
+      return mergeContagemRowsById(r1.data as ContagemRow[], r2.data as ContagemRow[])
+    }
+
     try {
-      const selectCompleto = `
-        id,
-        data_contagem,
-        data_hora_contagem,
-        conferente_id,
-        conferentes(nome),
-        produto_id,
-        codigo_interno,
-        descricao,
-        unidade_medida,
-        quantidade_up,
-        up_adicional,
-        lote,
-        observacao,
-        data_fabricacao,
-        data_validade,
-        ean,
-        dun,
-        foto_base64
-      `
-      const selectCompletoCompact = selectCompleto.replace(/\s+/g, '')
-
-      let q = supabase
-        .from('contagens_estoque')
-        .select(selectCompletoCompact)
-        .order('codigo_interno', { ascending: true })
-        .order('data_hora_contagem', { ascending: true })
-
-      if (!allTime) {
-        if (useSingleDay) {
-          // filtro por DIA único de contagem (00:00 até 23:59)
-          const startIso = `${singleDay}T00:00:00`
-          const endIso = `${singleDay}T23:59:59`
-          q = q.gte('data_hora_contagem', startIso).lte('data_hora_contagem', endIso)
-        } else {
-          // filtro por INTERVALO (00:00 até 23:59)
-          const startIso = `${startDate}T00:00:00`
-          const endIso = `${endDate}T23:59:59`
-          q = q.gte('data_hora_contagem', startIso).lte('data_hora_contagem', endIso)
-        }
-      }
-
-      const applyDatesFilters = (query: typeof q) => {
-        if (allTime) return query
-        if (useSingleDay) {
-          const startIso = `${singleDay}T00:00:00`
-          const endIso = `${singleDay}T23:59:59`
-          return query.gte('data_hora_contagem', startIso).lte('data_hora_contagem', endIso)
-        }
-        const startIso = `${startDate}T00:00:00`
-        const endIso = `${endDate}T23:59:59`
-        return query.gte('data_hora_contagem', startIso).lte('data_hora_contagem', endIso)
-      }
-
-      const qFiltroCompleto = applyDatesFilters(q)
-      const { data, error: qError } = await qFiltroCompleto.limit(20000)
-      if (qError) throw qError
-
-      setRows((data ?? []) as unknown as ContagemRow[])
+      const data = await fetchRows(selectCompletoCompact)
+      setRows(data)
     } catch (e: any) {
       const msg = e?.message ? String(e.message) : ''
-      // Se a tabela não tiver algumas colunas extras (ex.: data_fabricacao), faz fallback sem elas.
       if (String(e?.code ?? '') === '42703' || msg.toLowerCase().includes('does not exist')) {
         try {
-          const selectBasico = `
-            id,
-            data_contagem,
-            data_hora_contagem,
-            conferente_id,
-            conferentes(nome),
-            produto_id,
-            codigo_interno,
-            descricao,
-            unidade_medida,
-            quantidade_up,
-            lote,
-            observacao
-          `
-          const selectBasicoCompact = selectBasico.replace(/\s+/g, '')
-
-          let q2 = supabase
-            .from('contagens_estoque')
-            .select(selectBasicoCompact)
-            .order('codigo_interno', { ascending: true })
-            .order('data_hora_contagem', { ascending: true })
-
-          if (!allTime) {
-            if (useSingleDay) {
-              const startIso = `${singleDay}T00:00:00`
-              const endIso = `${singleDay}T23:59:59`
-              q2 = q2.gte('data_hora_contagem', startIso).lte('data_hora_contagem', endIso)
-            } else {
-              const startIso = `${startDate}T00:00:00`
-              const endIso = `${endDate}T23:59:59`
-              q2 = q2.gte('data_hora_contagem', startIso).lte('data_hora_contagem', endIso)
-            }
-          }
-
-          const { data, error: qError2 } = await q2.limit(20000)
-          if (qError2) throw qError2
-
-          const mapped = (data ?? []).map((r: any) => ({
+          const data = await fetchRows(selectBasicoCompact)
+          const mapped = data.map((r) => ({
             ...r,
             data_fabricacao: null,
             data_validade: null,
@@ -269,8 +292,7 @@ export default function RelatorioContagem({ mode = 'periodo' }: RelatorioContage
             up_adicional: null,
             foto_base64: null,
           }))
-
-          setRows(mapped as unknown as ContagemRow[])
+          setRows(mapped as ContagemRow[])
           setError('')
           return
         } catch (e2: any) {
@@ -335,6 +357,11 @@ export default function RelatorioContagem({ mode = 'periodo' }: RelatorioContage
     const sheetRows = rows.map((r) => ({
       Conferente: conferenteNome(r),
       'Dia da contagem': diaContagemLabel(r),
+      Origem: origemLabel(r),
+      'Nº contagem (inv.)':
+        r.inventario_numero_contagem != null && r.inventario_numero_contagem > 0
+          ? String(r.inventario_numero_contagem)
+          : '',
       'Data e hora do registro': formatDateTimeBR(r.data_hora_contagem),
       'Código do produto': r.codigo_interno,
       Descrição: r.descricao,
@@ -522,6 +549,12 @@ export default function RelatorioContagem({ mode = 'periodo' }: RelatorioContage
     <div style={{ padding: 16, maxWidth: 1400, margin: '0 auto' }}>
       <h2>{isDiaMode ? 'Todas as contagens' : 'Relatório completo por data de contagem'}</h2>
 
+      <p style={{ margin: '8px 0 0', fontSize: 13, color: 'var(--text-muted, #888)', lineHeight: 1.45 }}>
+        O período e o &quot;filtrar por dia&quot; usam o <strong>dia civil da contagem</strong> (campo gravado na
+        sessão), alinhado ao que você vê na tela de contagem — não só o relógio do momento em que salvou. Registros
+        muito antigos sem esse campo usam a data/hora do registro.
+      </p>
+
       <div style={{ display: 'grid', gap: 12, marginTop: 12 }}>
         <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'flex-end' }}>
           <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13 }}>
@@ -581,6 +614,22 @@ export default function RelatorioContagem({ mode = 'periodo' }: RelatorioContage
               style={{ padding: '10px 10px', border: '1px solid #ccc', borderRadius: 8 }}
             />
           </div>
+
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13 }}>
+            Nº contagem (inventário)
+            <select
+              value={numeroContagemFilter}
+              onChange={(e) => setNumeroContagemFilter(e.target.value as typeof numeroContagemFilter)}
+              style={{ padding: '10px 10px', border: '1px solid #ccc', borderRadius: 8, minWidth: 160 }}
+              title="Filtra pela rodada do inventário (1ª a 4ª). Contagens diárias não têm número e somem se você escolher 1–4."
+            >
+              <option value="todas">Todas</option>
+              <option value="1">1ª contagem</option>
+              <option value="2">2ª contagem</option>
+              <option value="3">3ª contagem</option>
+              <option value="4">4ª contagem</option>
+            </select>
+          </label>
 
           <button
             type="button"
@@ -651,11 +700,13 @@ export default function RelatorioContagem({ mode = 'periodo' }: RelatorioContage
         {rows.length ? (
           <div style={{ overflowX: 'auto' }}>
             {relatorioPagination}
-            <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 1980 }}>
+            <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 2200 }}>
               <thead>
                 <tr>
                   <th style={thStyle}>Conferente</th>
                   <th style={thStyle}>Dia da contagem</th>
+                  <th style={thStyle}>Origem</th>
+                  <th style={thStyle}>Nº inv.</th>
                   <th style={thStyle}>Data e hora do registro</th>
                   <th style={thStyle}>Código do produto</th>
                   <th style={thStyle}>Descrição</th>
@@ -679,6 +730,12 @@ export default function RelatorioContagem({ mode = 'periodo' }: RelatorioContage
                   <tr key={r.id}>
                     <td style={tdStyle}>{conferenteNome(r)}</td>
                     <td style={tdStyle}>{diaContagemLabel(r)}</td>
+                    <td style={tdStyle}>{origemLabel(r)}</td>
+                    <td style={tdStyle}>
+                      {r.inventario_numero_contagem != null && r.inventario_numero_contagem > 0
+                        ? `${r.inventario_numero_contagem}ª`
+                        : '—'}
+                    </td>
                     <td style={tdStyle}>{formatDateTimeBR(r.data_hora_contagem)}</td>
                     <td style={tdStyle}>{r.codigo_interno}</td>
                     <td style={tdStyle}>{r.descricao}</td>
