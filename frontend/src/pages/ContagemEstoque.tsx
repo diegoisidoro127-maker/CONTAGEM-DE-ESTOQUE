@@ -28,33 +28,15 @@ import {
   INVENTARIO_ARMAZEM_NUM_GRUPOS,
   INVENTARIO_PLANILHA_LINHAS_TOTAIS_POR_ABA,
 } from '../components/inventario/inventarioPlanilhaModel'
+import {
+  CHECKLIST_VISIBLE_COLS_STORAGE,
+  loadChecklistVisibleColsFromStorage,
+} from '../lib/checklistVisibleCols'
 
 const PREVIEW_PAGE_SIZE = 15
 const CHECKLIST_PAGE_SIZE = 15
 /** Linhas por página na tabela “Inventário — formato planilha” (cada aba pode ter centenas de linhas). */
 const PLANILHA_TABELA_PAGE_SIZE = 30
-
-const CHECKLIST_VISIBLE_COLS_STORAGE = {
-  contagem: 'contagem-checklist-visible-cols',
-  inventario: 'inventario-checklist-visible-cols',
-} as const
-
-function loadChecklistVisibleColsFromStorage(inventario: boolean): Record<string, boolean> {
-  try {
-    const k = inventario ? CHECKLIST_VISIBLE_COLS_STORAGE.inventario : CHECKLIST_VISIBLE_COLS_STORAGE.contagem
-    const raw = localStorage.getItem(k)
-    if (!raw) return {}
-    const parsed = JSON.parse(raw) as unknown
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
-    const out: Record<string, boolean> = {}
-    for (const [key, v] of Object.entries(parsed as Record<string, unknown>)) {
-      if (typeof v === 'boolean') out[key] = v
-    }
-    return out
-  } catch {
-    return {}
-  }
-}
 
 type Conferente = {
   id: string
@@ -2496,11 +2478,84 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
   }
 
   function renderPreviewTable() {
+    /** Mesma regra da lista principal (Ocultar/mostrar colunas). */
+    const prevCol = (id: string) => checklistVisibleCols[id] !== false
+    const previewVisColCount = [
+      'codigo',
+      'descricao',
+      'unidade',
+      'quantidade',
+      'data_fabricacao',
+      'data_validade',
+      'lote',
+      'up',
+      'observacao',
+      'ean',
+      'dun',
+      'foto',
+      'acoes',
+    ].filter(prevCol).length
+
     const totalFiltered = filteredPreviewRows.length
     const rangeFrom =
       totalFiltered === 0 ? 0 : previewShowAll ? 1 : (previewPageSafe - 1) * PREVIEW_PAGE_SIZE + 1
     const rangeTo =
       totalFiltered === 0 ? 0 : previewShowAll ? totalFiltered : Math.min(previewPageSafe * PREVIEW_PAGE_SIZE, totalFiltered)
+
+    const previewFiltersBar = (
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
+        <input
+          value={previewFilterConferente}
+          onChange={(e) => setPreviewFilterConferente(e.target.value)}
+          placeholder="Filtrar conferente"
+          style={{ padding: '8px 10px', border: '1px solid #ccc', borderRadius: 8, flex: '1 1 180px' }}
+        />
+        <input
+          value={previewFilterCodigo}
+          onChange={(e) => setPreviewFilterCodigo(e.target.value)}
+          placeholder="Filtrar código"
+          style={{ padding: '8px 10px', border: '1px solid #ccc', borderRadius: 8, flex: '1 1 160px' }}
+        />
+        <input
+          value={previewFilterDescricao}
+          onChange={(e) => setPreviewFilterDescricao(e.target.value)}
+          placeholder="Filtrar descrição"
+          style={{ padding: '8px 10px', border: '1px solid #ccc', borderRadius: 8, flex: '1 1 200px' }}
+        />
+        <input
+          type="date"
+          value={previewFilterData}
+          onChange={(e) => setPreviewFilterData(e.target.value)}
+          style={{ padding: '8px 10px', border: '1px solid #ccc', borderRadius: 8, flex: '1 1 160px' }}
+        />
+        {inventario ? (
+          <select
+            value={previewFilterInventarioNumeroContagem}
+            onChange={(e) => setPreviewFilterInventarioNumeroContagem(e.target.value)}
+            style={{ padding: '8px 10px', border: '1px solid #ccc', borderRadius: 8, flex: '1 1 120px' }}
+            aria-label="Filtrar por número da contagem"
+          >
+            <option value="">Todas as contagens</option>
+            <option value="1">1ª contagem</option>
+            <option value="2">2ª contagem</option>
+            <option value="3">3ª contagem</option>
+            <option value="4">4ª contagem</option>
+          </select>
+        ) : null}
+        <input
+          value={previewFilterLote}
+          onChange={(e) => setPreviewFilterLote(e.target.value)}
+          placeholder="Filtrar lote"
+          style={{ padding: '8px 10px', border: '1px solid #ccc', borderRadius: 8, flex: '1 1 140px' }}
+        />
+        <input
+          value={previewFilterObs}
+          onChange={(e) => setPreviewFilterObs(e.target.value)}
+          placeholder="Filtrar observação"
+          style={{ padding: '8px 10px', border: '1px solid #ccc', borderRadius: 8, flex: '1 1 140px' }}
+        />
+      </div>
+    )
 
     const previewNavStyleBtn = (disabled: boolean) => ({
       padding: '6px 12px',
@@ -2572,64 +2627,12 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       return (
         <div style={{ overflowX: 'hidden', marginTop: 16 }}>
           {previewRowError ? <div style={{ color: '#b00020', marginBottom: 8 }}>{previewRowError}</div> : null}
-
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-            <input
-              value={previewFilterConferente}
-              onChange={(e) => setPreviewFilterConferente(e.target.value)}
-              placeholder="Filtrar conferente"
-              style={{ padding: '8px 10px', border: '1px solid #ccc', borderRadius: 8, flex: '1 1 180px' }}
-            />
-            <input
-              value={previewFilterCodigo}
-              onChange={(e) => setPreviewFilterCodigo(e.target.value)}
-              placeholder="Filtrar código"
-              style={{ padding: '8px 10px', border: '1px solid #ccc', borderRadius: 8, flex: '1 1 160px' }}
-            />
-            <input
-              value={previewFilterDescricao}
-              onChange={(e) => setPreviewFilterDescricao(e.target.value)}
-              placeholder="Filtrar descrição"
-              style={{ padding: '8px 10px', border: '1px solid #ccc', borderRadius: 8, flex: '1 1 200px' }}
-            />
-            <input
-              type="date"
-              value={previewFilterData}
-              onChange={(e) => setPreviewFilterData(e.target.value)}
-              style={{ padding: '8px 10px', border: '1px solid #ccc', borderRadius: 8, flex: '1 1 160px' }}
-            />
-            {inventario ? (
-              <select
-                value={previewFilterInventarioNumeroContagem}
-                onChange={(e) => setPreviewFilterInventarioNumeroContagem(e.target.value)}
-                style={{ padding: '8px 10px', border: '1px solid #ccc', borderRadius: 8, flex: '1 1 120px' }}
-                aria-label="Filtrar por número da contagem"
-              >
-                <option value="">Todas as contagens</option>
-                <option value="1">1ª contagem</option>
-                <option value="2">2ª contagem</option>
-                <option value="3">3ª contagem</option>
-                <option value="4">4ª contagem</option>
-              </select>
-            ) : null}
-            <input
-              value={previewFilterLote}
-              onChange={(e) => setPreviewFilterLote(e.target.value)}
-              placeholder="Filtrar lote"
-              style={{ padding: '8px 10px', border: '1px solid #ccc', borderRadius: 8, flex: '1 1 140px' }}
-            />
-            <input
-              value={previewFilterObs}
-              onChange={(e) => setPreviewFilterObs(e.target.value)}
-              placeholder="Filtrar observação"
-              style={{ padding: '8px 10px', border: '1px solid #ccc', borderRadius: 8, flex: '1 1 140px' }}
-            />
-          </div>
-
+          {previewFiltersBar}
           {previewPagination}
 
           <div style={{ display: 'grid', gap: 12, marginTop: 14 }}>
             {displayPreviewRows.map((r) => {
+              const hasPhoto = Boolean(String(r.foto_base64 ?? '').trim())
               return (
                 <div
                   key={r.id}
@@ -2640,35 +2643,29 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                     background: 'rgba(255, 255, 255, 0.02)',
                   }}
                 >
-                  <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 12, color: 'var(--text, #888)' }}>Conferente</div>
-                      <div style={{ fontSize: 13, fontWeight: 600 }}>{r.conferente_nome}</div>
+                  <div style={{ minWidth: 0 }}>
+                    {prevCol('codigo') ? (
+                      <>
+                        <div style={{ fontSize: 12, color: 'var(--text, #888)' }}>Código do produto</div>
+                        <div style={{ fontSize: 13, fontWeight: 800, fontFamily: 'monospace' }}>{r.codigo_interno}</div>
+                      </>
+                    ) : null}
 
-                      <div style={{ fontSize: 12, color: 'var(--text, #888)', marginTop: 8 }}>Dia da contagem</div>
-                      <div style={{ fontSize: 13 }}>{formatDateBRFromYmd(r.data_contagem)}</div>
+                    {prevCol('descricao') ? (
+                      <>
+                        <div style={{ fontSize: 12, color: 'var(--text, #888)', marginTop: 8 }}>Descrição</div>
+                        <div style={{ fontSize: 13, color: 'var(--text, #111)' }}>{r.descricao}</div>
+                      </>
+                    ) : null}
 
-                      {inventario ? (
-                        <>
-                          <div style={{ fontSize: 12, color: 'var(--text, #888)', marginTop: 8 }}>Nº contagem</div>
-                          <div style={{ fontSize: 13 }}>
-                            {r.inventario_numero_contagem != null ? `${r.inventario_numero_contagem}ª` : '—'}
-                          </div>
-                        </>
-                      ) : null}
+                    {prevCol('unidade') ? (
+                      <>
+                        <div style={{ fontSize: 12, color: 'var(--text, #888)', marginTop: 8 }}>Unidade de medida</div>
+                        <div style={{ fontSize: 13 }}>{r.unidade_medida ?? '—'}</div>
+                      </>
+                    ) : null}
 
-                      <div style={{ fontSize: 12, color: 'var(--text, #888)', marginTop: 8 }}>Data e hora do registro</div>
-                      <div style={{ fontSize: 13 }}>{formatDateTimeBRFromIso(r.data_hora_contagem)}</div>
-
-                      <div style={{ fontSize: 12, color: 'var(--text, #888)', marginTop: 8 }}>Código do produto</div>
-                      <div style={{ fontSize: 13, fontWeight: 800, fontFamily: 'monospace' }}>{r.codigo_interno}</div>
-
-                      <div style={{ fontSize: 12, color: 'var(--text, #888)', marginTop: 8 }}>Descrição</div>
-                      <div style={{ fontSize: 13, color: 'var(--text, #111)' }}>{r.descricao}</div>
-
-                      <div style={{ fontSize: 12, color: 'var(--text, #888)', marginTop: 8 }}>Unidade de medida</div>
-                      <div style={{ fontSize: 13 }}>{r.unidade_medida ?? '—'}</div>
-
+                    {prevCol('quantidade') ? (
                       <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text, #555)' }}>
                         Quantidade contada:
                         {editingPreviewId === r.id ? (
@@ -2690,41 +2687,49 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                           <span style={{ marginLeft: 8 }}>{r.quantidade_up}</span>
                         )}
                       </div>
+                    ) : null}
 
+                    {prevCol('data_fabricacao') ? (
                       <div style={{ marginTop: 6, fontSize: 12, color: 'var(--text, #555)' }}>
                         Data de fabricação:{' '}
                         {r.data_fabricacao ? formatDateBRFromYmd(String(r.data_fabricacao).slice(0, 10)) : '—'}
                       </div>
+                    ) : null}
+                    {prevCol('data_validade') ? (
                       <div style={{ marginTop: 4, fontSize: 12, color: 'var(--text, #555)' }}>
                         Data de vencimento:{' '}
                         {r.data_validade ? formatDateBRFromYmd(String(r.data_validade).slice(0, 10)) : '—'}
                       </div>
+                    ) : null}
 
+                    {prevCol('lote') ? (
                       <div style={{ marginTop: 6, fontSize: 12, color: 'var(--text, #555)' }}>Lote: {r.lote ?? '—'}</div>
+                    ) : null}
 
+                    {prevCol('up') ? (
                       <div style={{ marginTop: 6, fontSize: 12, color: 'var(--text, #555)' }}>
                         UP: {r.quantidade_up_secundaria != null ? r.quantidade_up_secundaria : '—'}
                       </div>
+                    ) : null}
+                    {prevCol('observacao') ? (
                       <div style={{ marginTop: 4, fontSize: 12, color: 'var(--text, #555)' }}>
                         Observação: {r.observacao ?? '—'}
                       </div>
+                    ) : null}
+                    {prevCol('ean') ? (
                       <div style={{ marginTop: 4, fontSize: 12, color: 'var(--text, #555)' }}>EAN: {r.ean ?? '—'}</div>
+                    ) : null}
+                    {prevCol('dun') ? (
                       <div style={{ marginTop: 4, fontSize: 12, color: 'var(--text, #555)' }}>DUN: {r.dun ?? '—'}</div>
-                    </div>
-
-                    <div style={{ width: 86, flexShrink: 0 }}>
-                      {r.foto_base64 ? (
-                        <img
-                          src={`data:image/jpeg;base64,${r.foto_base64}`}
-                          alt="Foto do produto"
-                          style={{ width: 86, height: 64, objectFit: 'cover', borderRadius: 10, border: '1px solid #eee' }}
-                        />
-                      ) : (
-                        <div style={{ color: 'var(--text, #888)', fontSize: 12 }}>Sem foto</div>
-                      )}
-                    </div>
+                    ) : null}
+                    {prevCol('foto') ? (
+                      <div style={{ marginTop: 4, fontSize: 12, color: 'var(--text, #555)' }}>
+                        Foto: {hasPhoto ? 'Com foto' : 'Sem foto'}
+                      </div>
+                    ) : null}
                   </div>
 
+                  {prevCol('acoes') ? (
                   <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     {editingPreviewId === r.id ? (
                       <>
@@ -2784,6 +2789,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                       </>
                     )}
                   </div>
+                  ) : null}
                 </div>
               )
             })}
@@ -2795,222 +2801,144 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     return (
       <div style={{ overflowX: 'auto', marginTop: 16 }}>
         {previewRowError ? <div style={{ color: '#b00020', marginBottom: 8 }}>{previewRowError}</div> : null}
+        {previewFiltersBar}
         {previewPagination}
         <table
           style={{
             borderCollapse: 'collapse',
             width: '100%',
-            minWidth: isMobile ? 820 : inventario ? 2060 : 1980,
+            minWidth: Math.max(520, previewVisColCount * 140),
           }}
         >
           <thead>
             <tr>
-              <th style={thStyle}>Conferente</th>
-              <th style={thStyle}>Dia da contagem</th>
-              {inventario ? <th style={thStyle}>Nº contagem</th> : null}
-              <th style={thStyle}>Data e hora do registro</th>
-              <th style={thStyle}>Código do produto</th>
-              <th style={thStyle}>Descrição</th>
-              <th style={thStyle}>Unidade de medida</th>
-              <th style={thStyle}>Quantidade contada</th>
-              <th style={thStyle}>Data de fabricação</th>
-              <th style={thStyle}>Data de vencimento</th>
-              <th style={thStyle}>Lote</th>
-              <th style={thStyle}>UP</th>
-              <th style={thStyle}>Observação</th>
-              <th style={thStyle}>EAN</th>
-              <th style={thStyle}>DUN</th>
-              <th style={thStyle}>Foto</th>
-              <th style={thStyle}>Ações</th>
-            </tr>
-            <tr>
-              <th style={{ ...thStyle, fontWeight: 400, fontSize: 12, background: '#f3f4f6' }}>
-                <input
-                  value={previewFilterConferente}
-                  onChange={(e) => setPreviewFilterConferente(e.target.value)}
-                  placeholder="filtrar"
-                  style={{ padding: '6px 8px', border: '1px solid #ccc', borderRadius: 6, width: '100%', minWidth: 100 }}
-                />
-              </th>
-              <th style={{ ...thStyle, fontWeight: 400, fontSize: 12, background: '#f3f4f6' }}>
-                <input
-                  type="date"
-                  value={previewFilterData}
-                  onChange={(e) => setPreviewFilterData(e.target.value)}
-                  style={{ padding: '6px 8px', border: '1px solid #ccc', borderRadius: 6, width: '100%' }}
-                />
-              </th>
-              {inventario ? (
-                <th style={{ ...thStyle, fontWeight: 400, fontSize: 12, background: '#f3f4f6' }}>
-                  <select
-                    value={previewFilterInventarioNumeroContagem}
-                    onChange={(e) => setPreviewFilterInventarioNumeroContagem(e.target.value)}
-                    style={{ padding: '6px 8px', border: '1px solid #ccc', borderRadius: 6, width: '100%', minWidth: 88 }}
-                    aria-label="Filtrar por número da contagem"
-                  >
-                    <option value="">Todas</option>
-                    <option value="1">1ª</option>
-                    <option value="2">2ª</option>
-                    <option value="3">3ª</option>
-                    <option value="4">4ª</option>
-                  </select>
-                </th>
-              ) : null}
-              <th style={{ ...thStyle, fontWeight: 400, fontSize: 12, background: '#f3f4f6' }} />
-              <th style={{ ...thStyle, fontWeight: 400, fontSize: 12, background: '#f3f4f6' }}>
-                <input
-                  value={previewFilterCodigo}
-                  onChange={(e) => setPreviewFilterCodigo(e.target.value)}
-                  placeholder="filtrar"
-                  style={{ padding: '6px 8px', border: '1px solid #ccc', borderRadius: 6, width: '100%' }}
-                />
-              </th>
-              <th style={{ ...thStyle, fontWeight: 400, fontSize: 12, background: '#f3f4f6' }}>
-                <input
-                  value={previewFilterDescricao}
-                  onChange={(e) => setPreviewFilterDescricao(e.target.value)}
-                  placeholder="filtrar"
-                  style={{ padding: '6px 8px', border: '1px solid #ccc', borderRadius: 6, width: '100%' }}
-                />
-              </th>
-              <th style={{ ...thStyle, fontWeight: 400, fontSize: 12, background: '#f3f4f6' }} />
-              <th style={{ ...thStyle, fontWeight: 400, fontSize: 12, background: '#f3f4f6' }} />
-              <th style={{ ...thStyle, fontWeight: 400, fontSize: 12, background: '#f3f4f6' }} />
-              <th style={{ ...thStyle, fontWeight: 400, fontSize: 12, background: '#f3f4f6' }} />
-              <th style={{ ...thStyle, fontWeight: 400, fontSize: 12, background: '#f3f4f6' }}>
-                <input
-                  value={previewFilterLote}
-                  onChange={(e) => setPreviewFilterLote(e.target.value)}
-                  placeholder="filtrar"
-                  style={{ padding: '6px 8px', border: '1px solid #ccc', borderRadius: 6, width: '100%' }}
-                />
-              </th>
-              <th style={{ ...thStyle, fontWeight: 400, fontSize: 12, background: '#f3f4f6' }} />
-              <th style={{ ...thStyle, fontWeight: 400, fontSize: 12, background: '#f3f4f6' }}>
-                <input
-                  value={previewFilterObs}
-                  onChange={(e) => setPreviewFilterObs(e.target.value)}
-                  placeholder="filtrar"
-                  style={{ padding: '6px 8px', border: '1px solid #ccc', borderRadius: 6, width: '100%' }}
-                />
-              </th>
-              <th style={{ ...thStyle, fontWeight: 400, fontSize: 12, background: '#f3f4f6' }} />
-              <th style={{ ...thStyle, fontWeight: 400, fontSize: 12, background: '#f3f4f6' }} />
-              <th style={{ ...thStyle, fontWeight: 400, fontSize: 12, background: '#f3f4f6' }} />
-              <th style={{ ...thStyle, fontWeight: 400, fontSize: 12, background: '#f3f4f6' }} />
+              {prevCol('codigo') ? <th style={thStyle}>Código do produto</th> : null}
+              {prevCol('descricao') ? <th style={thStyle}>Descrição</th> : null}
+              {prevCol('unidade') ? <th style={thStyle}>Unidade de medida</th> : null}
+              {prevCol('quantidade') ? <th style={thStyle}>Quantidade contada</th> : null}
+              {prevCol('data_fabricacao') ? <th style={thStyle}>Data de fabricação</th> : null}
+              {prevCol('data_validade') ? <th style={thStyle}>Data de vencimento</th> : null}
+              {prevCol('lote') ? <th style={thStyle}>Lote</th> : null}
+              {prevCol('up') ? <th style={thStyle}>UP</th> : null}
+              {prevCol('observacao') ? <th style={thStyle}>Observação</th> : null}
+              {prevCol('ean') ? <th style={thStyle}>EAN</th> : null}
+              {prevCol('dun') ? <th style={thStyle}>DUN</th> : null}
+              {prevCol('foto') ? <th style={thStyle}>Foto</th> : null}
+              {prevCol('acoes') ? <th style={thStyle}>Ações</th> : null}
             </tr>
           </thead>
           <tbody>
             {displayPreviewRows.map((r) => {
+              const hasPhoto = Boolean(String(r.foto_base64 ?? '').trim())
               return (
                 <tr key={r.id}>
-                  <td style={tdStyle}>{r.conferente_nome}</td>
-                  <td style={tdStyle}>{formatDateBRFromYmd(r.data_contagem)}</td>
-                  {inventario ? (
+                  {prevCol('codigo') ? <td style={tdStyle}>{r.codigo_interno}</td> : null}
+                  {prevCol('descricao') ? (
+                    <td style={{ ...tdStyle, whiteSpace: 'normal', maxWidth: 420 }}>{r.descricao}</td>
+                  ) : null}
+                  {prevCol('unidade') ? <td style={tdStyle}>{r.unidade_medida ?? ''}</td> : null}
+                  {prevCol('quantidade') ? (
                     <td style={tdStyle}>
-                      {r.inventario_numero_contagem != null ? `${r.inventario_numero_contagem}ª` : '—'}
+                      {editingPreviewId === r.id ? (
+                        <input
+                          type="number"
+                          step="0.001"
+                          value={editingPreviewQuantidade}
+                          onChange={(e) => setEditingPreviewQuantidade(e.target.value)}
+                          style={{ padding: '8px 10px', border: '1px solid #ccc', borderRadius: 8, width: 120 }}
+                        />
+                      ) : (
+                        r.quantidade_up
+                      )}
                     </td>
                   ) : null}
-                  <td style={tdStyle}>{formatDateTimeBRFromIso(r.data_hora_contagem)}</td>
-                  <td style={tdStyle}>{r.codigo_interno}</td>
-                  <td style={tdStyle}>{r.descricao}</td>
-                  <td style={tdStyle}>{r.unidade_medida ?? ''}</td>
-                  <td style={tdStyle}>
-                    {editingPreviewId === r.id ? (
-                      <input
-                        type="number"
-                        step="0.001"
-                        value={editingPreviewQuantidade}
-                        onChange={(e) => setEditingPreviewQuantidade(e.target.value)}
-                        style={{ padding: '8px 10px', border: '1px solid #ccc', borderRadius: 8, width: 120 }}
-                      />
-                    ) : (
-                      r.quantidade_up
-                    )}
-                  </td>
-                  <td style={tdStyle}>
-                    {r.data_fabricacao ? formatDateBRFromYmd(String(r.data_fabricacao).slice(0, 10)) : ''}
-                  </td>
-                  <td style={tdStyle}>
-                    {r.data_validade ? formatDateBRFromYmd(String(r.data_validade).slice(0, 10)) : ''}
-                  </td>
-                  <td style={tdStyle}>{r.lote ?? ''}</td>
-                  <td style={tdStyle}>{r.quantidade_up_secundaria != null ? r.quantidade_up_secundaria : ''}</td>
-                  <td style={tdStyle}>{r.observacao ?? ''}</td>
-                  <td style={tdStyle}>{r.ean ?? ''}</td>
-                  <td style={tdStyle}>{r.dun ?? ''}</td>
-                  <td style={tdStyle}>
-                    {r.foto_base64 ? (
-                      <img
-                        src={`data:image/jpeg;base64,${r.foto_base64}`}
-                        alt="Foto do produto"
-                        style={{ maxWidth: 60, maxHeight: 45, objectFit: 'cover', borderRadius: 8 }}
-                      />
-                    ) : (
-                      <span style={{ color: 'var(--text, #888)', fontSize: 12 }}>Sem foto anexada</span>
-                    )}
-                  </td>
-                  <td style={tdStyle}>
-                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                      {editingPreviewId === r.id ? (
-                        <>
-                          <button
-                            type="button"
-                            style={buttonStyle}
-                            onClick={() => handlePreviewSave(r.id)}
-                            disabled={previewRowActionLoading}
-                          >
-                            Salvar
-                          </button>
-                          <button
-                            type="button"
-                            style={{ ...buttonStyle, background: '#444' }}
-                            onClick={() => {
-                              setEditingPreviewId(null)
-                              setEditingPreviewQuantidade('')
-                              setPreviewRowError('')
-                            }}
-                            disabled={previewRowActionLoading}
-                          >
-                            Cancelar
-                          </button>
-                        </>
-                      ) : (
-                        <>
-                          <button
-                            type="button"
-                            style={buttonStyle}
-                            onClick={() => {
-                              setEditingPreviewId(r.id)
-                              setEditingPreviewQuantidade(String(r.quantidade_up))
-                              setPreviewRowError('')
-                            }}
-                            disabled={previewRowActionLoading}
-                          >
-                            Editar
-                          </button>
-                          <button
-                            type="button"
-                            style={{ ...buttonStyle, background: '#8a0000' }}
-                            onClick={() => handlePreviewDelete(r.id)}
-                            disabled={previewRowActionLoading}
-                          >
-                            Excluir
-                          </button>
-                          {r.foto_base64 ? (
+                  {prevCol('data_fabricacao') ? (
+                    <td style={tdStyle}>
+                      {r.data_fabricacao ? formatDateBRFromYmd(String(r.data_fabricacao).slice(0, 10)) : ''}
+                    </td>
+                  ) : null}
+                  {prevCol('data_validade') ? (
+                    <td style={tdStyle}>
+                      {r.data_validade ? formatDateBRFromYmd(String(r.data_validade).slice(0, 10)) : ''}
+                    </td>
+                  ) : null}
+                  {prevCol('lote') ? <td style={tdStyle}>{r.lote ?? ''}</td> : null}
+                  {prevCol('up') ? (
+                    <td style={tdStyle}>{r.quantidade_up_secundaria != null ? r.quantidade_up_secundaria : ''}</td>
+                  ) : null}
+                  {prevCol('observacao') ? <td style={tdStyle}>{r.observacao ?? ''}</td> : null}
+                  {prevCol('ean') ? <td style={tdStyle}>{r.ean ?? ''}</td> : null}
+                  {prevCol('dun') ? <td style={tdStyle}>{r.dun ?? ''}</td> : null}
+                  {prevCol('foto') ? (
+                    <td style={tdStyle}>
+                      <span style={{ color: 'var(--text, #888)', fontSize: 12 }}>
+                        {hasPhoto ? 'Com foto' : 'Sem foto'}
+                      </span>
+                    </td>
+                  ) : null}
+                  {prevCol('acoes') ? (
+                    <td style={tdStyle}>
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                        {editingPreviewId === r.id ? (
+                          <>
                             <button
                               type="button"
-                              style={{ ...buttonStyle, background: '#a85a00' }}
-                              onClick={() => handlePreviewClearPhoto(r.id)}
+                              style={buttonStyle}
+                              onClick={() => handlePreviewSave(r.id)}
                               disabled={previewRowActionLoading}
                             >
-                              Remover foto
+                              Salvar
                             </button>
-                          ) : null}
-                        </>
-                      )}
-                    </div>
-                  </td>
+                            <button
+                              type="button"
+                              style={{ ...buttonStyle, background: '#444' }}
+                              onClick={() => {
+                                setEditingPreviewId(null)
+                                setEditingPreviewQuantidade('')
+                                setPreviewRowError('')
+                              }}
+                              disabled={previewRowActionLoading}
+                            >
+                              Cancelar
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              style={buttonStyle}
+                              onClick={() => {
+                                setEditingPreviewId(r.id)
+                                setEditingPreviewQuantidade(String(r.quantidade_up))
+                                setPreviewRowError('')
+                              }}
+                              disabled={previewRowActionLoading}
+                            >
+                              Editar
+                            </button>
+                            <button
+                              type="button"
+                              style={{ ...buttonStyle, background: '#8a0000' }}
+                              onClick={() => handlePreviewDelete(r.id)}
+                              disabled={previewRowActionLoading}
+                            >
+                              Excluir
+                            </button>
+                            {r.foto_base64 ? (
+                              <button
+                                type="button"
+                                style={{ ...buttonStyle, background: '#a85a00' }}
+                                onClick={() => handlePreviewClearPhoto(r.id)}
+                                disabled={previewRowActionLoading}
+                              >
+                                Remover foto
+                              </button>
+                            ) : null}
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  ) : null}
                 </tr>
               )
             })}
@@ -5063,15 +4991,17 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
           {inventario ? (
             <>
               Registros com <code style={{ fontSize: 12 }}>origem=inventario</code> no dia consultado. Três linhas por
-              produto quando as três contagens foram gravadas.
+              produto quando as três contagens foram gravadas. A tabela da prévia usa as <strong>mesmas colunas</strong>{' '}
+              que a lista acima (controle em <strong>Ocultar/mostrar colunas</strong>).
             </>
           ) : (
             <>
               A lista da contagem diária fica <strong>só no navegador</strong> até você clicar em{' '}
               <strong>Finalizar contagem diária</strong> — aí os registros são enviados para a tabela{' '}
               <code style={{ fontSize: 12 }}>contagens_estoque</code>. Esta prévia mostra exatamente o que já foi gravado
-              no banco (por dia civil). Após finalizar, a prévia é atualizada automaticamente; use{' '}
-              <strong>Atualizar prévia</strong> para buscar de novo (por exemplo, outro dia ou depois de editar no banco).
+              no banco (por dia civil). Colunas iguais à lista acima (<strong>Ocultar/mostrar colunas</strong>). Após
+              finalizar, a prévia é atualizada automaticamente; use <strong>Atualizar prévia</strong> para buscar de novo
+              (por exemplo, outro dia ou depois de editar no banco).
             </>
           )}
         </div>

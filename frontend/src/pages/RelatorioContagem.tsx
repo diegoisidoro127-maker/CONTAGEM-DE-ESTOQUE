@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type React from 'react'
 import * as XLSX from 'xlsx'
 import { supabase } from '../lib/supabaseClient'
+import { loadChecklistVisibleColsFromStorage } from '../lib/checklistVisibleCols'
 
 type ContagemRow = {
   id: string
@@ -69,31 +70,6 @@ function isColumnMissingErrorRel(e: unknown): boolean {
 
 const TABELA_PRODUTOS_REL = 'Todos os Produtos'
 
-function formatDateTimeBR(iso: string) {
-  const dt = new Date(iso)
-  if (Number.isNaN(dt.getTime())) return iso
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${pad(dt.getDate())}/${pad(dt.getMonth() + 1)}/${dt.getFullYear()} ${pad(dt.getHours())}:${pad(dt.getMinutes())}`
-}
-
-function dateKeyFromIso(iso: string) {
-  const dt = new Date(iso)
-  if (Number.isNaN(dt.getTime())) return ''
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`
-}
-
-function conferenteNome(r: ContagemRow) {
-  if (!r.conferentes) return r.conferente_id
-  if (Array.isArray(r.conferentes)) return r.conferentes[0]?.nome ?? r.conferente_id
-  return r.conferentes.nome ?? r.conferente_id
-}
-
-function diaContagemLabel(r: ContagemRow) {
-  const ymd = (r.data_contagem != null ? String(r.data_contagem) : '').slice(0, 10) || dateKeyFromIso(r.data_hora_contagem)
-  return formatDateBR(ymd)
-}
-
 function mergeContagemRowsById(
   a: ContagemRow[] | null | undefined,
   b: ContagemRow[] | null | undefined,
@@ -108,29 +84,19 @@ function mergeContagemRowsById(
   })
 }
 
-function origemLabel(r: ContagemRow): string {
-  const o = String(r.origem ?? '').trim().toLowerCase()
-  if (o === 'inventario') return 'Inventário'
-  if (o === 'contagem_diaria' || o === '') return 'Contagem diária'
-  return r.origem ?? '—'
-}
-
-/** Monta data URL para exibição (base64 puro ou já com prefixo). */
-function fotoDataUrl(b64: string | null | undefined): string | null {
-  const s = String(b64 ?? '').trim()
-  if (!s) return null
-  if (s.startsWith('data:')) return s
-  return `data:image/jpeg;base64,${s}`
-}
-
 /** Paginação (15 + “Mostrar tudo”) vale para Relatório completo e Todas as contagens — mesmo componente. */
 const RELATORIO_PAGE_SIZE = 15
 
 type RelatorioContagemProps = {
   mode?: 'periodo' | 'dia'
+  /** Se true, usa as mesmas colunas visíveis que a lista em Inventário (senão Contagem de estoque). */
+  listColumnPrefsInventario?: boolean
 }
 
-export default function RelatorioContagem({ mode = 'periodo' }: RelatorioContagemProps) {
+export default function RelatorioContagem({
+  mode = 'periodo',
+  listColumnPrefsInventario = false,
+}: RelatorioContagemProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string>('')
   const [success, setSuccess] = useState<string>('')
@@ -141,6 +107,24 @@ export default function RelatorioContagem({ mode = 'periodo' }: RelatorioContage
   const isDiaMode = mode === 'dia'
   /** Excel só no relatório por período — nunca em “Todas as contagens” (`mode="dia"`). */
   const showExportExcel = mode === 'periodo'
+
+  const listColPrefs = loadChecklistVisibleColsFromStorage(listColumnPrefsInventario)
+  const prevCol = (id: string) => listColPrefs[id] !== false
+  const relatorioListaColCount = [
+    'codigo',
+    'descricao',
+    'unidade',
+    'quantidade',
+    'data_fabricacao',
+    'data_validade',
+    'lote',
+    'up',
+    'observacao',
+    'ean',
+    'dun',
+    'foto',
+    'acoes',
+  ].filter(prevCol).length
 
   const [startDate, setStartDate] = useState(() =>
     toISODateLocal(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)),
@@ -155,7 +139,6 @@ export default function RelatorioContagem({ mode = 'periodo' }: RelatorioContage
   const [relatorioPage, setRelatorioPage] = useState(1)
   const [relatorioShowAll, setRelatorioShowAll] = useState(false)
   const prevLoadingRef = useRef(false)
-  const [photoModal, setPhotoModal] = useState<{ src: string; title: string } | null>(null)
   const [baseExportLoading, setBaseExportLoading] = useState(false)
 
   const dateRangeText = useMemo(() => {
@@ -179,15 +162,6 @@ export default function RelatorioContagem({ mode = 'periodo' }: RelatorioContage
     }
     prevLoadingRef.current = loading
   }, [loading])
-
-  useEffect(() => {
-    if (!photoModal) return
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setPhotoModal(null)
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [photoModal])
 
   async function load() {
     setLoading(true)
@@ -440,29 +414,25 @@ export default function RelatorioContagem({ mode = 'periodo' }: RelatorioContage
   function exportToExcel() {
     if (!rows.length) return
 
-    // Exporta todos os registros do filtro atual (não só a página visível).
-    const sheetRows = rows.map((r) => ({
-      Conferente: conferenteNome(r),
-      'Dia da contagem': diaContagemLabel(r),
-      Origem: origemLabel(r),
-      'Nº contagem (inv.)':
-        r.inventario_numero_contagem != null && r.inventario_numero_contagem > 0
-          ? String(r.inventario_numero_contagem)
-          : '',
-      'Data e hora do registro': formatDateTimeBR(r.data_hora_contagem),
-      'Código do produto': r.codigo_interno,
-      Descrição: r.descricao,
-      'Unidade de medida': r.unidade_medida ?? '',
-      'Quantidade contada': r.quantidade_up,
-      'Data de fabricação': r.data_fabricacao ? formatDateBR(String(r.data_fabricacao).slice(0, 10)) : '',
-      'Data de vencimento': r.data_validade ? formatDateBR(String(r.data_validade).slice(0, 10)) : '',
-      Lote: r.lote ?? '',
-      UP: r.up_adicional ?? '',
-      Observação: r.observacao ?? '',
-      EAN: r.ean ?? '',
-      DUN: r.dun ?? '',
-      Foto: r.foto_base64 ? 'Sim' : 'Não',
-    }))
+    // Mesmas colunas que a lista principal (Ocultar/mostrar colunas).
+    const sheetRows = rows.map((r) => {
+      const o: Record<string, string | number> = {}
+      if (prevCol('codigo')) o['Código do produto'] = r.codigo_interno
+      if (prevCol('descricao')) o['Descrição'] = r.descricao
+      if (prevCol('unidade')) o['Unidade de medida'] = r.unidade_medida ?? ''
+      if (prevCol('quantidade')) o['Quantidade contada'] = r.quantidade_up
+      if (prevCol('data_fabricacao'))
+        o['Data de fabricação'] = r.data_fabricacao ? formatDateBR(String(r.data_fabricacao).slice(0, 10)) : ''
+      if (prevCol('data_validade'))
+        o['Data de vencimento'] = r.data_validade ? formatDateBR(String(r.data_validade).slice(0, 10)) : ''
+      if (prevCol('lote')) o['Lote'] = r.lote ?? ''
+      if (prevCol('up')) o['UP'] = r.up_adicional ?? ''
+      if (prevCol('observacao')) o['Observação'] = r.observacao ?? ''
+      if (prevCol('ean')) o['EAN'] = r.ean ?? ''
+      if (prevCol('dun')) o['DUN'] = r.dun ?? ''
+      if (prevCol('foto')) o['Foto'] = String(r.foto_base64 ?? '').trim() ? 'Com foto' : 'Sem foto'
+      return o
+    })
 
     const ws = XLSX.utils.json_to_sheet(sheetRows)
     const wb = XLSX.utils.book_new()
@@ -568,12 +538,6 @@ export default function RelatorioContagem({ mode = 'periodo' }: RelatorioContage
     fontSize: 13,
     opacity: disabled ? 0.5 : 1,
   })
-
-  function openFotoModal(r: ContagemRow) {
-    const src = fotoDataUrl(r.foto_base64)
-    if (!src) return
-    setPhotoModal({ src, title: `${r.codigo_interno} — ${r.descricao}` })
-  }
 
   const relatorioPagination = (
     <div
@@ -784,164 +748,135 @@ export default function RelatorioContagem({ mode = 'periodo' }: RelatorioContage
         {error ? <div style={{ color: '#b00020' }}>{error}</div> : null}
         {success ? <div style={{ color: '#0f7a0f' }}>{success}</div> : null}
 
+        <p style={{ fontSize: 13, color: 'var(--text, #666)', marginTop: 10, maxWidth: 720, lineHeight: 1.45 }}>
+          Tabela com as <strong>mesmas colunas</strong> que a lista na tela Contagem / Inventário (preferências em{' '}
+          <strong>Ocultar/mostrar colunas</strong>
+          {listColumnPrefsInventario ? ' — modo inventário' : ' — modo contagem diária'}).
+        </p>
+
         {rows.length ? (
           <div style={{ overflowX: 'auto' }}>
             {relatorioPagination}
-            <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 2200 }}>
+            <table
+              style={{
+                borderCollapse: 'collapse',
+                width: '100%',
+                minWidth: Math.max(520, relatorioListaColCount * 140),
+              }}
+            >
               <thead>
                 <tr>
-                  <th style={thStyle}>Conferente</th>
-                  <th style={thStyle}>Dia da contagem</th>
-                  <th style={thStyle}>Origem</th>
-                  <th style={thStyle}>Nº contagem</th>
-                  <th style={thStyle}>Data e hora do registro</th>
-                  <th style={thStyle}>Código do produto</th>
-                  <th style={thStyle}>Descrição</th>
-                  <th style={thStyle}>Unidade de medida</th>
-                  <th style={thStyle}>Quantidade contada</th>
-                  <th style={thStyle}>Data de fabricação</th>
-                  <th style={thStyle}>Data de vencimento</th>
-                  <th style={thStyle}>Lote</th>
-                  <th style={thStyle}>UP</th>
-                  <th style={thStyle}>Observação</th>
-                  <th style={thStyle}>EAN</th>
-                  <th style={thStyle}>DUN</th>
-                  <th style={thStyle}>Foto</th>
-                  <th style={thStyle}>Ações</th>
+                  {prevCol('codigo') ? <th style={thStyle}>Código do produto</th> : null}
+                  {prevCol('descricao') ? <th style={thStyle}>Descrição</th> : null}
+                  {prevCol('unidade') ? <th style={thStyle}>Unidade de medida</th> : null}
+                  {prevCol('quantidade') ? <th style={thStyle}>Quantidade contada</th> : null}
+                  {prevCol('data_fabricacao') ? <th style={thStyle}>Data de fabricação</th> : null}
+                  {prevCol('data_validade') ? <th style={thStyle}>Data de vencimento</th> : null}
+                  {prevCol('lote') ? <th style={thStyle}>Lote</th> : null}
+                  {prevCol('up') ? <th style={thStyle}>UP</th> : null}
+                  {prevCol('observacao') ? <th style={thStyle}>Observação</th> : null}
+                  {prevCol('ean') ? <th style={thStyle}>EAN</th> : null}
+                  {prevCol('dun') ? <th style={thStyle}>DUN</th> : null}
+                  {prevCol('foto') ? <th style={thStyle}>Foto</th> : null}
+                  {prevCol('acoes') ? <th style={thStyle}>Ações</th> : null}
                 </tr>
               </thead>
               <tbody>
                 {displayRows.map((r) => {
-                  const fotoSrc = fotoDataUrl(r.foto_base64)
+                  const hasPhoto = Boolean(String(r.foto_base64 ?? '').trim())
                   return (
                   <tr key={r.id}>
-                    <td style={tdStyle}>{conferenteNome(r)}</td>
-                    <td style={tdStyle}>{diaContagemLabel(r)}</td>
-                    <td style={tdStyle}>{origemLabel(r)}</td>
-                    <td style={tdStyle}>
-                      {r.inventario_numero_contagem != null && r.inventario_numero_contagem > 0
-                        ? `${r.inventario_numero_contagem}ª`
-                        : '—'}
-                    </td>
-                    <td style={tdStyle}>{formatDateTimeBR(r.data_hora_contagem)}</td>
-                    <td style={tdStyle}>{r.codigo_interno}</td>
-                    <td style={tdStyle}>{r.descricao}</td>
-                    <td style={tdStyle}>{r.unidade_medida ?? ''}</td>
-                    <td style={tdStyle}>
-                      {editingId === r.id ? (
-                        <input
-                          type="number"
-                          step="0.001"
-                          value={editingQuantidade}
-                          onChange={(e) => setEditingQuantidade(e.target.value)}
-                          style={{ ...inputInlineStyle }}
-                        />
-                      ) : (
-                        r.quantidade_up
-                      )}
-                    </td>
-                    <td style={tdStyle}>
-                      {r.data_fabricacao ? formatDateBR(String(r.data_fabricacao).slice(0, 10)) : ''}
-                    </td>
-                    <td style={tdStyle}>
-                      {r.data_validade ? formatDateBR(String(r.data_validade).slice(0, 10)) : ''}
-                    </td>
-                    <td style={tdStyle}>{r.lote ?? ''}</td>
-                    <td style={tdStyle}>{r.up_adicional ?? ''}</td>
-                    <td style={tdStyle}>{r.observacao ?? ''}</td>
-                    <td style={tdStyle}>{r.ean ?? ''}</td>
-                    <td style={tdStyle}>{r.dun ?? ''}</td>
-                    <td style={tdStyle}>
-                      {fotoSrc ? (
-                        <div
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 8,
-                            flexWrap: 'wrap',
-                          }}
-                        >
-                          <button
-                            type="button"
-                            onClick={() => openFotoModal(r)}
-                            style={{
-                              padding: 0,
-                              border: '1px solid var(--border, #555)',
-                              borderRadius: 8,
-                              background: 'transparent',
-                              cursor: 'pointer',
-                              lineHeight: 0,
-                            }}
-                            title="Ver foto em tamanho grande"
-                            aria-label="Ver foto em tamanho grande"
-                          >
-                            <img
-                              src={fotoSrc}
-                              alt=""
-                              style={{
-                                maxWidth: 56,
-                                maxHeight: 42,
-                                objectFit: 'cover',
-                                borderRadius: 6,
-                                display: 'block',
+                    {prevCol('codigo') ? <td style={tdStyle}>{r.codigo_interno}</td> : null}
+                    {prevCol('descricao') ? (
+                      <td style={{ ...tdStyle, whiteSpace: 'normal', maxWidth: 420 }}>{r.descricao}</td>
+                    ) : null}
+                    {prevCol('unidade') ? <td style={tdStyle}>{r.unidade_medida ?? ''}</td> : null}
+                    {prevCol('quantidade') ? (
+                      <td style={tdStyle}>
+                        {editingId === r.id ? (
+                          <input
+                            type="number"
+                            step="0.001"
+                            value={editingQuantidade}
+                            onChange={(e) => setEditingQuantidade(e.target.value)}
+                            style={{ ...inputInlineStyle }}
+                          />
+                        ) : (
+                          r.quantidade_up
+                        )}
+                      </td>
+                    ) : null}
+                    {prevCol('data_fabricacao') ? (
+                      <td style={tdStyle}>
+                        {r.data_fabricacao ? formatDateBR(String(r.data_fabricacao).slice(0, 10)) : ''}
+                      </td>
+                    ) : null}
+                    {prevCol('data_validade') ? (
+                      <td style={tdStyle}>
+                        {r.data_validade ? formatDateBR(String(r.data_validade).slice(0, 10)) : ''}
+                      </td>
+                    ) : null}
+                    {prevCol('lote') ? <td style={tdStyle}>{r.lote ?? ''}</td> : null}
+                    {prevCol('up') ? <td style={tdStyle}>{r.up_adicional ?? ''}</td> : null}
+                    {prevCol('observacao') ? <td style={tdStyle}>{r.observacao ?? ''}</td> : null}
+                    {prevCol('ean') ? <td style={tdStyle}>{r.ean ?? ''}</td> : null}
+                    {prevCol('dun') ? <td style={tdStyle}>{r.dun ?? ''}</td> : null}
+                    {prevCol('foto') ? (
+                      <td style={tdStyle}>
+                        <span style={{ color: 'var(--text-muted, #888)', fontSize: 12 }}>
+                          {hasPhoto ? 'Com foto' : 'Sem foto'}
+                        </span>
+                      </td>
+                    ) : null}
+                    {prevCol('acoes') ? (
+                      <td style={tdStyle}>
+                        {editingId === r.id ? (
+                          <div style={{ display: 'flex', gap: 6 }}>
+                            <button
+                              type="button"
+                              onClick={() => handleSaveQuantidade(r.id)}
+                              disabled={rowActionLoading}
+                              style={miniBtnStyle}
+                            >
+                              Salvar
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingId(null)
+                                setEditingQuantidade('')
                               }}
-                            />
-                          </button>
-                          <button type="button" onClick={() => openFotoModal(r)} style={miniBtnStyle}>
-                            Ver foto
-                          </button>
-                        </div>
-                      ) : (
-                        <span style={{ color: 'var(--text-muted, #888)', fontSize: 12 }}>Sem foto</span>
-                      )}
-                    </td>
-                    <td style={tdStyle}>
-                      {editingId === r.id ? (
-                        <div style={{ display: 'flex', gap: 6 }}>
-                          <button
-                            type="button"
-                            onClick={() => handleSaveQuantidade(r.id)}
-                            disabled={rowActionLoading}
-                            style={miniBtnStyle}
-                          >
-                            Salvar
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setEditingId(null)
-                              setEditingQuantidade('')
-                            }}
-                            disabled={rowActionLoading}
-                            style={miniBtnStyle}
-                          >
-                            Cancelar
-                          </button>
-                        </div>
-                      ) : (
-                        <div style={{ display: 'flex', gap: 6 }}>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setEditingId(r.id)
-                              setEditingQuantidade(String(r.quantidade_up))
-                            }}
-                            disabled={rowActionLoading}
-                            style={miniBtnStyle}
-                          >
-                            Editar
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteRow(r.id)}
-                            disabled={rowActionLoading}
-                            style={miniBtnStyle}
-                          >
-                            Excluir
-                          </button>
-                        </div>
-                      )}
-                    </td>
+                              disabled={rowActionLoading}
+                              style={miniBtnStyle}
+                            >
+                              Cancelar
+                            </button>
+                          </div>
+                        ) : (
+                          <div style={{ display: 'flex', gap: 6 }}>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingId(r.id)
+                                setEditingQuantidade(String(r.quantidade_up))
+                              }}
+                              disabled={rowActionLoading}
+                              style={miniBtnStyle}
+                            >
+                              Editar
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteRow(r.id)}
+                              disabled={rowActionLoading}
+                              style={miniBtnStyle}
+                            >
+                              Excluir
+                            </button>
+                          </div>
+                        )}
+                      </td>
+                    ) : null}
                   </tr>
                   )
                 })}
@@ -954,61 +889,6 @@ export default function RelatorioContagem({ mode = 'periodo' }: RelatorioContage
         )}
       </div>
 
-      {photoModal ? (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label="Foto da contagem"
-          onClick={() => setPhotoModal(null)}
-          style={{
-            position: 'fixed',
-            inset: 0,
-            zIndex: 9999,
-            background: 'rgba(0,0,0,0.88)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: 16,
-          }}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              maxWidth: 'min(96vw, 1200px)',
-              maxHeight: '92vh',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 12,
-              alignItems: 'center',
-            }}
-          >
-            <div
-              style={{
-                color: '#eee',
-                fontSize: 14,
-                textAlign: 'center',
-                maxWidth: '100%',
-                lineHeight: 1.35,
-              }}
-            >
-              {photoModal.title}
-            </div>
-            <img
-              src={photoModal.src}
-              alt=""
-              style={{
-                maxWidth: '100%',
-                maxHeight: 'calc(92vh - 96px)',
-                objectFit: 'contain',
-                borderRadius: 8,
-              }}
-            />
-            <button type="button" onClick={() => setPhotoModal(null)} style={{ ...miniBtnStyle, padding: '10px 20px' }}>
-              Fechar
-            </button>
-          </div>
-        </div>
-      ) : null}
     </div>
   )
 }
