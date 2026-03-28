@@ -1,3 +1,4 @@
+import { normalizeCodigoInternoCompareKey } from './codigoInternoCompare'
 import { supabase } from './supabaseClient'
 
 const CATALOGO_CHUNK = 200
@@ -70,6 +71,7 @@ export async function enrichContagemRowsEanDunFromTodosOsProdutos<
         }
         const c = String(rec.codigo_interno ?? '').trim()
         if (!c) continue
+        const keyNorm = normalizeCodigoInternoCompareKey(c)
         const e = rec.ean != null && String(rec.ean).trim() !== '' ? String(rec.ean).trim() : null
         const d = rec.dun != null && String(rec.dun).trim() !== '' ? String(rec.dun).trim() : null
         const u =
@@ -78,9 +80,13 @@ export async function enrichContagemRowsEanDunFromTodosOsProdutos<
             : rec.unidade_medida != null && String(rec.unidade_medida).trim() !== ''
               ? String(rec.unidade_medida).trim()
               : null
-        if (e && !eanByCod.has(c)) eanByCod.set(c, e)
-        if (d && !dunByCod.has(c)) dunByCod.set(c, d)
-        if (u && !unByCod.has(c)) unByCod.set(c, u)
+        const setMaps = (key: string) => {
+          if (e && !eanByCod.has(key)) eanByCod.set(key, e)
+          if (d && !dunByCod.has(key)) dunByCod.set(key, d)
+          if (u && !unByCod.has(key)) unByCod.set(key, u)
+        }
+        setMaps(c)
+        if (keyNorm && keyNorm !== c) setMaps(keyNorm)
       }
     }
   } catch (e) {
@@ -91,9 +97,10 @@ export async function enrichContagemRowsEanDunFromTodosOsProdutos<
   return rows.map((r) => {
     const cod = String(r.codigo_interno ?? '').trim()
     if (!cod) return r
-    const eanCat = eanByCod.get(cod)
-    const dunCat = dunByCod.get(cod)
-    const unCat = unByCod.get(cod)
+    const keyNorm = normalizeCodigoInternoCompareKey(cod)
+    const eanCat = eanByCod.get(cod) ?? (keyNorm ? eanByCod.get(keyNorm) : undefined)
+    const dunCat = dunByCod.get(cod) ?? (keyNorm ? dunByCod.get(keyNorm) : undefined)
+    const unCat = unByCod.get(cod) ?? (keyNorm ? unByCod.get(keyNorm) : undefined)
     const next = { ...r } as T
     if (needEan && isEmptyField(r.ean) && eanCat) (next as { ean?: string | null }).ean = eanCat
     if (needDun && isEmptyField(r.dun) && dunCat) (next as { dun?: string | null }).dun = dunCat

@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { normalizeCodigoInternoCompareKey } from './codigoInternoCompare'
 
 export type ModoListagemContagem = 'inventario' | 'contagem_diaria'
 
@@ -112,7 +113,7 @@ export function agruparContagemDiariaComoPrevia<T extends RowMergeContagemDiaria
   const grouped = new Map<string, T>()
   for (const row of rows) {
     const day = row.data_contagem != null ? String(row.data_contagem).slice(0, 10) : ''
-    const key = `${day}|${String(row.codigo_interno ?? '').trim().toLowerCase()}|${String(row.descricao ?? '').trim().toLowerCase()}`
+    const key = `${day}|${normalizeCodigoInternoCompareKey(String(row.codigo_interno ?? '')).toLowerCase()}|${String(row.descricao ?? '').trim().toLowerCase()}`
     const existing = grouped.get(key)
     if (!existing) {
       grouped.set(key, {

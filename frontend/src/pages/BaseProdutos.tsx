@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type React from 'react'
+import { normalizeCodigoInternoCompareKey } from '../lib/codigoInternoCompare'
 import { supabase } from '../lib/supabaseClient'
 
 const TABELA_PRODUTOS = 'Todos os Produtos'
@@ -23,7 +24,7 @@ type ProdutoDbRow = {
 
 function rowKey(r: ProdutoDbRow) {
   if (r.id && String(r.id).trim() !== '') return String(r.id)
-  return `cod:${r.codigo_interno.trim()}`
+  return `cod:${normalizeCodigoInternoCompareKey(r.codigo_interno)}`
 }
 
 function normEanDun(v: string | null | undefined): string | null {

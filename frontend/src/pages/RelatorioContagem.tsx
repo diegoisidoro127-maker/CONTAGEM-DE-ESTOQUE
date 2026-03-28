@@ -15,6 +15,7 @@ import {
 import { formatContagemLabel, inventarioCamaraLabelFromGrupo } from '../components/inventario/inventarioPlanilhaModel'
 import { deleteInventarioPlanilhaLinhasForContagensIds } from '../lib/inventarioPlanilhaLinhasDelete'
 import { isVencimentoAntesFabricacao } from '../lib/contagemDatasValidacao'
+import { normalizeCodigoInternoCompareKey } from '../lib/codigoInternoCompare'
 
 type ContagemRow = {
   id: string
@@ -133,7 +134,9 @@ function mergeContagemRowsById(
   for (const r of a ?? []) map.set(r.id, r)
   for (const r of b ?? []) map.set(r.id, r)
   return Array.from(map.values()).sort((x, y) => {
-    const c = String(x.codigo_interno).localeCompare(String(y.codigo_interno), 'pt-BR')
+    const nx = normalizeCodigoInternoCompareKey(String(x.codigo_interno))
+    const ny = normalizeCodigoInternoCompareKey(String(y.codigo_interno))
+    const c = nx !== ny ? nx.localeCompare(ny, 'pt-BR') : String(x.codigo_interno).localeCompare(String(y.codigo_interno), 'pt-BR')
     if (c !== 0) return c
     return new Date(x.data_hora_contagem).getTime() - new Date(y.data_hora_contagem).getTime()
   })

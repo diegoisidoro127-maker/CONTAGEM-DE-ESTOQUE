@@ -38,6 +38,12 @@ import {
 import { enrichContagemRowsWithPlanilhaLinhas } from '../lib/enrichContagemRowsWithPlanilhaLinhas'
 import { enrichContagemRowsEanDunFromTodosOsProdutos } from '../lib/enrichContagemRowsEanDunFromTodosOsProdutos'
 import { isVencimentoAntesFabricacao } from '../lib/contagemDatasValidacao'
+import {
+  codigoInternoIguais,
+  lookupInCatalogMapGeneric as lookupInCatalogMap,
+  lookupProductOptionByCodigoGeneric as lookupProductOptionByCodigo,
+  normalizeCodigoInternoCompareKey,
+} from '../lib/codigoInternoCompare'
 import { handleChecklistFieldNavKeyDown } from '../lib/checklistFieldNavigation'
 import {
   deleteInventarioPlanilhaLinhasForContagensIds,
@@ -120,53 +126,6 @@ type ProductOption = {
   dun?: string | null
   foto_base64?: string | null
   foto_url?: string | null
-}
-
-/** Remove pontos para casar cadastro (ex.: 01.01.0001 ≡ digitação 01010001). */
-function codigoInternoSemPontos(s: string): string {
-  return String(s ?? '').trim().replace(/\./g, '')
-}
-
-function lookupProductOptionByCodigo(
-  codigo: string,
-  productByCode: Map<string, ProductOption>,
-  productByCodeNoDots: Map<string, ProductOption>,
-): ProductOption | undefined {
-  const c = codigo.trim()
-  if (!c) return undefined
-  let p = productByCode.get(c)
-  if (!p) {
-    for (const [k, v] of productByCode) {
-      if (k.trim() === c) {
-        p = v
-        break
-      }
-    }
-  }
-  if (!p) {
-    const key = codigoInternoSemPontos(c)
-    if (key) p = productByCodeNoDots.get(key)
-  }
-  return p
-}
-
-function lookupInCatalogMap(codigo: string, catalogMap: Map<string, ProductOption>): ProductOption | undefined {
-  const c = codigo.trim()
-  if (!c) return undefined
-  let p = catalogMap.get(c)
-  if (!p) {
-    const key = codigoInternoSemPontos(c)
-    if (key) p = catalogMap.get(key)
-  }
-  if (!p) {
-    for (const [k, v] of catalogMap) {
-      if (k.trim() === c) {
-        p = v
-        break
-      }
-    }
-  }
-  return p
 }
 
 function pickFirstString(row: Record<string, any>, keys: string[]) {
@@ -687,7 +646,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
   const productByCodeNoDots = useMemo(() => {
     const map = new Map<string, ProductOption>()
     for (const p of productOptions) {
-      const k = codigoInternoSemPontos(p.codigo)
+      const k = normalizeCodigoInternoCompareKey(p.codigo)
       if (k && !map.has(k)) map.set(k, p)
     }
     return map
@@ -720,12 +679,12 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
   const SUGGEST_LIMIT = 400
   const codigoSuggestions = useMemo(() => {
     const q = codigoInterno.trim().toLowerCase()
-    const qNoDots = codigoInternoSemPontos(codigoInterno).toLowerCase()
+    const qNoDots = normalizeCodigoInternoCompareKey(codigoInterno).toLowerCase()
     const list = q
       ? productOptions.filter((p) => {
           const pc = p.codigo.toLowerCase()
           if (pc.includes(q)) return true
-          return codigoInternoSemPontos(p.codigo).toLowerCase().includes(qNoDots)
+          return normalizeCodigoInternoCompareKey(p.codigo).toLowerCase().includes(qNoDots)
         })
       : productOptions
     return list.slice(0, SUGGEST_LIMIT)
@@ -886,7 +845,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     setPhotoTargetCodigo(code)
     setPhotoUiError('')
     setPhotoSaving(false)
-    const item = offlineSession?.items.find((it) => it.codigo_interno.trim() === code)
+    const item = offlineSession?.items.find((it) => codigoInternoIguais(it.codigo_interno, code))
     setPhotoPreviewBase64((item?.foto_base64 ?? '') || '')
     setPhotoCameraOpen(true)
   }
@@ -966,11 +925,11 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         const next = {
           ...prev,
           items: prev.items.map((it) =>
-            it.codigo_interno.trim() === codigo ? { ...it, foto_base64: photoPreviewBase64 } : it,
+            codigoInternoIguais(it.codigo_interno, codigo) ? { ...it, foto_base64: photoPreviewBase64 } : it,
           ),
         }
         saveOfflineSession(next, sessionMode)
-        const hit = next.items.find((it) => it.codigo_interno.trim() === codigo)
+        const hit = next.items.find((it) => codigoInternoIguais(it.codigo_interno, codigo))
         if (hit) flashChecklistRowSaved(hit.key)
         return next
       })
@@ -992,7 +951,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       setPhotoUiError('Carregue a lista e abra uma sessão de contagem antes de remover a foto.')
       return
     }
-    const item = offlineSession.items.find((it) => it.codigo_interno.trim() === codigo)
+    const item = offlineSession.items.find((it) => codigoInternoIguais(it.codigo_interno, codigo))
     const hadSaved = Boolean(String(item?.foto_base64 ?? '').trim())
     const hadPreview = Boolean(photoPreviewBase64.trim())
     if (!hadSaved && !hadPreview) return
@@ -1003,11 +962,11 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       const next = {
         ...prev,
         items: prev.items.map((it) =>
-          it.codigo_interno.trim() === codigo ? { ...it, foto_base64: '' } : it,
+          codigoInternoIguais(it.codigo_interno, codigo) ? { ...it, foto_base64: '' } : it,
         ),
       }
       saveOfflineSession(next, sessionMode)
-      const hit = next.items.find((it) => it.codigo_interno.trim() === codigo)
+      const hit = next.items.find((it) => codigoInternoIguais(it.codigo_interno, codigo))
       if (hit) flashChecklistRowSaved(hit.key)
       return next
     })
@@ -1218,7 +1177,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       const code = codeFinal
       const descNorm = descricaoFinal.trim().toLowerCase()
       const idx = offlineSession.items.findIndex(
-        (it) => it.codigo_interno.trim() === code && it.descricao.trim().toLowerCase() === descNorm,
+        (it) => codigoInternoIguais(it.codigo_interno, code) && it.descricao.trim().toLowerCase() === descNorm,
       )
       if (idx < 0) {
         setSaveError(
@@ -1512,7 +1471,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         const grouped = new Map<string, ContagemPreviewRow>()
         for (const row of rawPreviewLinhas) {
           const day = dayKey
-          const key = `${day}|${row.codigo_interno.trim().toLowerCase()}|${row.descricao.trim().toLowerCase()}`
+          const key = `${day}|${normalizeCodigoInternoCompareKey(row.codigo_interno).toLowerCase()}|${row.descricao.trim().toLowerCase()}`
           const existing = grouped.get(key)
           if (!existing) {
             grouped.set(key, { ...row })
@@ -1997,7 +1956,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     for (const p of normalized) {
       const k = p.codigo.trim()
       if (!mapPorCodigoTrim.has(k)) mapPorCodigoTrim.set(k, p)
-      const nd = codigoInternoSemPontos(k)
+      const nd = normalizeCodigoInternoCompareKey(k)
       if (nd && !mapPorCodigoTrim.has(nd)) mapPorCodigoTrim.set(nd, p)
     }
     if (offlineSession?.status === 'aberta' && offlineSession.listMode === 'planilha') {
@@ -2347,8 +2306,13 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
 
   const filteredPreviewRows = useMemo(() => {
     return previewRows.filter((r) => {
+      const qCod = previewFilterCodigo.trim().toLowerCase()
       const codigoOk =
-        !previewFilterCodigo.trim() || r.codigo_interno.toLowerCase().includes(previewFilterCodigo.trim().toLowerCase())
+        !qCod ||
+        r.codigo_interno.toLowerCase().includes(qCod) ||
+        normalizeCodigoInternoCompareKey(r.codigo_interno).toLowerCase().includes(
+          normalizeCodigoInternoCompareKey(previewFilterCodigo).toLowerCase(),
+        )
       const descricaoOk =
         !previewFilterDescricao.trim() ||
         r.descricao.toLowerCase().includes(previewFilterDescricao.trim().toLowerCase())
@@ -3210,9 +3174,9 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
           const codOk =
             !checklistFilterCodigo.trim() ||
             it.codigo_interno.toLowerCase().includes(checklistFilterCodigo.trim().toLowerCase()) ||
-            codigoInternoSemPontos(it.codigo_interno)
+            normalizeCodigoInternoCompareKey(it.codigo_interno)
               .toLowerCase()
-              .includes(codigoInternoSemPontos(checklistFilterCodigo).toLowerCase())
+              .includes(normalizeCodigoInternoCompareKey(checklistFilterCodigo).toLowerCase())
           const descOk =
             !checklistFilterDescricao.trim() ||
             it.descricao.toLowerCase().includes(checklistFilterDescricao.trim().toLowerCase())
@@ -4923,7 +4887,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                   const v = e.target.value
                   setCodigoInterno(v)
                   const matched = applyProductByCode(v.trim())
-                  if (!matched && produto && produto.codigo_interno !== v) {
+                  if (!matched && produto && !codigoInternoIguais(produto.codigo_interno, v)) {
                     setProduto(null)
                   }
                 }}
@@ -5570,7 +5534,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
               photoTargetCodigo.trim() &&
               (Boolean(
                 String(
-                  offlineSession.items.find((it) => it.codigo_interno.trim() === photoTargetCodigo.trim())?.foto_base64 ??
+                  offlineSession.items.find((it) => codigoInternoIguais(it.codigo_interno, photoTargetCodigo))?.foto_base64 ??
                     '',
                 ).trim(),
               ) ||

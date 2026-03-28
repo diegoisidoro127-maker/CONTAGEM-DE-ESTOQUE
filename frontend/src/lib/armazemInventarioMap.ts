@@ -1,3 +1,4 @@
+import { normalizeCodigoInternoCompareKey } from './codigoInternoCompare'
 import type { OfflineChecklistItem } from './offlineContagemSession'
 
 /** Grupos 1–8 no inventário; alinhado a `INVENTARIO_ARMAZEM_NUM_GRUPOS` em inventarioPlanilhaModel. */
@@ -120,19 +121,32 @@ const ARMAZEM_POS_BY_CODIGO = (() => {
     const contagem = Number(contagemStr)
     const codes = (ARMAZEM_CONTAGEM_CODES as Record<string, string[]>)[contagemStr] as string[]
     codes.forEach((codigo, pos) => {
-      m.set(codigo, { contagem, pos })
+      const meta = { contagem, pos }
+      m.set(codigo, meta)
+      const norm = normalizeCodigoInternoCompareKey(codigo)
+      if (norm && !m.has(norm)) m.set(norm, meta)
     })
   }
   return m
 })()
 
 export function getArmazemContagem(codigo: string): number | null {
-  return ARMAZEM_POS_BY_CODIGO.get(codigo)?.contagem ?? null
+  const t = codigo.trim()
+  return (
+    ARMAZEM_POS_BY_CODIGO.get(t)?.contagem ??
+    ARMAZEM_POS_BY_CODIGO.get(normalizeCodigoInternoCompareKey(t))?.contagem ??
+    null
+  )
 }
 
 /** Índice na rota do grupo (0-based). Não confundir com POS da planilha física — usado para ordenar como na lista. */
 export function getArmazemPos(codigo: string): number {
-  return ARMAZEM_POS_BY_CODIGO.get(codigo)?.pos ?? Number.MAX_SAFE_INTEGER
+  const t = codigo.trim()
+  return (
+    ARMAZEM_POS_BY_CODIGO.get(t)?.pos ??
+    ARMAZEM_POS_BY_CODIGO.get(normalizeCodigoInternoCompareKey(t))?.pos ??
+    Number.MAX_SAFE_INTEGER
+  )
 }
 
 export function getArmazemContagemForItem(it: OfflineChecklistItem): number | null {
@@ -157,7 +171,9 @@ export function compareInventarioPlanilhaItens(a: OfflineChecklistItem, b: Offli
   const pa = getArmazemPos(a.codigo_interno)
   const pb = getArmazemPos(b.codigo_interno)
   if (pa !== pb) return pa - pb
-  const c = a.codigo_interno.localeCompare(b.codigo_interno, 'pt-BR')
+  const na = normalizeCodigoInternoCompareKey(a.codigo_interno)
+  const nb = normalizeCodigoInternoCompareKey(b.codigo_interno)
+  const c = na !== nb ? na.localeCompare(nb, 'pt-BR') : a.codigo_interno.localeCompare(b.codigo_interno, 'pt-BR')
   if (c !== 0) return c
   const r = (a.inventario_repeticao ?? 0) - (b.inventario_repeticao ?? 0)
   if (r !== 0) return r
