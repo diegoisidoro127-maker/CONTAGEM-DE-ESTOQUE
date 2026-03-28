@@ -51,14 +51,22 @@ export function getInventarioRuaArmazem(contagem: number | null | undefined): st
   return INVENTARIO_ARMAZEM_RUA[contagem] ?? '—'
 }
 
-/** POS e NIVEL no estilo da planilha (3 posições por nível). */
+/** Quantidade de níveis (prateleiras) por posição na planilha física — igual ao Excel. */
+export const INVENTARIO_PLANILHA_NIVEIS_POR_POSICAO = 5
+
+/**
+ * POS e NIVEL como na planilha Excel: **5 níveis por posição** (NIVEL 1–5 na mesma POS;
+ * a cada 5 linhas incrementa POS).
+ */
 export function inventarioArmazemPosNivel(
   itemsSorted: OfflineChecklistItem[],
   it: OfflineChecklistItem,
 ): { pos: number; nivel: number } {
   const idx = itemsSorted.findIndex((x) => x.key === it.key)
-  const pos = idx >= 0 ? idx + 1 : 1
-  const nivel = Math.floor((pos - 1) / 3) + 1
+  if (idx < 0) return { pos: 1, nivel: 1 }
+  const n = INVENTARIO_PLANILHA_NIVEIS_POR_POSICAO
+  const pos = Math.floor(idx / n) + 1
+  const nivel = (idx % n) + 1
   return { pos, nivel }
 }
 
@@ -125,9 +133,10 @@ export function buildPlanilhaLayoutPorItens(
   const out = new Map<string, PlanilhaLayoutMeta>()
   for (const [grupo, arr] of byGrupo) {
     const rua = getInventarioRuaArmazem(grupo)
+    const n = INVENTARIO_PLANILHA_NIVEIS_POR_POSICAO
     arr.forEach((it, idx) => {
-      const pos = idx + 1
-      const nivel = Math.floor((pos - 1) / 3) + 1
+      const pos = Math.floor(idx / n) + 1
+      const nivel = (idx % n) + 1
       out.set(it.key, {
         grupo_armazem: grupo,
         numero_contagem: rodada,
