@@ -8,7 +8,8 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview --host 0.0.0.0",
-    "start": "serve -s dist -l ${PORT:-4173}"
+    "start": "serve -s dist -l ${PORT:-4173}",
+    "import:relatorio-xlsx": "node scripts/import-relatorio-contagem-xlsx.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.99.2",
