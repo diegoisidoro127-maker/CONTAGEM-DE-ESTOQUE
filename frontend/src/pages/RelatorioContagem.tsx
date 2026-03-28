@@ -4,6 +4,12 @@ import * as XLSX from 'xlsx'
 import { supabase } from '../lib/supabaseClient'
 import { loadChecklistVisibleColsFromStorage } from '../lib/checklistVisibleCols'
 import { enrichContagemRowsWithPlanilhaLinhas } from '../lib/enrichContagemRowsWithPlanilhaLinhas'
+import {
+  agruparContagemDiariaComoPrevia,
+  fetchPlanilhaContagemIdsParaIntervalo,
+  filterContagensPorModoListagem,
+  ordenarLinhasInventarioComoPrevia,
+} from '../lib/contagemListagemCompat'
 import { inventarioCamaraLabelFromGrupo } from '../components/inventario/inventarioPlanilhaModel'
 
 type ContagemRow = {
@@ -32,6 +38,10 @@ type ContagemRow = {
   origem?: string | null
   /** 1–4 na rodada de inventário; contagem diária costuma ser null */
   inventario_numero_contagem?: number | null
+  /** 1–3 repetição (inventário); necessário para o mesmo filtro da prévia */
+  inventario_repeticao?: number | null
+  /** Quando a linha é agrupamento da contagem diária (igual à prévia), ids aglutinados */
+  source_ids?: string[]
   /** Preenchido a partir de `inventario_planilha_linhas` (inventário formato planilha). */
   planilha_grupo_armazem?: number | null
   planilha_rua?: string | null
@@ -197,7 +207,12 @@ export default function RelatorioContagem({
     prevLoadingRef.current = loading
   }, [loading])
 
-  async function fetchRelatorioContagemRows(): Promise<{ rows: ContagemRow[]; successMessage?: string }> {
+  async function fetchRelatorioContagemRows(): Promise<{
+    rows: ContagemRow[]
+    successMessage?: string
+    /** Igual à prévia quando `origem` não existe no banco (fallback SQL). */
+    origemAusenteNoResultado: boolean
+  }> {
     const selectCompleto = `
       id,
       data_contagem,
@@ -218,6 +233,7 @@ export default function RelatorioContagem({
       dun,
       foto_base64,
       origem,
+      inventario_repeticao,
       inventario_numero_contagem
     `
     const selectCompletoCompact = selectCompleto.replace(/\s+/g, '')
@@ -257,7 +273,8 @@ export default function RelatorioContagem({
       data_validade,
       ean,
       dun,
-      foto_base64
+      foto_base64,
+      inventario_repeticao
     `
     const selectSemColunasInventarioCompact = selectSemColunasInventario.replace(/\s+/g, '')
 
@@ -333,6 +350,7 @@ export default function RelatorioContagem({
       data.map((r) => ({
         ...r,
         origem: r.origem ?? null,
+        inventario_repeticao: r.inventario_repeticao ?? null,
         inventario_numero_contagem: r.inventario_numero_contagem ?? null,
       }))
 
@@ -349,6 +367,7 @@ export default function RelatorioContagem({
       const data = await fetchRows(selectCompletoCompact, true)
       return {
         rows: await enrichContagemRowsWithPlanilhaLinhas(mapSemOrigem(data as ContagemRow[]), 'RelatorioContagem'),
+        origemAusenteNoResultado: false,
       }
     } catch (e: unknown) {
       if (!isColumnMissingErrorRel(e)) {
@@ -363,6 +382,7 @@ export default function RelatorioContagem({
           ),
           successMessage:
             'Colunas origem / nº contagem ausentes no SELECT (migre com os SQL em supabase/sql). O filtro por nº da contagem foi aplicado no servidor.',
+          origemAusenteNoResultado: true,
         }
       } catch (e2: unknown) {
         if (!isColumnMissingErrorRel(e2)) {
@@ -378,12 +398,14 @@ export default function RelatorioContagem({
             (data as ContagemRow[]).map((r) => ({
               ...r,
               origem: null,
+              inventario_repeticao: null,
               inventario_numero_contagem: null,
             })) as ContagemRow[],
             'RelatorioContagem',
           ),
           successMessage:
             'Colunas de inventário ausentes no Supabase: relatório sem filtro por nº da contagem. Execute alter_contagens_estoque_origem_inventario.sql e alter_contagens_estoque_inventario_numero_contagem.sql.',
+          origemAusenteNoResultado: true,
         }
       } catch (e3: unknown) {
         if (!isColumnMissingErrorRel(e3)) {
@@ -403,12 +425,14 @@ export default function RelatorioContagem({
           up_adicional: null,
           foto_base64: null,
           origem: null,
+          inventario_repeticao: null,
           inventario_numero_contagem: null,
         }))
         return {
           rows: await enrichContagemRowsWithPlanilhaLinhas(mapped as ContagemRow[], 'RelatorioContagem'),
           successMessage:
             'Relatório em modo compatível (menos colunas). Execute os scripts SQL do projeto no Supabase para todos os campos.',
+          origemAusenteNoResultado: true,
         }
       } catch (e4: unknown) {
         throw new Error(
@@ -418,14 +442,49 @@ export default function RelatorioContagem({
     }
   }
 
+  /** Mesma regra da prévia em ContagemEstoque: filtro origem/planilha + ordem (inventário) ou agrupamento (contagem diária). */
+  async function aplicarMesmaRegraDaPreviaAsync(
+    data: ContagemRow[],
+    origemAusenteNoResultado: boolean,
+  ): Promise<ContagemRow[]> {
+    let minY = startDate
+    let maxY = endDate
+    if (useSingleDay) {
+      minY = maxY = singleDay
+    } else if (allTime) {
+      minY = '9999-12-31'
+      maxY = '1970-01-01'
+      for (const r of data) {
+        const d = r.data_contagem != null ? String(r.data_contagem).slice(0, 10) : ''
+        if (/^\d{4}-\d{2}-\d{2}$/.test(d)) {
+          if (d < minY) minY = d
+          if (d > maxY) maxY = d
+        }
+      }
+      if (minY === '9999-12-31') {
+        minY = '1970-01-01'
+        maxY = '2100-12-31'
+      }
+    }
+    const planilhaIds = await fetchPlanilhaContagemIdsParaIntervalo(supabase, minY, maxY)
+    const modo = useInventarioCols ? 'inventario' : 'contagem_diaria'
+    const asRec = data.map((r) => ({ ...r }) as Record<string, unknown>)
+    const filtered = filterContagensPorModoListagem(asRec, modo, planilhaIds, origemAusenteNoResultado)
+    if (useInventarioCols) {
+      return ordenarLinhasInventarioComoPrevia(filtered) as ContagemRow[]
+    }
+    return agruparContagemDiariaComoPrevia(filtered as ContagemRow[]) as ContagemRow[]
+  }
+
   async function load() {
     setLoading(true)
     setError('')
     setSuccess('')
     setRows([])
     try {
-      const { rows: data, successMessage } = await fetchRelatorioContagemRows()
-      setRows(data)
+      const { rows: data, successMessage, origemAusenteNoResultado } = await fetchRelatorioContagemRows()
+      const finalRows = await aplicarMesmaRegraDaPreviaAsync(data, origemAusenteNoResultado)
+      setRows(finalRows)
       if (successMessage) setSuccess(successMessage)
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Erro ao carregar relatório.')
@@ -435,18 +494,27 @@ export default function RelatorioContagem({
   }
 
   async function handleDeleteRow(id: string) {
-    if (!confirm('Deseja realmente excluir esta contagem?')) return
+    const row = rows.find((r) => r.id === id)
+    const idsToDelete = row?.source_ids?.length ? row.source_ids : [id]
+    const msg =
+      idsToDelete.length > 1
+        ? `Excluir ${idsToDelete.length} registros no banco (agrupados como na prévia)?`
+        : 'Deseja realmente excluir esta contagem?'
+    if (!confirm(msg)) return
     setRowActionLoading(true)
     setError('')
     setSuccess('')
 
-    const { error: delError } = await supabase.from('contagens_estoque').delete().eq('id', id)
-    if (delError) {
-      setError(`Erro ao excluir: ${delError.message}`)
-    } else {
-      setRows((prev) => prev.filter((r) => r.id !== id))
-      setSuccess('Contagem excluída com sucesso.')
+    for (const uid of idsToDelete) {
+      const { error: delError } = await supabase.from('contagens_estoque').delete().eq('id', uid)
+      if (delError) {
+        setError(`Erro ao excluir: ${delError.message}`)
+        setRowActionLoading(false)
+        return
+      }
     }
+    setRows((prev) => prev.filter((r) => r.id !== id))
+    setSuccess(idsToDelete.length > 1 ? `${idsToDelete.length} registros excluídos.` : 'Contagem excluída com sucesso.')
     setRowActionLoading(false)
   }
 
@@ -461,19 +529,26 @@ export default function RelatorioContagem({
     setError('')
     setSuccess('')
 
-    const { error: updError } = await supabase
-      .from('contagens_estoque')
-      .update({ quantidade_up: qtd })
-      .eq('id', id)
+    const row = rows.find((r) => r.id === id)
+    const idsToUpdate = row?.source_ids?.length ? row.source_ids : [id]
 
-    if (updError) {
-      setError(`Erro ao atualizar quantidade: ${updError.message}`)
-    } else {
-      setRows((prev) => prev.map((r) => (r.id === id ? { ...r, quantidade_up: qtd } : r)))
-      setEditingId(null)
-      setEditingQuantidade('')
-      setSuccess('Quantidade atualizada com sucesso.')
+    for (const uid of idsToUpdate) {
+      const { error: updError } = await supabase.from('contagens_estoque').update({ quantidade_up: qtd }).eq('id', uid)
+      if (updError) {
+        setError(`Erro ao atualizar quantidade: ${updError.message}`)
+        setRowActionLoading(false)
+        return
+      }
     }
+
+    setRows((prev) => prev.map((r) => (r.id === id ? { ...r, quantidade_up: qtd } : r)))
+    setEditingId(null)
+    setEditingQuantidade('')
+    setSuccess(
+      idsToUpdate.length > 1
+        ? `Quantidade ${qtd} aplicada a ${idsToUpdate.length} registros agrupados.`
+        : 'Quantidade atualizada com sucesso.',
+    )
     setRowActionLoading(false)
   }
 
@@ -530,12 +605,13 @@ export default function RelatorioContagem({
     setExportExcelLoading(true)
     setError('')
     try {
-      const { rows: data } = await fetchRelatorioContagemRows()
-      if (!data.length) {
+      const { rows: data, origemAusenteNoResultado } = await fetchRelatorioContagemRows()
+      const exportRows = await aplicarMesmaRegraDaPreviaAsync(data, origemAusenteNoResultado)
+      if (!exportRows.length) {
         setError('Nenhum registro no período para exportar.')
         return
       }
-      const ws = XLSX.utils.aoa_to_sheet(buildRelatorioExcelAoa(data))
+      const ws = XLSX.utils.aoa_to_sheet(buildRelatorioExcelAoa(exportRows))
       const wb = XLSX.utils.book_new()
       XLSX.utils.book_append_sheet(wb, ws, 'Contagens')
       const safeFile = dateRangeText.replace(/[/\\?*[\]:]/g, '-').replace(/\s+/g, '_')
@@ -710,6 +786,11 @@ export default function RelatorioContagem({
         O período e o &quot;filtrar por dia&quot; usam o <strong>dia civil da contagem</strong> (campo gravado na
         sessão), alinhado ao que você vê na tela de contagem — não só o relógio do momento em que salvou. Registros
         muito antigos sem esse campo usam a data/hora do registro.
+      </p>
+      <p style={{ margin: '8px 0 0', fontSize: 13, color: 'var(--text-muted, #888)', lineHeight: 1.45 }}>
+        A lista abaixo usa a <strong>mesma regra da prévia</strong> em Contagem/Inventário: colunas &quot;Inventário
+        físico&quot; mostram só inventário (e a mesma ordem); &quot;Contagem diária&quot; agrupa por dia+código como na
+        prévia. IDs em <code style={{ fontSize: 12 }}>inventario_planilha_linhas</code> entram no filtro como na prévia.
       </p>
 
       <div style={{ display: 'grid', gap: 12, marginTop: 12 }}>
