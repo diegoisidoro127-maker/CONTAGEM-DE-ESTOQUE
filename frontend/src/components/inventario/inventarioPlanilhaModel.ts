@@ -139,6 +139,11 @@ export function buildPlanilhaLayoutPorItens(
   }
   for (const arr of byGrupo.values()) {
     arr.sort((a, b) => {
+      const oa = a.planilha_ordem_na_aba
+      const ob = b.planilha_ordem_na_aba
+      if (oa != null && ob != null && oa !== ob) return oa - ob
+      if (oa != null && ob == null) return -1
+      if (oa == null && ob != null) return 1
       const c = a.codigo_interno.localeCompare(b.codigo_interno, 'pt-BR')
       if (c !== 0) return c
       const r = (a.inventario_repeticao ?? 0) - (b.inventario_repeticao ?? 0)

@@ -30,6 +30,10 @@ export type OfflineChecklistItem = {
    */
   /** 1–8: aba (CAMARA 11/12/13/21 × RUA — ver INVENTARIO_ARMAZEM_ABA_TITULOS no frontend). */
   armazem_grupo?: number
+  /**
+   * Modo planilha em branco: ordem fixa da linha na aba (0…N), para POS/NIVEL não mudarem ao digitar o código.
+   */
+  planilha_ordem_na_aba?: number
 }
 
 /** `planilha` = mesmo carregamento que `armazém` (grupos por câmara/RUA), rótulo para inventário no formato da planilha. */

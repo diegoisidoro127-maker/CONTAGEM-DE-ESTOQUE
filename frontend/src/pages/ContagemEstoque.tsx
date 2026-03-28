@@ -1525,6 +1525,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
               codigo_interno: '',
               descricao: '',
               armazem_grupo: g,
+              planilha_ordem_na_aba: i,
               quantidade_contada: '',
               foto_base64: '',
               up_quantidade: '',
@@ -3090,12 +3091,21 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
 
   const armazemItemsSorted = useMemo(() => {
     if (!armazemGrupoAtual?.items?.length) return [] as OfflineChecklistItem[]
+    const planilhaFixa =
+      inventario && offlineSession?.listMode === 'planilha'
     return [...armazemGrupoAtual.items].sort((a, b) => {
+      if (planilhaFixa) {
+        const oa = a.planilha_ordem_na_aba
+        const ob = b.planilha_ordem_na_aba
+        if (oa != null && ob != null && oa !== ob) return oa - ob
+        if (oa != null && ob == null) return -1
+        if (oa == null && ob != null) return 1
+      }
       const c = a.codigo_interno.localeCompare(b.codigo_interno, 'pt-BR')
       if (c !== 0) return c
       return (a.inventario_repeticao ?? 0) - (b.inventario_repeticao ?? 0)
     })
-  }, [armazemGrupoAtual])
+  }, [armazemGrupoAtual, inventario, offlineSession?.listMode])
 
   const inventarioNumeroContagemRodada = clampInventarioNumeroContagem(
     offlineSession?.inventario_numero_contagem ?? 1,
