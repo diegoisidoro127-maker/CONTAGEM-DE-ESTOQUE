@@ -24,6 +24,7 @@ import {
 } from '../components/inventario/inventarioPlanilhaArmazem'
 import {
   buildPlanilhaLayoutPorItens,
+  compareInventarioPlanilhaItens,
   inventarioCamaraLabelFromGrupo,
   INVENTARIO_ARMAZEM_GRUPO_IDS,
   INVENTARIO_ARMAZEM_NUM_GRUPOS,
@@ -1409,15 +1410,17 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     }
 
     if (!error) {
+      const hasInventarioMeta = (r: Record<string, unknown>) =>
+        (r.inventario_repeticao != null && String(r.inventario_repeticao).trim() !== '') ||
+        (r.inventario_numero_contagem != null && String(r.inventario_numero_contagem).trim() !== '')
+
       const byOrigem = (r: Record<string, unknown>) => {
         const o = r.origem != null ? String(r.origem) : ''
         if (!inventario) return o !== 'inventario'
         if (o === 'inventario') return true
-        if (previewOrigemAusenteNoResultado) return true
-        const hasInvMeta =
-          (r.inventario_repeticao != null && String(r.inventario_repeticao).trim() !== '') ||
-          (r.inventario_numero_contagem != null && String(r.inventario_numero_contagem).trim() !== '')
-        return hasInvMeta
+        /** Sem coluna `origem` no banco: só inventário se houver repetição ou nº da rodada (não misturar contagem diária). */
+        if (previewOrigemAusenteNoResultado) return hasInventarioMeta(r)
+        return hasInventarioMeta(r)
       }
       const rawRows = (data ?? []).filter(byOrigem).map((r: Record<string, any>) => {
         const nomeJoin = conferenteNomeFromJoin(r)
@@ -2343,13 +2346,33 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
 
       if (error && isMissingDbColumnError(error, 'origem')) {
         if (inventario) {
-          throw new Error(
-            'A tabela contagens_estoque não tem a coluna origem. Não é possível apagar só o inventário com segurança. ' +
-              'Execute o script supabase/sql/alter_contagens_estoque_origem_inventario.sql no Supabase e tente de novo.',
-          )
+          /** Sem `origem`: apaga linhas com metadados de inventário (mesma ideia da prévia). */
+          const delPorMeta = await supabase
+            .from('contagens_estoque')
+            .delete()
+            .eq('data_contagem', dayKey)
+            .or('inventario_repeticao.not.is.null,inventario_numero_contagem.not.is.null')
+          if (!delPorMeta.error) {
+            error = null
+          } else if (isMissingAnyInventarioContagensColumn(delPorMeta.error)) {
+            const ids = new Set<string>()
+            for (const row of previewRows) {
+              for (const sid of row.source_ids?.length ? row.source_ids : [row.id]) ids.add(sid)
+            }
+            if (ids.size === 0) {
+              throw new Error(
+                'Sem coluna origem e sem linhas com repetição/nº de contagem. Rode supabase/sql/alter_contagens_estoque_origem_inventario.sql no Supabase e tente de novo.',
+              )
+            }
+            const delPorIds = await supabase.from('contagens_estoque').delete().in('id', Array.from(ids))
+            error = delPorIds.error
+          } else {
+            error = delPorMeta.error
+          }
+        } else {
+          const simple = await supabase.from('contagens_estoque').delete().eq('data_contagem', dayKey)
+          error = simple.error
         }
-        const simple = await supabase.from('contagens_estoque').delete().eq('data_contagem', dayKey)
-        error = simple.error
       }
 
       if (error) throw error
@@ -3207,21 +3230,9 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
 
   const armazemItemsSorted = useMemo(() => {
     if (!armazemGrupoAtual?.items?.length) return [] as OfflineChecklistItem[]
-    const planilhaFixa =
-      inventario && offlineSession?.listMode === 'planilha'
-    return [...armazemGrupoAtual.items].sort((a, b) => {
-      if (planilhaFixa) {
-        const oa = a.planilha_ordem_na_aba
-        const ob = b.planilha_ordem_na_aba
-        if (oa != null && ob != null && oa !== ob) return oa - ob
-        if (oa != null && ob == null) return -1
-        if (oa == null && ob != null) return 1
-      }
-      const c = a.codigo_interno.localeCompare(b.codigo_interno, 'pt-BR')
-      if (c !== 0) return c
-      return (a.inventario_repeticao ?? 0) - (b.inventario_repeticao ?? 0)
-    })
-  }, [armazemGrupoAtual, inventario, offlineSession?.listMode])
+    /** Mesma ordem de `buildPlanilhaLayoutPorItens` para POS/Nível na tela = valores gravados em `inventario_planilha_linhas`. */
+    return [...armazemGrupoAtual.items].sort(compareInventarioPlanilhaItens)
+  }, [armazemGrupoAtual])
 
   const inventarioNumeroContagemRodada = clampInventarioNumeroContagem(
     offlineSession?.inventario_numero_contagem ?? 1,
