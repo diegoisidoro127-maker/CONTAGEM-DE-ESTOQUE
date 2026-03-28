@@ -1,3 +1,22 @@
+/** Última tela de lista visitada (Contagem diária vs Inventário) — relatório usa para escolher qual prefs de colunas. */
+export const LAST_LIST_SCREEN_SESSION_KEY = 'contagem-last-list-screen' as const
+
+export function writeLastListScreen(kind: 'contagem' | 'inventario'): void {
+  try {
+    sessionStorage.setItem(LAST_LIST_SCREEN_SESSION_KEY, kind)
+  } catch {
+    /* ignore */
+  }
+}
+
+export function readLastListWasInventario(): boolean {
+  try {
+    return sessionStorage.getItem(LAST_LIST_SCREEN_SESSION_KEY) === 'inventario'
+  } catch {
+    return false
+  }
+}
+
 /** Mesmas chaves que em ContagemEstoque — lista principal e relatório leem o mesmo localStorage. */
 export const CHECKLIST_VISIBLE_COLS_STORAGE = {
   contagem: 'contagem-checklist-visible-cols',

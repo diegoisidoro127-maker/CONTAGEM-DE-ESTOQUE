@@ -89,7 +89,7 @@ const RELATORIO_PAGE_SIZE = 15
 
 type RelatorioContagemProps = {
   mode?: 'periodo' | 'dia'
-  /** Se true, usa as mesmas colunas visíveis que a lista em Inventário (senão Contagem de estoque). */
+  /** Valor inicial: última tela Contagem vs Inventário (sessionStorage no App). */
   listColumnPrefsInventario?: boolean
 }
 
@@ -104,27 +104,34 @@ export default function RelatorioContagem({
   const [editingQuantidade, setEditingQuantidade] = useState<string>('')
   const [rowActionLoading, setRowActionLoading] = useState(false)
 
+  /** Preferências de colunas: inventário vs contagem diária (toggle ou valor vindo do App). */
+  const [useInventarioCols, setUseInventarioCols] = useState(listColumnPrefsInventario)
+
   const isDiaMode = mode === 'dia'
   /** Excel só no relatório por período — nunca em “Todas as contagens” (`mode="dia"`). */
   const showExportExcel = mode === 'periodo'
 
-  const listColPrefs = loadChecklistVisibleColsFromStorage(listColumnPrefsInventario)
+  const listColPrefs = useMemo(() => loadChecklistVisibleColsFromStorage(useInventarioCols), [useInventarioCols])
   const prevCol = (id: string) => listColPrefs[id] !== false
-  const relatorioListaColCount = [
-    'codigo',
-    'descricao',
-    'unidade',
-    'quantidade',
-    'data_fabricacao',
-    'data_validade',
-    'lote',
-    'up',
-    'observacao',
-    'ean',
-    'dun',
-    'foto',
-    'acoes',
-  ].filter(prevCol).length
+  const relatorioListaColCount = useMemo(
+    () =>
+      [
+        'codigo',
+        'descricao',
+        'unidade',
+        'quantidade',
+        'data_fabricacao',
+        'data_validade',
+        'lote',
+        'up',
+        'observacao',
+        'ean',
+        'dun',
+        'foto',
+        'acoes',
+      ].filter((id) => listColPrefs[id] !== false).length,
+    [listColPrefs],
+  )
 
   const [startDate, setStartDate] = useState(() =>
     toISODateLocal(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)),
@@ -748,10 +755,31 @@ export default function RelatorioContagem({
         {error ? <div style={{ color: '#b00020' }}>{error}</div> : null}
         {success ? <div style={{ color: '#0f7a0f' }}>{success}</div> : null}
 
-        <p style={{ fontSize: 13, color: 'var(--text, #666)', marginTop: 10, maxWidth: 720, lineHeight: 1.45 }}>
-          Tabela com as <strong>mesmas colunas</strong> que a lista na tela Contagem / Inventário (preferências em{' '}
-          <strong>Ocultar/mostrar colunas</strong>
-          {listColumnPrefsInventario ? ' — modo inventário' : ' — modo contagem diária'}).
+        <label
+          style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: 10,
+            fontSize: 13,
+            marginTop: 10,
+            cursor: 'pointer',
+            maxWidth: 720,
+            lineHeight: 1.45,
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={useInventarioCols}
+            onChange={(e) => setUseInventarioCols(e.target.checked)}
+            style={{ marginTop: 3 }}
+          />
+          <span>
+            Usar colunas salvas na tela <strong>Inventário</strong> (desmarcado = <strong>Contagem diária</strong>). Por
+            padrão, usa a última lista que você abriu no painel (Contagem ou Inventário).
+          </span>
+        </label>
+        <p style={{ fontSize: 13, color: 'var(--text, #666)', marginTop: 8, maxWidth: 720, lineHeight: 1.45 }}>
+          Mesmas colunas que a lista — controle em <strong>Ocultar/mostrar colunas</strong> na tela correspondente.
         </p>
 
         {rows.length ? (

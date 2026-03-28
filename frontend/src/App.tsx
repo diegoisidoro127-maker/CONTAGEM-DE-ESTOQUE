@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { readLastListWasInventario, writeLastListScreen } from './lib/checklistVisibleCols'
 import type React from 'react'
 import './App.css'
 import BaseProdutos from './pages/BaseProdutos'
@@ -21,6 +22,12 @@ export default function App() {
     document.documentElement.setAttribute('data-theme', theme)
     localStorage.setItem('ui-theme', theme)
   }, [theme])
+
+  useEffect(() => {
+    if (view === 'contagem' || view === 'inventario') {
+      writeLastListScreen(view === 'inventario' ? 'inventario' : 'contagem')
+    }
+  }, [view])
 
   return (
     <div>
@@ -161,9 +168,17 @@ export default function App() {
           ) : view === 'baseDados' ? (
             <BaseProdutos key="baseDados" />
           ) : view === 'relatorio' ? (
-            <RelatorioContagem key="relatorio" mode="periodo" />
+            <RelatorioContagem
+              key="relatorio"
+              mode="periodo"
+              listColumnPrefsInventario={readLastListWasInventario()}
+            />
           ) : (
-            <RelatorioContagem key="todas" mode="dia" />
+            <RelatorioContagem
+              key="todas"
+              mode="dia"
+              listColumnPrefsInventario={readLastListWasInventario()}
+            />
           )}
         </>
       )}
