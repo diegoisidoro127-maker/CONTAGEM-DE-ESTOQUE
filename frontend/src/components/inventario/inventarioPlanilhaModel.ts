@@ -95,6 +95,15 @@ export function inventarioAbaTitulo(contagem: number | null | undefined): string
   return INVENTARIO_ARMAZEM_ABA_TITULOS[contagem] ?? formatArmazemGroupLabel(contagem)
 }
 
+/** Primeira parte do título da aba, ex.: "CAMARA 11" (antes de " - RUA …"). */
+export function inventarioCamaraLabelFromGrupo(grupo: number | null | undefined): string {
+  if (grupo == null || !Number.isFinite(grupo)) return '—'
+  const t = INVENTARIO_ARMAZEM_ABA_TITULOS[grupo]
+  if (!t) return '—'
+  const first = t.split(' - ')[0]?.trim()
+  return first ?? '—'
+}
+
 /**
  * Para a tabela estilo planilha (e lista mobile alinhada), remove linhas de cabeçalho de grupo.
  */

@@ -24,16 +24,20 @@ import {
 } from '../components/inventario/inventarioPlanilhaArmazem'
 import {
   buildPlanilhaLayoutPorItens,
+  inventarioCamaraLabelFromGrupo,
   INVENTARIO_ARMAZEM_GRUPO_IDS,
   INVENTARIO_ARMAZEM_NUM_GRUPOS,
   INVENTARIO_PLANILHA_LINHAS_TOTAIS_POR_ABA,
 } from '../components/inventario/inventarioPlanilhaModel'
+import { enrichContagemRowsWithPlanilhaLinhas } from '../lib/enrichContagemRowsWithPlanilhaLinhas'
 import {
   CHECKLIST_VISIBLE_COLS_STORAGE,
   loadChecklistVisibleColsFromStorage,
 } from '../lib/checklistVisibleCols'
 
 const PREVIEW_PAGE_SIZE = 15
+/** Colunas fixas na prévia (Câmara / Rua / POS / Nível), alinhadas ao relatório completo. */
+const PREVIEW_COLS_PLANILHA_LOCAL = 4
 const CHECKLIST_PAGE_SIZE = 15
 /** Linhas por página na tabela “Inventário — formato planilha” (cada aba pode ter centenas de linhas). */
 const PLANILHA_TABELA_PAGE_SIZE = 30
@@ -80,6 +84,11 @@ type ContagemPreviewRow = {
   inventario_repeticao?: number | null
   /** Rodada 1–4 (inventário). */
   inventario_numero_contagem?: number | null
+  /** `inventario_planilha_linhas` por `contagens_estoque_id`. */
+  planilha_grupo_armazem?: number | null
+  planilha_rua?: string | null
+  planilha_posicao?: number | null
+  planilha_nivel?: number | null
 }
 
 type ProductOption = {
@@ -1430,10 +1439,12 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         }
       }) as ContagemPreviewRow[]
 
+      const rawEnriched = await enrichContagemRowsWithPlanilhaLinhas(rawRows, 'ContagemEstoque.preview')
+
       // Prévia agrupada: uma linha por dia + código + descrição, somando a quantidade.
       // No inventário, mantém linhas separadas por repetição e por número da rodada (1–4).
       const grouped = new Map<string, ContagemPreviewRow>()
-      for (const row of rawRows) {
+      for (const row of rawEnriched) {
         const day = dayKey
         const key = inventario
           ? `${day}|${row.codigo_interno.trim().toLowerCase()}|${row.descricao.trim().toLowerCase()}|inv|${row.inventario_repeticao ?? ''}|nc|${row.inventario_numero_contagem ?? ''}`
@@ -1446,6 +1457,12 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         existing.quantidade_up += Number(row.quantidade_up ?? 0)
         existing.source_ids = existing.source_ids.concat(row.source_ids)
         if (!existing.foto_base64 && row.foto_base64) existing.foto_base64 = row.foto_base64
+        if (existing.planilha_grupo_armazem == null && row.planilha_grupo_armazem != null) {
+          existing.planilha_grupo_armazem = row.planilha_grupo_armazem
+          existing.planilha_rua = row.planilha_rua ?? null
+          existing.planilha_posicao = row.planilha_posicao ?? null
+          existing.planilha_nivel = row.planilha_nivel ?? null
+        }
         if (!existing.lote && row.lote) existing.lote = row.lote
         if (!existing.observacao && row.observacao) existing.observacao = row.observacao
         if (!existing.unidade_medida && row.unidade_medida) existing.unidade_medida = row.unidade_medida
@@ -2480,21 +2497,23 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
   function renderPreviewTable() {
     /** Mesma regra da lista principal (Ocultar/mostrar colunas). */
     const prevCol = (id: string) => checklistVisibleCols[id] !== false
-    const previewVisColCount = [
-      'codigo',
-      'descricao',
-      'unidade',
-      'quantidade',
-      'data_fabricacao',
-      'data_validade',
-      'lote',
-      'up',
-      'observacao',
-      'ean',
-      'dun',
-      'foto',
-      'acoes',
-    ].filter(prevCol).length
+    const previewVisColCount =
+      PREVIEW_COLS_PLANILHA_LOCAL +
+      [
+        'codigo',
+        'descricao',
+        'unidade',
+        'quantidade',
+        'data_fabricacao',
+        'data_validade',
+        'lote',
+        'up',
+        'observacao',
+        'ean',
+        'dun',
+        'foto',
+        'acoes',
+      ].filter(prevCol).length
 
     const totalFiltered = filteredPreviewRows.length
     const rangeFrom =
@@ -2644,9 +2663,27 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                   }}
                 >
                   <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 12, color: 'var(--text, #888)' }}>Câmara</div>
+                    <div style={{ fontSize: 13 }}>{inventarioCamaraLabelFromGrupo(r.planilha_grupo_armazem)}</div>
+                    <div style={{ fontSize: 12, color: 'var(--text, #888)', marginTop: 8 }}>Rua</div>
+                    <div style={{ fontSize: 13 }}>
+                      {r.planilha_rua != null && String(r.planilha_rua).trim() !== '' ? r.planilha_rua : '—'}
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--text, #888)', marginTop: 8 }}>POS</div>
+                    <div style={{ fontSize: 13 }}>
+                      {r.planilha_posicao != null && Number.isFinite(Number(r.planilha_posicao))
+                        ? r.planilha_posicao
+                        : '—'}
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--text, #888)', marginTop: 8 }}>Nível</div>
+                    <div style={{ fontSize: 13 }}>
+                      {r.planilha_nivel != null && Number.isFinite(Number(r.planilha_nivel)) ? r.planilha_nivel : '—'}
+                    </div>
                     {prevCol('codigo') ? (
                       <>
-                        <div style={{ fontSize: 12, color: 'var(--text, #888)' }}>Código do produto</div>
+                        <div style={{ fontSize: 12, color: 'var(--text, #888)', marginTop: 8 }}>
+                          Código do produto
+                        </div>
                         <div style={{ fontSize: 13, fontWeight: 800, fontFamily: 'monospace' }}>{r.codigo_interno}</div>
                       </>
                     ) : null}
@@ -2812,6 +2849,10 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         >
           <thead>
             <tr>
+              <th style={thStyle}>Câmara</th>
+              <th style={thStyle}>Rua</th>
+              <th style={thStyle}>POS</th>
+              <th style={thStyle}>Nível</th>
               {prevCol('codigo') ? <th style={thStyle}>Código do produto</th> : null}
               {prevCol('descricao') ? <th style={thStyle}>Descrição</th> : null}
               {prevCol('unidade') ? <th style={thStyle}>Unidade de medida</th> : null}
@@ -2832,6 +2873,18 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
               const hasPhoto = Boolean(String(r.foto_base64 ?? '').trim())
               return (
                 <tr key={r.id}>
+                  <td style={tdStyle}>{inventarioCamaraLabelFromGrupo(r.planilha_grupo_armazem)}</td>
+                  <td style={tdStyle}>
+                    {r.planilha_rua != null && String(r.planilha_rua).trim() !== '' ? r.planilha_rua : '—'}
+                  </td>
+                  <td style={tdStyle}>
+                    {r.planilha_posicao != null && Number.isFinite(Number(r.planilha_posicao))
+                      ? r.planilha_posicao
+                      : '—'}
+                  </td>
+                  <td style={tdStyle}>
+                    {r.planilha_nivel != null && Number.isFinite(Number(r.planilha_nivel)) ? r.planilha_nivel : '—'}
+                  </td>
                   {prevCol('codigo') ? <td style={tdStyle}>{r.codigo_interno}</td> : null}
                   {prevCol('descricao') ? (
                     <td style={{ ...tdStyle, whiteSpace: 'normal', maxWidth: 420 }}>{r.descricao}</td>

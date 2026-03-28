@@ -3,6 +3,8 @@ import type React from 'react'
 import * as XLSX from 'xlsx'
 import { supabase } from '../lib/supabaseClient'
 import { loadChecklistVisibleColsFromStorage } from '../lib/checklistVisibleCols'
+import { enrichContagemRowsWithPlanilhaLinhas } from '../lib/enrichContagemRowsWithPlanilhaLinhas'
+import { inventarioCamaraLabelFromGrupo } from '../components/inventario/inventarioPlanilhaModel'
 
 type ContagemRow = {
   id: string
@@ -30,6 +32,11 @@ type ContagemRow = {
   origem?: string | null
   /** 1–4 na rodada de inventário; contagem diária costuma ser null */
   inventario_numero_contagem?: number | null
+  /** Preenchido a partir de `inventario_planilha_linhas` (inventário formato planilha). */
+  planilha_grupo_armazem?: number | null
+  planilha_rua?: string | null
+  planilha_posicao?: number | null
+  planilha_nivel?: number | null
 }
 
 function toISODateLocal(d: Date) {
@@ -69,6 +76,9 @@ function isColumnMissingErrorRel(e: unknown): boolean {
 }
 
 const TABELA_PRODUTOS_REL = 'Todos os Produtos'
+
+/** Colunas fixas Câmara / Rua / POS / Nível (antes das colunas da checklist). */
+const RELATORIO_COLS_PLANILHA_LOCAL = 4
 
 function mergeContagemRowsById(
   a: ContagemRow[] | null | undefined,
@@ -115,6 +125,7 @@ export default function RelatorioContagem({
   const prevCol = (id: string) => listColPrefs[id] !== false
   const relatorioListaColCount = useMemo(
     () =>
+      RELATORIO_COLS_PLANILHA_LOCAL +
       [
         'codigo',
         'descricao',
@@ -309,7 +320,9 @@ export default function RelatorioContagem({
 
     try {
       const data = await fetchRows(selectCompletoCompact, true)
-      setRows(mapSemOrigem(data as ContagemRow[]))
+      setRows(
+        await enrichContagemRowsWithPlanilhaLinhas(mapSemOrigem(data as ContagemRow[]), 'RelatorioContagem'),
+      )
     } catch (e: any) {
       if (!isColumnMissingErrorRel(e)) {
         setError(e?.message ? String(e.message) : 'Erro ao carregar relatório.')
@@ -317,7 +330,12 @@ export default function RelatorioContagem({
       }
       try {
         const data = await fetchRows(selectSemColunasInventarioCompact, true)
-        setRows(mapSemOrigem(injectNumeroSeFiltroAtivo(data as ContagemRow[])))
+        setRows(
+          await enrichContagemRowsWithPlanilhaLinhas(
+            mapSemOrigem(injectNumeroSeFiltroAtivo(data as ContagemRow[])),
+            'RelatorioContagem',
+          ),
+        )
         setSuccess(
           'Colunas origem / nº contagem ausentes no SELECT (migre com os SQL em supabase/sql). O filtro por nº da contagem foi aplicado no servidor.',
         )
@@ -332,11 +350,14 @@ export default function RelatorioContagem({
       try {
         const data = await fetchRows(selectSemColunasInventarioCompact, false)
         setRows(
-          (data as ContagemRow[]).map((r) => ({
-            ...r,
-            origem: null,
-            inventario_numero_contagem: null,
-          })) as ContagemRow[],
+          await enrichContagemRowsWithPlanilhaLinhas(
+            (data as ContagemRow[]).map((r) => ({
+              ...r,
+              origem: null,
+              inventario_numero_contagem: null,
+            })) as ContagemRow[],
+            'RelatorioContagem',
+          ),
         )
         setSuccess(
           'Colunas de inventário ausentes no Supabase: relatório sem filtro por nº da contagem. Execute alter_contagens_estoque_origem_inventario.sql e alter_contagens_estoque_inventario_numero_contagem.sql.',
@@ -362,7 +383,7 @@ export default function RelatorioContagem({
           origem: null,
           inventario_numero_contagem: null,
         }))
-        setRows(mapped as ContagemRow[])
+        setRows(await enrichContagemRowsWithPlanilhaLinhas(mapped as ContagemRow[], 'RelatorioContagem'))
         setSuccess(
           'Relatório em modo compatível (menos colunas). Execute os scripts SQL do projeto no Supabase para todos os campos.',
         )
@@ -424,6 +445,13 @@ export default function RelatorioContagem({
     // Mesmas colunas que a lista principal (Ocultar/mostrar colunas).
     const sheetRows = rows.map((r) => {
       const o: Record<string, string | number> = {}
+      const cam = inventarioCamaraLabelFromGrupo(r.planilha_grupo_armazem)
+      o['Câmara'] = cam === '—' ? '' : cam
+      o['Rua'] = r.planilha_rua != null && String(r.planilha_rua).trim() !== '' ? String(r.planilha_rua) : ''
+      o['POS'] =
+        r.planilha_posicao != null && Number.isFinite(Number(r.planilha_posicao)) ? Number(r.planilha_posicao) : ''
+      o['Nível'] =
+        r.planilha_nivel != null && Number.isFinite(Number(r.planilha_nivel)) ? Number(r.planilha_nivel) : ''
       if (prevCol('codigo')) o['Código do produto'] = r.codigo_interno
       if (prevCol('descricao')) o['Descrição'] = r.descricao
       if (prevCol('unidade')) o['Unidade de medida'] = r.unidade_medida ?? ''
@@ -794,6 +822,10 @@ export default function RelatorioContagem({
             >
               <thead>
                 <tr>
+                  <th style={thStyle}>Câmara</th>
+                  <th style={thStyle}>Rua</th>
+                  <th style={thStyle}>POS</th>
+                  <th style={thStyle}>Nível</th>
                   {prevCol('codigo') ? <th style={thStyle}>Código do produto</th> : null}
                   {prevCol('descricao') ? <th style={thStyle}>Descrição</th> : null}
                   {prevCol('unidade') ? <th style={thStyle}>Unidade de medida</th> : null}
@@ -814,6 +846,18 @@ export default function RelatorioContagem({
                   const hasPhoto = Boolean(String(r.foto_base64 ?? '').trim())
                   return (
                   <tr key={r.id}>
+                    <td style={tdStyle}>{inventarioCamaraLabelFromGrupo(r.planilha_grupo_armazem)}</td>
+                    <td style={tdStyle}>
+                      {r.planilha_rua != null && String(r.planilha_rua).trim() !== '' ? r.planilha_rua : '—'}
+                    </td>
+                    <td style={tdStyle}>
+                      {r.planilha_posicao != null && Number.isFinite(Number(r.planilha_posicao))
+                        ? r.planilha_posicao
+                        : '—'}
+                    </td>
+                    <td style={tdStyle}>
+                      {r.planilha_nivel != null && Number.isFinite(Number(r.planilha_nivel)) ? r.planilha_nivel : '—'}
+                    </td>
                     {prevCol('codigo') ? <td style={tdStyle}>{r.codigo_interno}</td> : null}
                     {prevCol('descricao') ? (
                       <td style={{ ...tdStyle, whiteSpace: 'normal', maxWidth: 420 }}>{r.descricao}</td>
