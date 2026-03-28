@@ -2127,51 +2127,8 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         : null
 
       setFinalizeProgress('Conectando ao banco...')
-      let deleteSkippedNoOrigemColumn = false
+      /** Cada finalização apenas INSERT: não apaga contagens do mesmo dia/lista — evita substituir um lote por outro. */
       let insertWithoutInventarioColumns = false
-
-      let delQ = supabase
-        .from('contagens_estoque')
-        .delete()
-        .eq('data_contagem', ymd)
-        .eq('conferente_id', offlineSession.conferente_id)
-      if (inventario) {
-        delQ = delQ.eq('origem', 'inventario')
-      }
-      const { error: delErr } = await delQ
-
-      if (delErr) {
-        if (inventario && isMissingDbColumnError(delErr, 'origem')) {
-          deleteSkippedNoOrigemColumn = true
-          setFinalizeProgress(
-            'Coluna origem ausente no banco — não foi possível apagar só o inventário. Inserindo novos registros…',
-          )
-        } else {
-          const startIso = `${ymd}T00:00:00`
-          const endIso = `${ymd}T23:59:59`
-          setFinalizeProgress('Limpando registros antigos (fallback)...')
-          let del2q = supabase
-            .from('contagens_estoque')
-            .delete()
-            .eq('conferente_id', offlineSession.conferente_id)
-            .gte('data_hora_contagem', startIso)
-            .lte('data_hora_contagem', endIso)
-          if (inventario) {
-            del2q = del2q.eq('origem', 'inventario')
-          }
-          const { error: del2 } = await del2q
-          if (del2) {
-            if (inventario && isMissingDbColumnError(del2, 'origem')) {
-              deleteSkippedNoOrigemColumn = true
-              setFinalizeProgress(
-                'Coluna origem ausente — não foi possível limpar registros antigos por tipo. Inserindo…',
-              )
-            } else {
-              throw del2
-            }
-          }
-        }
-      }
 
       const CHUNK = 250
       const insertedContagensIds: string[] = []
@@ -2209,74 +2166,60 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       let planilhaAviso: string | null = null
       if (inventario && planilhaLayout) {
         setFinalizeProgress('Gravando tabela inventário (planilha)...')
-        const { error: delPlErr } = await supabase
-          .from('inventario_planilha_linhas')
-          .delete()
-          .eq('data_inventario', ymd)
-          .eq('conferente_id', offlineSession.conferente_id)
-        if (delPlErr) {
-          if (isMissingInventarioPlanilhaTableError(delPlErr)) {
-            planilhaAviso =
-              ' Tabela inventario_planilha_linhas não encontrada no banco — execute supabase/sql/create_inventario_planilha_linhas.sql.'
-          } else {
-            throw delPlErr
+        const planilhaRows: Record<string, unknown>[] = finalizeMeta.map((meta, idx) => {
+          const layout = planilhaLayout.get(meta.it.key)
+          if (!layout) {
+            throw new Error('Layout da planilha ausente para um item da sessão.')
           }
-        } else {
-          const planilhaRows: Record<string, unknown>[] = finalizeMeta.map((meta, idx) => {
-            const layout = planilhaLayout.get(meta.it.key)
-            if (!layout) {
-              throw new Error('Layout da planilha ausente para um item da sessão.')
-            }
-            return {
-              conferente_id: offlineSession.conferente_id,
-              data_inventario: ymd,
-              grupo_armazem: layout.grupo_armazem,
-              rua: layout.rua,
-              posicao: layout.posicao,
-              nivel: layout.nivel,
-              numero_contagem: layout.numero_contagem,
-              codigo_interno: meta.it.codigo_interno.trim(),
-              descricao: meta.it.descricao.trim(),
-              inventario_repeticao: meta.it.inventario_repeticao ?? null,
-              quantidade: meta.q,
-              data_fabricacao: meta.dfRaw === '' ? null : meta.dfRaw,
-              data_validade: meta.dvRaw === '' ? null : meta.dvRaw,
-              lote: String(meta.it.lote ?? '').trim() || null,
-              up_quantidade: meta.up_adicional,
-              observacao: String(meta.it.observacao ?? '').trim() || null,
-              produto_id: meta.produtoId,
-              contagens_estoque_id: insertedContagensIds[idx],
-            }
-          })
-          for (let i = 0; i < planilhaRows.length; i += CHUNK) {
-            const chunk = planilhaRows.slice(i, i + CHUNK)
-            const { error: plErr } = await supabase.from('inventario_planilha_linhas').insert(chunk)
-            if (plErr) {
-              if (isMissingInventarioPlanilhaTableError(plErr)) {
-                planilhaAviso =
-                  ' Tabela inventario_planilha_linhas não encontrada no banco — execute supabase/sql/create_inventario_planilha_linhas.sql.'
-                break
-              }
-              throw plErr
-            }
+          return {
+            conferente_id: offlineSession.conferente_id,
+            data_inventario: ymd,
+            grupo_armazem: layout.grupo_armazem,
+            rua: layout.rua,
+            posicao: layout.posicao,
+            nivel: layout.nivel,
+            numero_contagem: layout.numero_contagem,
+            codigo_interno: meta.it.codigo_interno.trim(),
+            descricao: meta.it.descricao.trim(),
+            inventario_repeticao: meta.it.inventario_repeticao ?? null,
+            quantidade: meta.q,
+            data_fabricacao: meta.dfRaw === '' ? null : meta.dfRaw,
+            data_validade: meta.dvRaw === '' ? null : meta.dvRaw,
+            lote: String(meta.it.lote ?? '').trim() || null,
+            up_quantidade: meta.up_adicional,
+            observacao: String(meta.it.observacao ?? '').trim() || null,
+            produto_id: meta.produtoId,
+            contagens_estoque_id: insertedContagensIds[idx],
           }
-          if (!planilhaAviso) planilhaGravada = true
+        })
+        for (let i = 0; i < planilhaRows.length; i += CHUNK) {
+          const chunk = planilhaRows.slice(i, i + CHUNK)
+          const { error: plErr } = await supabase.from('inventario_planilha_linhas').insert(chunk)
+          if (plErr) {
+            if (isMissingInventarioPlanilhaTableError(plErr)) {
+              planilhaAviso =
+                ' Tabela inventario_planilha_linhas não encontrada no banco — execute supabase/sql/create_inventario_planilha_linhas.sql.'
+              break
+            }
+            throw plErr
+          }
         }
+        if (!planilhaAviso) planilhaGravada = true
       }
 
       clearOfflineSession(sessionMode)
       setOfflineSession(null)
       setChecklistListMode('todos')
       const inventarioDbCompatMsg =
-        inventario && (deleteSkippedNoOrigemColumn || insertWithoutInventarioColumns)
-          ? ' Recomendado: execute no Supabase os scripts `alter_contagens_estoque_origem_inventario.sql` e `alter_contagens_estoque_inventario_numero_contagem.sql` para gravar origem e evitar duplicar registros ao refinalizar.'
+        inventario && insertWithoutInventarioColumns
+          ? ' Recomendado: execute no Supabase os scripts `alter_contagens_estoque_origem_inventario.sql` e `alter_contagens_estoque_inventario_numero_contagem.sql` para gravar origem e metadados de inventário.'
           : ''
       setSaveSuccess(
         inventario
-          ? `Inventário do dia ${ymd} finalizado: ${rows.length} registro(s) em contagens_estoque.${
-              planilhaGravada ? ` ${rows.length} linha(s) também em inventario_planilha_linhas.` : ''
+          ? `Inventário do dia ${ymd} finalizado: ${rows.length} novo(s) registro(s) em contagens_estoque (acumula com contagens anteriores do mesmo dia).${
+              planilhaGravada ? ` ${rows.length} linha(s) em inventario_planilha_linhas.` : ''
             }${planilhaAviso ?? ''}${inventarioDbCompatMsg}`
-          : `Contagem do dia ${ymd} finalizada: ${rows.length} registro(s) gravados no banco.`,
+          : `Contagem do dia ${ymd} finalizada: ${rows.length} novo(s) registro(s) no banco (acumula com finalizações anteriores do mesmo dia).`,
       )
       setFinalizeProgress(
         planilhaGravada
