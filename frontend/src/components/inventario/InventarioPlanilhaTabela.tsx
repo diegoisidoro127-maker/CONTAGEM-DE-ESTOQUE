@@ -1,6 +1,7 @@
 import type { CSSProperties, Dispatch, SetStateAction } from 'react'
 import type { OfflineChecklistItem } from '../../lib/offlineContagemSession'
 import { isVencimentoAntesFabricacao } from '../../lib/contagemDatasValidacao'
+import { handleChecklistFieldNavKeyDown } from '../../lib/checklistFieldNavigation'
 import { getInventarioRuaArmazem, inventarioArmazemPosNivel } from './inventarioPlanilhaModel'
 
 export type ChecklistEditDraft = {
@@ -127,7 +128,7 @@ export function InventarioPlanilhaTabela(props: InventarioPlanilhaTabelaProps) {
             {showChecklistColumn('acoes') ? <th style={thPlanilha}>Ações</th> : null}
           </tr>
         </thead>
-        <tbody>
+        <tbody data-checklist-nav-root onKeyDown={handleChecklistFieldNavKeyDown}>
           {items.map((it) => {
             const hasPhoto = Boolean(String(it.foto_base64 ?? '').trim())
             const isEditing = checklistEditingKey === it.key && checklistEditDraft

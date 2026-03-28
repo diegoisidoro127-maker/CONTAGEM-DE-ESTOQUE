@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 /** Fila serial: um POST por vez para o webhook do Sheets (evita colunas duplicadas no servidor). */
 let sheetWebhookQueue = Promise.resolve(true as boolean)
@@ -38,6 +38,7 @@ import {
 import { enrichContagemRowsWithPlanilhaLinhas } from '../lib/enrichContagemRowsWithPlanilhaLinhas'
 import { enrichContagemRowsEanDunFromTodosOsProdutos } from '../lib/enrichContagemRowsEanDunFromTodosOsProdutos'
 import { isVencimentoAntesFabricacao } from '../lib/contagemDatasValidacao'
+import { handleChecklistFieldNavKeyDown } from '../lib/checklistFieldNavigation'
 import {
   deleteInventarioPlanilhaLinhasForContagensIds,
   deleteInventarioPlanilhaLinhasForDay,
@@ -55,6 +56,9 @@ const PREVIEW_COLS_PLANILHA_BASE = 5
 const CHECKLIST_PAGE_SIZE = 15
 /** Linhas por página na tabela “Inventário — formato planilha” (cada aba pode ter centenas de linhas). */
 const PLANILHA_TABELA_PAGE_SIZE = 30
+
+/** Senha exigida em "Excluir tudo (banco)" na prévia (proteção contra exclusão acidental). */
+const SENHA_EXCLUIR_TUDO_BANCO = 'AdminUltrapao'
 
 type Conferente = {
   id: string
@@ -568,60 +572,63 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     })()
   }, [])
 
-  useEffect(() => {
-    ;(async () => {
-      setProductOptionsLoading(true)
-      setProdutoError('')
-      let loaded: ProductOption[] = []
-      let lastLoadError: string | null = null
-      let rawRowCount = 0
+  const loadProductOptions = useCallback(async (): Promise<ProductOption[]> => {
+    setProductOptionsLoading(true)
+    setProdutoError('')
+    let loaded: ProductOption[] = []
+    let lastLoadError: string | null = null
+    let rawRowCount = 0
 
+    try {
       try {
-        try {
-          const { data, error } = await supabase.from(TABELA_PRODUTOS).select('*').limit(15000)
-          rawRowCount = data?.length ?? 0
+        const { data, error } = await supabase.from(TABELA_PRODUTOS).select('*').limit(15000)
+        rawRowCount = data?.length ?? 0
 
-          if (error) {
-            lastLoadError = error.message ?? 'erro ao carregar produtos'
-          } else if (data?.length) {
-            loaded = (data as Array<Record<string, any>>)
-              .map((row) => mapRowToProductOption(row))
-              .filter(Boolean) as ProductOption[]
-            loaded.sort((a, b) => a.codigo.localeCompare(b.codigo, 'pt-BR'))
-          }
-        } catch (e: any) {
-          lastLoadError =
-            e?.message != null
-              ? String(e.message)
-              : 'Falha ao consultar o Supabase. Confira VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY no deploy (Render) e recarregue a página.'
+        if (error) {
+          lastLoadError = error.message ?? 'erro ao carregar produtos'
+        } else if (data?.length) {
+          loaded = (data as Array<Record<string, any>>)
+            .map((row) => mapRowToProductOption(row))
+            .filter(Boolean) as ProductOption[]
+          loaded.sort((a, b) => a.codigo.localeCompare(b.codigo, 'pt-BR'))
         }
-
-        // remove duplicados por código
-        const byCode = new Map<string, ProductOption>()
-        for (const p of loaded) {
-          if (!byCode.has(p.codigo)) byCode.set(p.codigo, p)
-        }
-        const normalized = Array.from(byCode.values())
-        setProductOptions(normalized)
-
-        if (!normalized.length) {
-          if (lastLoadError) {
-            setProdutoError(`Erro ao carregar produtos da base: ${lastLoadError}`)
-          } else if (rawRowCount === 0) {
-            setProdutoError(
-              `Nenhuma linha retornada de "${TABELA_PRODUTOS}". Confira políticas RLS (SELECT para o papel anon), se a tabela tem dados e o nome exato no Supabase.`,
-            )
-          } else {
-            setProdutoError(
-              `A tabela retornou ${rawRowCount} linha(s), mas nenhuma com código válido (esperado codigo_interno ou colunas equivalentes). Revise o cadastro.`,
-            )
-          }
-        }
-      } finally {
-        setProductOptionsLoading(false)
+      } catch (e: any) {
+        lastLoadError =
+          e?.message != null
+            ? String(e.message)
+            : 'Falha ao consultar o Supabase. Confira VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY no deploy (Render) e recarregue a página.'
       }
-    })()
+
+      const byCode = new Map<string, ProductOption>()
+      for (const p of loaded) {
+        if (!byCode.has(p.codigo)) byCode.set(p.codigo, p)
+      }
+      const normalized = Array.from(byCode.values())
+      setProductOptions(normalized)
+
+      if (!normalized.length) {
+        if (lastLoadError) {
+          setProdutoError(`Erro ao carregar produtos da base: ${lastLoadError}`)
+        } else if (rawRowCount === 0) {
+          setProdutoError(
+            `Nenhuma linha retornada de "${TABELA_PRODUTOS}". Confira políticas RLS (SELECT para o papel anon), se a tabela tem dados e o nome exato no Supabase.`,
+          )
+        } else {
+          setProdutoError(
+            `A tabela retornou ${rawRowCount} linha(s), mas nenhuma com código válido (esperado codigo_interno ou colunas equivalentes). Revise o cadastro.`,
+          )
+        }
+      }
+
+      return normalized
+    } finally {
+      setProductOptionsLoading(false)
+    }
   }, [])
+
+  useEffect(() => {
+    void loadProductOptions()
+  }, [loadProductOptions])
 
   const productByCode = useMemo(() => {
     const map = new Map<string, ProductOption>()
@@ -1864,7 +1871,11 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     cancelChecklistEdit()
   }
 
-  function aplicarCatalogoPorCodigoPlanilha(key: string, codigo: string) {
+  function aplicarCatalogoPorCodigoPlanilha(
+    key: string,
+    codigo: string,
+    catalogMap?: Map<string, ProductOption>,
+  ) {
     const c = codigo.trim()
     if (!c) {
       updateOfflineItemFields(key, {
@@ -1881,7 +1892,20 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       }
       return
     }
-    const p = productByCode.get(c)
+    let p: ProductOption | undefined
+    if (catalogMap) {
+      p = catalogMap.get(c)
+    } else {
+      p = productByCode.get(c)
+      if (!p) {
+        for (const [k, v] of productByCode) {
+          if (k.trim() === c) {
+            p = v
+            break
+          }
+        }
+      }
+    }
     if (p) {
       updateOfflineItemFields(key, {
         codigo_interno: p.codigo,
@@ -1908,6 +1932,24 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         )
       }
     }
+  }
+
+  async function handleAtualizarCadastroProdutos() {
+    setSaveError('')
+    const normalized = await loadProductOptions()
+    if (!normalized.length) return
+    const mapPorCodigoTrim = new Map<string, ProductOption>()
+    for (const p of normalized) {
+      const k = p.codigo.trim()
+      if (!mapPorCodigoTrim.has(k)) mapPorCodigoTrim.set(k, p)
+    }
+    if (offlineSession?.status === 'aberta' && offlineSession.listMode === 'planilha') {
+      for (const it of offlineSession.items) {
+        const c = String(it.codigo_interno ?? '').trim()
+        if (c) aplicarCatalogoPorCodigoPlanilha(it.key, c, mapPorCodigoTrim)
+      }
+    }
+    setSaveSuccess('Cadastro de produtos atualizado.')
   }
 
   async function handleFinalizarContagemDiaria() {
@@ -2326,6 +2368,15 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       return
     }
 
+    const senha = window.prompt(
+      'Digite a senha para excluir todos os registros deste dia no banco (contagens_estoque):',
+    )
+    if (senha === null) return
+    if (senha.trim() !== SENHA_EXCLUIR_TUDO_BANCO) {
+      setPreviewRowError('Senha incorreta. Nenhum registro foi excluído.')
+      return
+    }
+
     setPreviewRowError('')
     setPreviewRowActionLoading(true)
     try {
@@ -2693,7 +2744,11 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
           {previewFiltersBar}
           {previewPagination}
 
-          <div style={{ display: 'grid', gap: 12, marginTop: 14 }}>
+          <div
+            data-checklist-nav-root
+            style={{ display: 'grid', gap: 12, marginTop: 14 }}
+            onKeyDown={handleChecklistFieldNavKeyDown}
+          >
             {displayPreviewRows.map((r) => {
               const hasPhoto = Boolean(String(r.foto_base64 ?? '').trim())
               const datasOrdemInvalida = isVencimentoAntesFabricacao(r.data_fabricacao, r.data_validade)
@@ -2925,7 +2980,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
               {prevCol('acoes') ? <th style={thStyle}>Ações</th> : null}
             </tr>
           </thead>
-          <tbody>
+          <tbody data-checklist-nav-root onKeyDown={handleChecklistFieldNavKeyDown}>
             {displayPreviewRows.map((r) => {
               const hasPhoto = Boolean(String(r.foto_base64 ?? '').trim())
               const datasOrdemInvalida = isVencimentoAntesFabricacao(r.data_fabricacao, r.data_validade)
@@ -3513,6 +3568,15 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
             </button>
             <button
               type="button"
+              style={{ ...buttonStyle, background: '#2a4a6a' }}
+              disabled={productOptionsLoading || finalizing}
+              title="Recarrega a tabela Todos os Produtos e reaplica descrição/unidade nas linhas da planilha já preenchidas"
+              onClick={() => void handleAtualizarCadastroProdutos()}
+            >
+              {productOptionsLoading ? 'Atualizando cadastro…' : 'Atualizar cadastro'}
+            </button>
+            <button
+              type="button"
               style={{ ...buttonStyle, background: '#444' }}
               disabled={finalizing}
               onClick={() => handleDescartarSessaoLocal()}
@@ -3725,7 +3789,11 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                 ) : null}
                 {isMobile ? (
                   <>
-                    <div style={{ marginTop: 8, display: 'grid', gap: 8 }}>
+                    <div
+                      data-checklist-nav-root
+                      style={{ marginTop: 8, display: 'grid', gap: 8 }}
+                      onKeyDown={handleChecklistFieldNavKeyDown}
+                    >
                     {checklistDisplayPageItems.map((item) => {
                       if ('kind' in item && item.kind === 'header') {
                         return (
@@ -4130,7 +4198,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                           {showChecklistColumn('acoes') ? <th style={thStyle}>Ações</th> : null}
                         </tr>
                       </thead>
-                      <tbody>
+                      <tbody data-checklist-nav-root onKeyDown={handleChecklistFieldNavKeyDown}>
                         {checklistDisplayPageItems.map((item) => {
                           if ('kind' in item && item.kind === 'header') {
                             return (
@@ -5210,7 +5278,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
             title={
               !previewQueryDayYmd || previewRows.length === 0
                 ? 'Carregue a prévia com registros antes de excluir'
-                : 'Remove do banco todos os registros do dia mostrado na prévia (mesmo critério contagem / inventário)'
+                : 'Remove do banco todos os registros do dia mostrado na prévia. Será pedida a senha de confirmação.'
             }
             style={{
               ...buttonStyle,
