@@ -47,7 +47,8 @@ import {
 
 const PREVIEW_PAGE_SIZE = 15
 /** Colunas fixas na prévia (Câmara / Rua / POS / Nível / Conferente), alinhadas ao relatório completo. */
-const PREVIEW_COLS_PLANILHA_LOCAL = 5
+/** Câmara, Rua, POS, Nível [, Contagem rodada], Conferente — Contagem só no inventário. */
+const PREVIEW_COLS_PLANILHA_BASE = 5
 const CHECKLIST_PAGE_SIZE = 15
 /** Linhas por página na tabela “Inventário — formato planilha” (cada aba pode ter centenas de linhas). */
 const PLANILHA_TABELA_PAGE_SIZE = 30
@@ -161,6 +162,11 @@ function formatContagemLabel(contagem: number) {
   if (contagem === 3) return '3° CONTAGEM'
   if (contagem === 4) return '4° CONTAGEM'
   return `${contagem}° CONTAGEM`
+}
+
+function formatInventarioRodadaPreviewCell(n: number | null | undefined): string {
+  if (n == null || !Number.isFinite(Number(n))) return '—'
+  return formatContagemLabel(Number(n))
 }
 
 function clampInventarioNumeroContagem(n: number | null | undefined): 1 | 2 | 3 | 4 {
@@ -2526,7 +2532,8 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     /** Mesma regra da lista principal (Ocultar/mostrar colunas). */
     const prevCol = (id: string) => checklistVisibleCols[id] !== false
     const previewVisColCount =
-      PREVIEW_COLS_PLANILHA_LOCAL +
+      PREVIEW_COLS_PLANILHA_BASE +
+      (inventario ? 1 : 0) +
       [
         'codigo',
         'descricao',
@@ -2707,6 +2714,12 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                     <div style={{ fontSize: 13 }}>
                       {r.planilha_nivel != null && Number.isFinite(Number(r.planilha_nivel)) ? r.planilha_nivel : '—'}
                     </div>
+                    {inventario ? (
+                      <>
+                        <div style={{ fontSize: 12, color: 'var(--text, #888)', marginTop: 8 }}>Contagem</div>
+                        <div style={{ fontSize: 13 }}>{formatInventarioRodadaPreviewCell(r.inventario_numero_contagem)}</div>
+                      </>
+                    ) : null}
                     <div style={{ fontSize: 12, color: 'var(--text, #888)', marginTop: 8 }}>Conferente</div>
                     <div style={{ fontSize: 13 }}>
                       {String(r.conferente_nome ?? '').trim() !== '' ? r.conferente_nome : '—'}
@@ -2885,6 +2898,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
               <th style={thStyle}>Rua</th>
               <th style={thStyle}>POS</th>
               <th style={thStyle}>Nível</th>
+              {inventario ? <th style={thStyle}>Contagem</th> : null}
               <th style={thStyle}>Conferente</th>
               {prevCol('codigo') ? <th style={thStyle}>Código do produto</th> : null}
               {prevCol('descricao') ? <th style={thStyle}>Descrição</th> : null}
@@ -2918,6 +2932,9 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                   <td style={tdStyle}>
                     {r.planilha_nivel != null && Number.isFinite(Number(r.planilha_nivel)) ? r.planilha_nivel : '—'}
                   </td>
+                  {inventario ? (
+                    <td style={tdStyle}>{formatInventarioRodadaPreviewCell(r.inventario_numero_contagem)}</td>
+                  ) : null}
                   <td style={{ ...tdStyle, whiteSpace: 'normal', maxWidth: 200 }}>
                     {String(r.conferente_nome ?? '').trim() !== '' ? r.conferente_nome : '—'}
                   </td>

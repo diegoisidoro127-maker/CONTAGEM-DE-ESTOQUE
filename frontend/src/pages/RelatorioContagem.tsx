@@ -10,7 +10,7 @@ import {
   filterContagensPorModoListagem,
   ordenarLinhasInventarioComoPrevia,
 } from '../lib/contagemListagemCompat'
-import { inventarioCamaraLabelFromGrupo } from '../components/inventario/inventarioPlanilhaModel'
+import { formatContagemLabel, inventarioCamaraLabelFromGrupo } from '../components/inventario/inventarioPlanilhaModel'
 import { deleteInventarioPlanilhaLinhasForContagensIds } from '../lib/inventarioPlanilhaLinhasDelete'
 
 type ContagemRow = {
@@ -88,8 +88,8 @@ function isColumnMissingErrorRel(e: unknown): boolean {
 
 const TABELA_PRODUTOS_REL = 'Todos os Produtos'
 
-/** Colunas fixas Câmara / Rua / POS / Nível / Conferente (antes das colunas da checklist). */
-const RELATORIO_COLS_PLANILHA_LOCAL = 5
+/** Colunas fixas antes da checklist: Câmara, Rua, POS, Nível, Contagem (rodada), Conferente. */
+const RELATORIO_COLS_PLANILHA_LOCAL = 6
 
 function conferenteNomeRelatorio(r: ContagemRow): string {
   const c = r.conferentes
@@ -283,7 +283,8 @@ export default function RelatorioContagem({
       q: ReturnType<typeof supabase.from<'contagens_estoque'>>,
       withNumeroFilter: boolean,
     ) => {
-      if (!withNumeroFilter || numeroContagemFilter === 'todas') return q
+      /** Só filtra no servidor no modo inventário; em “contagem diária” o filtro esvaziaria o resultado. */
+      if (!withNumeroFilter || !useInventarioCols || numeroContagemFilter === 'todas') return q
       return q.eq('inventario_numero_contagem', Number(numeroContagemFilter))
     }
 
@@ -472,7 +473,12 @@ export default function RelatorioContagem({
     const asRec = data.map((r) => ({ ...r }) as Record<string, unknown>)
     const filtered = filterContagensPorModoListagem(asRec, modo, planilhaIds, origemAusenteNoResultado)
     if (useInventarioCols) {
-      return ordenarLinhasInventarioComoPrevia(filtered) as ContagemRow[]
+      let inv = ordenarLinhasInventarioComoPrevia(filtered) as ContagemRow[]
+      if (numeroContagemFilter !== 'todas') {
+        const n = Number(numeroContagemFilter)
+        inv = inv.filter((r) => Number(r.inventario_numero_contagem ?? NaN) === n)
+      }
+      return inv
     }
     return agruparContagemDiariaComoPrevia(filtered as ContagemRow[]) as ContagemRow[]
   }
@@ -557,8 +563,13 @@ export default function RelatorioContagem({
   }
 
   /** Planilha com a mesma ordem de colunas da tela; `aoa_to_sheet` garante todas as linhas (sem depender só da página visível). */
+  function formatRodadaRelatorioCell(n: number | null | undefined): string {
+    if (n == null || !Number.isFinite(Number(n))) return ''
+    return formatContagemLabel(Number(n))
+  }
+
   function buildRelatorioExcelAoa(rowsToExport: ContagemRow[]): (string | number)[][] {
-    const header: (string | number)[] = ['Câmara', 'Rua', 'POS', 'Nível', 'Conferente']
+    const header: (string | number)[] = ['Câmara', 'Rua', 'POS', 'Nível', 'Contagem', 'Conferente']
     if (prevCol('codigo')) header.push('Código do produto')
     if (prevCol('descricao')) header.push('Descrição')
     if (prevCol('unidade')) header.push('Unidade de medida')
@@ -582,6 +593,7 @@ export default function RelatorioContagem({
         r.planilha_posicao != null && Number.isFinite(Number(r.planilha_posicao)) ? Number(r.planilha_posicao) : '',
       )
       row.push(r.planilha_nivel != null && Number.isFinite(Number(r.planilha_nivel)) ? Number(r.planilha_nivel) : '')
+      row.push(formatRodadaRelatorioCell(r.inventario_numero_contagem))
       {
         const nome = conferenteNomeRelatorio(r)
         row.push(nome === '—' ? '' : nome)
@@ -862,8 +874,19 @@ export default function RelatorioContagem({
             <select
               value={numeroContagemFilter}
               onChange={(e) => setNumeroContagemFilter(e.target.value as typeof numeroContagemFilter)}
-              style={{ padding: '10px 10px', border: '1px solid #ccc', borderRadius: 8, minWidth: 160 }}
-              title="Filtra pela rodada do inventário (1ª a 4ª). Contagens diárias não têm número e somem se você escolher 1–4."
+              disabled={!useInventarioCols}
+              style={{
+                padding: '10px 10px',
+                border: '1px solid #ccc',
+                borderRadius: 8,
+                minWidth: 160,
+                opacity: useInventarioCols ? 1 : 0.55,
+              }}
+              title={
+                useInventarioCols
+                  ? 'Filtra pela rodada do inventário (1ª a 4ª).'
+                  : 'Ative “colunas de Inventário” acima para filtrar pela rodada (1ª–4ª).'
+              }
             >
               <option value="todas">Todas</option>
               <option value="1">1ª contagem</option>
@@ -978,6 +1001,7 @@ export default function RelatorioContagem({
                   <th style={thStyle}>Rua</th>
                   <th style={thStyle}>POS</th>
                   <th style={thStyle}>Nível</th>
+                  <th style={thStyle}>Contagem</th>
                   <th style={thStyle}>Conferente</th>
                   {prevCol('codigo') ? <th style={thStyle}>Código do produto</th> : null}
                   {prevCol('descricao') ? <th style={thStyle}>Descrição</th> : null}
@@ -1010,6 +1034,11 @@ export default function RelatorioContagem({
                     </td>
                     <td style={tdStyle}>
                       {r.planilha_nivel != null && Number.isFinite(Number(r.planilha_nivel)) ? r.planilha_nivel : '—'}
+                    </td>
+                    <td style={tdStyle}>
+                      {r.inventario_numero_contagem != null && Number.isFinite(Number(r.inventario_numero_contagem))
+                        ? formatContagemLabel(Number(r.inventario_numero_contagem))
+                        : '—'}
                     </td>
                     <td style={{ ...tdStyle, whiteSpace: 'normal', maxWidth: 200 }}>
                       {conferenteNomeRelatorio(r)}
