@@ -18,7 +18,6 @@ import {
   stableItemKey,
 } from '../lib/offlineContagemSession'
 import {
-  filtrarItensPlanilhaInventario,
   inventarioAbaTitulo,
   InventarioPlanilhaAbas,
   InventarioPlanilhaTabela,
@@ -32,6 +31,8 @@ import {
 
 const PREVIEW_PAGE_SIZE = 15
 const CHECKLIST_PAGE_SIZE = 15
+/** Linhas por página na tabela “Inventário — formato planilha” (cada aba pode ter centenas de linhas). */
+const PLANILHA_TABELA_PAGE_SIZE = 30
 
 const CHECKLIST_VISIBLE_COLS_STORAGE = {
   contagem: 'contagem-checklist-visible-cols',
@@ -391,7 +392,13 @@ function isMissingDbColumnError(e: unknown, columnSqlName: string): boolean {
   const code = e && typeof e === 'object' && 'code' in e ? String((e as { code: unknown }).code) : ''
   const msg = (e && typeof e === 'object' && 'message' in e ? String((e as { message: unknown }).message) : String(e)).toLowerCase()
   const col = columnSqlName.toLowerCase()
-  return code === '42703' || (msg.includes('does not exist') && msg.includes(col))
+  return (
+    code === '42703' ||
+    (msg.includes('does not exist') && msg.includes(col)) ||
+    /** PostgREST: "Could not find the 'col' column ... in the schema cache" */
+    (msg.includes('could not find') && msg.includes(col)) ||
+    (msg.includes('schema cache') && msg.includes(col))
+  )
 }
 
 /** INSERT em bancos sem migração `alter_contagens_estoque_origem_inventario.sql` / número da contagem. */
@@ -528,6 +535,8 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
   const [confirmFinalizeMissingOpen, setConfirmFinalizeMissingOpen] = useState(false)
   const [missingItemsForFinalize, setMissingItemsForFinalize] = useState<OfflineChecklistItem[]>([])
   const [checklistPage, setChecklistPage] = useState(1)
+  /** Página dentro da tabela planilha da aba atual (independe das abas CAMARA/RUA). */
+  const [planilhaTabelaPage, setPlanilhaTabelaPage] = useState(1)
   const [checklistShowAll, setChecklistShowAll] = useState(false)
   /** Feedback visual: linha da checklist acabou de ser gravada no `localStorage`. */
   const [checklistSavedFlashKey, setChecklistSavedFlashKey] = useState<string | null>(null)
@@ -592,7 +601,12 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
   useEffect(() => {
     setChecklistPage(1)
     setChecklistShowAll(false)
+    setPlanilhaTabelaPage(1)
   }, [checklistListMode, checklistFilterCodigo, checklistFilterDescricao, checklistFilterPendentes, offlineSession?.status])
+
+  useEffect(() => {
+    setPlanilhaTabelaPage(1)
+  }, [checklistPage])
 
   // Persiste alterações da sessão aberta.
   useEffect(() => {
@@ -3168,12 +3182,30 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         : 'CONTAGEM'
 
   /**
-   * Linhas só para `InventarioPlanilhaTabela` (sem cabeçalhos de grupo). O restante da UI usa `checklistDisplayPageItems`.
+   * Todas as linhas da aba atual na ordem da planilha (POS/NIVEL). A tabela mostra só uma fatia por página.
    */
   const linhasTabelaPlanilhaInventario = useMemo((): OfflineChecklistItem[] => {
     if (!inventarioPlanilhaArmazem) return []
-    return filtrarItensPlanilhaInventario(checklistDisplayPageItems)
-  }, [inventarioPlanilhaArmazem, checklistDisplayPageItems])
+    return armazemItemsSorted
+  }, [inventarioPlanilhaArmazem, armazemItemsSorted])
+
+  const planilhaTabelaTotalPages = Math.max(
+    1,
+    Math.ceil(linhasTabelaPlanilhaInventario.length / PLANILHA_TABELA_PAGE_SIZE) || 1,
+  )
+  const planilhaTabelaPageSafe = Math.min(Math.max(1, planilhaTabelaPage), planilhaTabelaTotalPages)
+  const itemsPlanilhaTabelaPagina = useMemo(() => {
+    const start = (planilhaTabelaPageSafe - 1) * PLANILHA_TABELA_PAGE_SIZE
+    return linhasTabelaPlanilhaInventario.slice(start, start + PLANILHA_TABELA_PAGE_SIZE)
+  }, [linhasTabelaPlanilhaInventario, planilhaTabelaPageSafe])
+  const planilhaTabelaRangeFrom =
+    linhasTabelaPlanilhaInventario.length === 0
+      ? 0
+      : (planilhaTabelaPageSafe - 1) * PLANILHA_TABELA_PAGE_SIZE + 1
+  const planilhaTabelaRangeTo = Math.min(
+    planilhaTabelaPageSafe * PLANILHA_TABELA_PAGE_SIZE,
+    linhasTabelaPlanilhaInventario.length,
+  )
 
   const checklistColumns = useMemo(() => {
     const cols = [
@@ -3896,8 +3928,58 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                     <h4 style={{ margin: '0 0 10px', fontSize: 15, fontWeight: 700, color: 'var(--text, #111)' }}>
                       Inventário — tabela no formato da planilha
                     </h4>
+                    {linhasTabelaPlanilhaInventario.length > 0 ? (
+                      <div
+                        style={{
+                          display: 'flex',
+                          flexWrap: 'wrap',
+                          alignItems: 'center',
+                          gap: 10,
+                          marginBottom: 10,
+                          fontSize: 13,
+                          color: 'var(--text, #888)',
+                        }}
+                      >
+                        <span>
+                          Linhas {planilhaTabelaRangeFrom}–{planilhaTabelaRangeTo} de {linhasTabelaPlanilhaInventario.length}{' '}
+                          · Página da tabela {planilhaTabelaPageSafe} de {planilhaTabelaTotalPages} ·{' '}
+                          {PLANILHA_TABELA_PAGE_SIZE} linhas por página
+                        </span>
+                        <button
+                          type="button"
+                          disabled={planilhaTabelaPageSafe <= 1}
+                          onClick={() => setPlanilhaTabelaPage((p) => Math.max(1, p - 1))}
+                          style={{
+                            ...buttonStyle,
+                            background: '#444',
+                            fontSize: 12,
+                            opacity: planilhaTabelaPageSafe <= 1 ? 0.5 : 1,
+                            cursor: planilhaTabelaPageSafe <= 1 ? 'not-allowed' : 'pointer',
+                          }}
+                        >
+                          Anterior
+                        </button>
+                        <button
+                          type="button"
+                          disabled={planilhaTabelaPageSafe >= planilhaTabelaTotalPages}
+                          onClick={() =>
+                            setPlanilhaTabelaPage((p) => Math.min(planilhaTabelaTotalPages, p + 1))
+                          }
+                          style={{
+                            ...buttonStyle,
+                            background: '#444',
+                            fontSize: 12,
+                            opacity: planilhaTabelaPageSafe >= planilhaTabelaTotalPages ? 0.5 : 1,
+                            cursor:
+                              planilhaTabelaPageSafe >= planilhaTabelaTotalPages ? 'not-allowed' : 'pointer',
+                          }}
+                        >
+                          Próxima
+                        </button>
+                      </div>
+                    ) : null}
                     <InventarioPlanilhaTabela
-                      items={linhasTabelaPlanilhaInventario}
+                      items={itemsPlanilhaTabelaPagina}
                       armazemItemsSorted={armazemItemsSorted}
                       armazemContagem={armazemGrupoAtual?.contagem ?? null}
                       planilhaQtdContagemHeader={planilhaQtdContagemHeader}
