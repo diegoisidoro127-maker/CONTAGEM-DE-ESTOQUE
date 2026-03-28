@@ -4,6 +4,7 @@ import * as XLSX from 'xlsx'
 import { supabase } from '../lib/supabaseClient'
 import { loadChecklistVisibleColsFromStorage } from '../lib/checklistVisibleCols'
 import { enrichContagemRowsWithPlanilhaLinhas } from '../lib/enrichContagemRowsWithPlanilhaLinhas'
+import { enrichContagemRowsEanDunFromTodosOsProdutos } from '../lib/enrichContagemRowsEanDunFromTodosOsProdutos'
 import { fetchConferentesNomesPorIds } from '../lib/conferentesNomesBatch'
 import {
   agruparContagemDiariaComoPrevia,
@@ -119,7 +120,9 @@ async function enrichRelatorioRowsConferenteNomes(rows: ContagemRow[]): Promise<
 }
 
 async function enrichPlanilhaEConferente(rows: ContagemRow[]): Promise<ContagemRow[]> {
-  return enrichContagemRowsWithPlanilhaLinhas(await enrichRelatorioRowsConferenteNomes(rows), 'RelatorioContagem')
+  const withNames = await enrichRelatorioRowsConferenteNomes(rows)
+  const withPlanilha = await enrichContagemRowsWithPlanilhaLinhas(withNames, 'RelatorioContagem')
+  return enrichContagemRowsEanDunFromTodosOsProdutos(withPlanilha, 'RelatorioContagem')
 }
 
 function mergeContagemRowsById(

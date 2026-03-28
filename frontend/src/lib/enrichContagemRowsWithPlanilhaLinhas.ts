@@ -19,8 +19,35 @@ function withNullPlanilha<T extends { id: string }>(r: T): T & PlanilhaLinhasFie
   }
 }
 
+function isEmptyField(v: unknown): boolean {
+  if (v == null) return true
+  if (typeof v === 'string') return v.trim() === ''
+  return false
+}
+
+function ymdFromDb(v: unknown): string | null {
+  if (v == null || v === '') return null
+  const s = String(v)
+  const m = s.match(/^(\d{4}-\d{2}-\d{2})/)
+  return m ? m[1] : null
+}
+
+type PlanilhaJoinRow = {
+  grupo_armazem: number
+  rua: string | null
+  posicao: number
+  nivel: number
+  numero_contagem: number | null
+  data_fabricacao: string | null
+  data_validade: string | null
+  lote: string | null
+  up_quantidade: number | null
+  observacao: string | null
+}
+
 /**
  * Preenche Câmara/Rua/POS/Nível a partir de `inventario_planilha_linhas` (uma linha por `contagens_estoque_id`).
+ * Quando `contagens_estoque` não tiver datas/lote/UP/observação, usa os valores gravados na planilha (mesmo dia).
  * Em erro ou tabela ausente, devolve as linhas com campos nulos (não lança).
  */
 export async function enrichContagemRowsWithPlanilhaLinhas<T extends { id: string }>(
@@ -29,16 +56,15 @@ export async function enrichContagemRowsWithPlanilhaLinhas<T extends { id: strin
 ): Promise<Array<T & PlanilhaLinhasFields>> {
   const ids = rows.map((r) => r.id).filter(Boolean)
   if (ids.length === 0) return rows.map(withNullPlanilha)
-  const byContagem = new Map<
-    string,
-    { grupo_armazem: number; rua: string | null; posicao: number; nivel: number; numero_contagem: number | null }
-  >()
+  const byContagem = new Map<string, PlanilhaJoinRow>()
   try {
     for (let i = 0; i < ids.length; i += PLANILHA_ENRICH_CHUNK) {
       const chunk = ids.slice(i, i + PLANILHA_ENRICH_CHUNK)
       const { data, error } = await supabase
         .from('inventario_planilha_linhas')
-        .select('contagens_estoque_id, grupo_armazem, rua, posicao, nivel, numero_contagem')
+        .select(
+          'contagens_estoque_id, grupo_armazem, rua, posicao, nivel, numero_contagem, data_fabricacao, data_validade, lote, up_quantidade, observacao',
+        )
         .in('contagens_estoque_id', chunk)
       if (error) {
         console.warn(`[${logLabel}] inventario_planilha_linhas:`, error)
@@ -48,12 +74,22 @@ export async function enrichContagemRowsWithPlanilhaLinhas<T extends { id: strin
         const cid = row.contagens_estoque_id != null ? String(row.contagens_estoque_id) : ''
         if (!cid || byContagem.has(cid)) continue
         const nc = row.numero_contagem
+        const upq = row.up_quantidade
         byContagem.set(cid, {
           grupo_armazem: Number(row.grupo_armazem),
           rua: row.rua != null ? String(row.rua) : null,
           posicao: Number(row.posicao),
           nivel: Number(row.nivel),
           numero_contagem: nc != null && nc !== '' && Number.isFinite(Number(nc)) ? Number(nc) : null,
+          data_fabricacao: ymdFromDb(row.data_fabricacao),
+          data_validade: ymdFromDb(row.data_validade),
+          lote: row.lote != null && String(row.lote).trim() !== '' ? String(row.lote).trim() : null,
+          up_quantidade:
+            upq != null && upq !== '' && Number.isFinite(Number(upq)) ? Number(upq) : null,
+          observacao:
+            row.observacao != null && String(row.observacao).trim() !== ''
+              ? String(row.observacao).trim()
+              : null,
         })
       }
     }
@@ -69,14 +105,30 @@ export async function enrichContagemRowsWithPlanilhaLinhas<T extends { id: strin
       existingNc != null &&
       String(existingNc).trim() !== '' &&
       Number.isFinite(Number(existingNc))
-    return {
+    const rr = r as Record<string, unknown>
+    const out: Record<string, unknown> = {
       ...r,
       planilha_grupo_armazem: p.grupo_armazem,
       planilha_rua: p.rua,
       planilha_posicao: p.posicao,
       planilha_nivel: p.nivel,
-      /** Rodada 1ª–4ª: usa `contagens_estoque` se existir; senão espelha a planilha. */
       inventario_numero_contagem: hasNc ? Number(existingNc) : p.numero_contagem,
     }
+    if (isEmptyField(rr.data_fabricacao) && p.data_fabricacao != null) {
+      out.data_fabricacao = p.data_fabricacao
+    }
+    if (isEmptyField(rr.data_validade) && p.data_validade != null) {
+      out.data_validade = p.data_validade
+    }
+    if (isEmptyField(rr.lote) && p.lote != null) {
+      out.lote = p.lote
+    }
+    if (isEmptyField(rr.observacao) && p.observacao != null) {
+      out.observacao = p.observacao
+    }
+    if (rr.up_adicional == null && p.up_quantidade != null) {
+      out.up_adicional = p.up_quantidade
+    }
+    return out as T & PlanilhaLinhasFields
   })
 }

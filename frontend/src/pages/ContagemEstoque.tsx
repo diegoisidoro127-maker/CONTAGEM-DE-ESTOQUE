@@ -36,6 +36,7 @@ import {
   getArmazemPos,
 } from '../lib/armazemInventarioMap'
 import { enrichContagemRowsWithPlanilhaLinhas } from '../lib/enrichContagemRowsWithPlanilhaLinhas'
+import { enrichContagemRowsEanDunFromTodosOsProdutos } from '../lib/enrichContagemRowsEanDunFromTodosOsProdutos'
 import { isVencimentoAntesFabricacao } from '../lib/contagemDatasValidacao'
 import {
   deleteInventarioPlanilhaLinhasForContagensIds,
@@ -1407,9 +1408,13 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       }) as ContagemPreviewRow[]
 
       const rawEnriched = await enrichContagemRowsWithPlanilhaLinhas(rawRows, 'ContagemEstoque.preview')
+      const rawEnrichedCatalog = await enrichContagemRowsEanDunFromTodosOsProdutos(
+        rawEnriched,
+        'ContagemEstoque.preview',
+      )
 
-      const nomePorId = await fetchConferentesNomesPorIds(rawEnriched.map((r) => r.conferente_id))
-      const rawPreviewLinhas: ContagemPreviewRow[] = rawEnriched.map((r) => {
+      const nomePorId = await fetchConferentesNomesPorIds(rawEnrichedCatalog.map((r) => r.conferente_id))
+      const rawPreviewLinhas: ContagemPreviewRow[] = rawEnrichedCatalog.map((r) => {
         const nome = nomePorId.get(r.conferente_id)?.trim()
         return nome ? { ...r, conferente_nome: nome } : r
       })
