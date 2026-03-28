@@ -19,6 +19,7 @@ import {
 } from '../lib/offlineContagemSession'
 import {
   filtrarItensPlanilhaInventario,
+  inventarioAbaTitulo,
   InventarioPlanilhaAbas,
   InventarioPlanilhaTabela,
 } from '../components/inventario/inventarioPlanilhaArmazem'
@@ -93,6 +94,8 @@ type ContagemPreviewRow = {
   foto_base64?: string | null
   origem?: string | null
   inventario_repeticao?: number | null
+  /** Rodada 1–4 (inventário). */
+  inventario_numero_contagem?: number | null
 }
 
 type ProductOption = {
@@ -293,6 +296,14 @@ function formatContagemLabel(contagem: number) {
   if (contagem === 3) return '3° CONTAGEM'
   if (contagem === 4) return '4° CONTAGEM'
   return `${contagem}° CONTAGEM`
+}
+
+function clampInventarioNumeroContagem(n: number | null | undefined): 1 | 2 | 3 | 4 {
+  if (n == null || !Number.isFinite(Number(n))) return 1
+  const x = Math.round(Number(n))
+  if (x < 1) return 1
+  if (x > 4) return 4
+  return x as 1 | 2 | 3 | 4
 }
 
 function formatArmazemGroupLabel(contagem: number | null) {
@@ -1277,14 +1288,27 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         ? dayOverride
         : `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
 
-    const previewSelect =
+    const previewSelectFull =
+      'id,data_hora_contagem,data_contagem,conferente_id,conferentes(nome),codigo_interno,descricao,unidade_medida,quantidade_up,up_adicional,lote,observacao,data_fabricacao,data_validade,ean,dun,foto_base64,origem,inventario_repeticao,inventario_numero_contagem'
+    const previewSelectSemNc =
       'id,data_hora_contagem,data_contagem,conferente_id,conferentes(nome),codigo_interno,descricao,unidade_medida,quantidade_up,up_adicional,lote,observacao,data_fabricacao,data_validade,ean,dun,foto_base64,origem,inventario_repeticao'
     let { data, error } = await supabase
       .from('contagens_estoque')
-      .select(previewSelect)
+      .select(previewSelectFull)
       .eq('data_contagem', dayKey)
       .order('data_hora_contagem', { ascending: false })
       .limit(2000)
+
+    if (error && isMissingDbColumnError(error, 'inventario_numero_contagem')) {
+      const rNc = await supabase
+        .from('contagens_estoque')
+        .select(previewSelectSemNc)
+        .eq('data_contagem', dayKey)
+        .order('data_hora_contagem', { ascending: false })
+        .limit(2000)
+      data = rNc.data
+      error = rNc.error
+    }
 
     if (error) {
       const legacySelect =
@@ -1341,16 +1365,20 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
             r.inventario_repeticao != null && r.inventario_repeticao !== ''
               ? Number(r.inventario_repeticao)
               : null,
+          inventario_numero_contagem:
+            r.inventario_numero_contagem != null && r.inventario_numero_contagem !== ''
+              ? Number(r.inventario_numero_contagem)
+              : null,
         }
       }) as ContagemPreviewRow[]
 
       // Prévia agrupada: uma linha por dia + código + descrição, somando a quantidade.
-      // No inventário, mantém linhas separadas por 1ª/2ª/3ª contagem (origem + repeticao).
+      // No inventário, mantém linhas separadas por repetição e por número da rodada (1–4).
       const grouped = new Map<string, ContagemPreviewRow>()
       for (const row of rawRows) {
         const day = dayKey
         const key = inventario
-          ? `${day}|${row.codigo_interno.trim().toLowerCase()}|${row.descricao.trim().toLowerCase()}|inv|${row.inventario_repeticao ?? ''}`
+          ? `${day}|${row.codigo_interno.trim().toLowerCase()}|${row.descricao.trim().toLowerCase()}|inv|${row.inventario_repeticao ?? ''}|nc|${row.inventario_numero_contagem ?? ''}`
           : `${day}|${row.codigo_interno.trim().toLowerCase()}|${row.descricao.trim().toLowerCase()}`
         const existing = grouped.get(key)
         if (!existing) {
@@ -1519,6 +1547,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
           listMode: listModeEfetivo,
           context: sessionMode,
           items,
+          inventario_numero_contagem: 1,
           updatedAt: new Date().toISOString(),
         }
         setOfflineSession(sess)
@@ -1588,6 +1617,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         listMode: listModeEfetivo,
         context: sessionMode,
         items,
+        ...(inventario ? { inventario_numero_contagem: 1 as const } : {}),
         updatedAt: new Date().toISOString(),
       }
       setOfflineSession(sess)
@@ -1671,6 +1701,19 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       return next
     })
     flashChecklistRowSaved(key)
+  }
+
+  function setInventarioNumeroContagemRodada(n: 1 | 2 | 3 | 4) {
+    setOfflineSession((prev) => {
+      if (!prev || prev.status !== 'aberta') return prev
+      const next = {
+        ...prev,
+        inventario_numero_contagem: n,
+        updatedAt: new Date().toISOString(),
+      }
+      saveOfflineSession(next, sessionMode)
+      return next
+    })
   }
 
   function handleToggleChecklistCollapse() {
@@ -1912,12 +1955,21 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         if (inventario) {
           rowPayload.origem = 'inventario'
           rowPayload.inventario_repeticao = it.inventario_repeticao ?? null
+          rowPayload.inventario_numero_contagem = clampInventarioNumeroContagem(
+            offlineSession.inventario_numero_contagem ?? 1,
+          )
         }
         rows.push(rowPayload)
         finalizeMeta.push({ it, q, up_adicional, dfRaw, dvRaw, produtoId })
       }
 
-      const planilhaLayout = inventario ? buildPlanilhaLayoutPorItens(itemsSnapshot, getArmazemContagemForItem) : null
+      const planilhaLayout = inventario
+        ? buildPlanilhaLayoutPorItens(
+            itemsSnapshot,
+            getArmazemContagemForItem,
+            clampInventarioNumeroContagem(offlineSession.inventario_numero_contagem ?? 1),
+          )
+        : null
 
       setFinalizeProgress('Conectando ao banco...')
       let delQ = supabase
@@ -2066,6 +2118,8 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
   const [previewFilterData, setPreviewFilterData] = useState('')
   const [previewFilterLote, setPreviewFilterLote] = useState('')
   const [previewFilterObs, setPreviewFilterObs] = useState('')
+  /** Inventário: '', '1', '2', '3' ou '4' para filtrar a rodada da contagem. */
+  const [previewFilterInventarioNumeroContagem, setPreviewFilterInventarioNumeroContagem] = useState('')
   const [previewPage, setPreviewPage] = useState(1)
   const [previewShowAll, setPreviewShowAll] = useState(false)
 
@@ -2088,7 +2142,11 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         !previewFilterLote.trim() || String(r.lote ?? '').toLowerCase().includes(previewFilterLote.trim().toLowerCase())
       const obsOk =
         !previewFilterObs.trim() || String(r.observacao ?? '').toLowerCase().includes(previewFilterObs.trim().toLowerCase())
-      return codigoOk && descricaoOk && confOk && dataOk && loteOk && obsOk
+      const invNcOk =
+        !inventario ||
+        !previewFilterInventarioNumeroContagem.trim() ||
+        String(r.inventario_numero_contagem ?? '') === previewFilterInventarioNumeroContagem.trim()
+      return codigoOk && descricaoOk && confOk && dataOk && loteOk && obsOk && invNcOk
     })
   }, [
     previewRows,
@@ -2098,6 +2156,8 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     previewFilterData,
     previewFilterLote,
     previewFilterObs,
+    inventario,
+    previewFilterInventarioNumeroContagem,
   ])
 
   const previewTotalPages = Math.max(1, Math.ceil(filteredPreviewRows.length / PREVIEW_PAGE_SIZE))
@@ -2119,6 +2179,8 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     previewFilterData,
     previewFilterLote,
     previewFilterObs,
+    previewFilterInventarioNumeroContagem,
+    inventario,
   ])
 
   async function handlePreviewDeleteAll() {
@@ -2432,6 +2494,20 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
               onChange={(e) => setPreviewFilterData(e.target.value)}
               style={{ padding: '8px 10px', border: '1px solid #ccc', borderRadius: 8, flex: '1 1 160px' }}
             />
+            {inventario ? (
+              <select
+                value={previewFilterInventarioNumeroContagem}
+                onChange={(e) => setPreviewFilterInventarioNumeroContagem(e.target.value)}
+                style={{ padding: '8px 10px', border: '1px solid #ccc', borderRadius: 8, flex: '1 1 120px' }}
+                aria-label="Filtrar por número da contagem"
+              >
+                <option value="">Todas as contagens</option>
+                <option value="1">1ª contagem</option>
+                <option value="2">2ª contagem</option>
+                <option value="3">3ª contagem</option>
+                <option value="4">4ª contagem</option>
+              </select>
+            ) : null}
             <input
               value={previewFilterLote}
               onChange={(e) => setPreviewFilterLote(e.target.value)}
@@ -2467,6 +2543,15 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
 
                       <div style={{ fontSize: 12, color: 'var(--text, #888)', marginTop: 8 }}>Dia da contagem</div>
                       <div style={{ fontSize: 13 }}>{formatDateBRFromYmd(r.data_contagem)}</div>
+
+                      {inventario ? (
+                        <>
+                          <div style={{ fontSize: 12, color: 'var(--text, #888)', marginTop: 8 }}>Nº da contagem</div>
+                          <div style={{ fontSize: 13 }}>
+                            {r.inventario_numero_contagem != null ? `${r.inventario_numero_contagem}ª` : '—'}
+                          </div>
+                        </>
+                      ) : null}
 
                       <div style={{ fontSize: 12, color: 'var(--text, #888)', marginTop: 8 }}>Data e hora do registro</div>
                       <div style={{ fontSize: 13 }}>{formatDateTimeBRFromIso(r.data_hora_contagem)}</div>
@@ -2611,13 +2696,14 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
           style={{
             borderCollapse: 'collapse',
             width: '100%',
-            minWidth: isMobile ? 820 : 1980,
+            minWidth: isMobile ? 820 : inventario ? 2060 : 1980,
           }}
         >
           <thead>
             <tr>
               <th style={thStyle}>Conferente</th>
               <th style={thStyle}>Dia da contagem</th>
+              {inventario ? <th style={thStyle}>Nº contagem</th> : null}
               <th style={thStyle}>Data e hora do registro</th>
               <th style={thStyle}>Código do produto</th>
               <th style={thStyle}>Descrição</th>
@@ -2650,6 +2736,22 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                   style={{ padding: '6px 8px', border: '1px solid #ccc', borderRadius: 6, width: '100%' }}
                 />
               </th>
+              {inventario ? (
+                <th style={{ ...thStyle, fontWeight: 400, fontSize: 12, background: '#f3f4f6' }}>
+                  <select
+                    value={previewFilterInventarioNumeroContagem}
+                    onChange={(e) => setPreviewFilterInventarioNumeroContagem(e.target.value)}
+                    style={{ padding: '6px 8px', border: '1px solid #ccc', borderRadius: 6, width: '100%', minWidth: 88 }}
+                    aria-label="Filtrar por número da contagem"
+                  >
+                    <option value="">Todas</option>
+                    <option value="1">1ª</option>
+                    <option value="2">2ª</option>
+                    <option value="3">3ª</option>
+                    <option value="4">4ª</option>
+                  </select>
+                </th>
+              ) : null}
               <th style={{ ...thStyle, fontWeight: 400, fontSize: 12, background: '#f3f4f6' }} />
               <th style={{ ...thStyle, fontWeight: 400, fontSize: 12, background: '#f3f4f6' }}>
                 <input
@@ -2700,6 +2802,11 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                 <tr key={r.id}>
                   <td style={tdStyle}>{r.conferente_nome}</td>
                   <td style={tdStyle}>{formatDateBRFromYmd(r.data_contagem)}</td>
+                  {inventario ? (
+                    <td style={tdStyle}>
+                      {r.inventario_numero_contagem != null ? `${r.inventario_numero_contagem}ª` : '—'}
+                    </td>
+                  ) : null}
                   <td style={tdStyle}>{formatDateTimeBRFromIso(r.data_hora_contagem)}</td>
                   <td style={tdStyle}>{r.codigo_interno}</td>
                   <td style={tdStyle}>{r.descricao}</td>
@@ -2990,9 +3097,16 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     })
   }, [armazemGrupoAtual])
 
-  const planilhaQtdContagemHeader = armazemGrupoAtual
-    ? formatContagemLabel(armazemGrupoAtual.contagem)
-    : 'CONTAGEM'
+  const inventarioNumeroContagemRodada = clampInventarioNumeroContagem(
+    offlineSession?.inventario_numero_contagem ?? 1,
+  )
+
+  const planilhaQtdContagemHeader =
+    inventario && isArmazemPaginado
+      ? formatContagemLabel(inventarioNumeroContagemRodada)
+      : armazemGrupoAtual
+        ? formatContagemLabel(armazemGrupoAtual.contagem)
+        : 'CONTAGEM'
 
   /**
    * Linhas só para `InventarioPlanilhaTabela` (sem cabeçalhos de grupo). O restante da UI usa `checklistDisplayPageItems`.
@@ -3375,11 +3489,60 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                   </span>
                 </div>
                 {inventario && isArmazemPaginado && !checklistShowAll && armazemGrupos.length > 0 ? (
-                  <InventarioPlanilhaAbas
-                    armazemGrupos={armazemGrupos}
-                    checklistPageSafe={checklistPageSafe}
-                    setChecklistPage={setChecklistPage}
-                  />
+                  <>
+                    <div
+                      style={{
+                        marginTop: 10,
+                        marginBottom: 10,
+                        padding: '10px 12px',
+                        borderRadius: 10,
+                        border: '1px solid var(--border, #ccc)',
+                        background: 'var(--panel-bg, rgba(0,0,0,.03))',
+                        display: 'flex',
+                        flexWrap: 'wrap',
+                        alignItems: 'center',
+                        gap: 12,
+                      }}
+                    >
+                      <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text, #111)' }}>
+                        Contagem da rodada (mesma em todas as abas)
+                      </span>
+                      <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+                        <span style={{ color: 'var(--text, #666)' }}>Número</span>
+                        <select
+                          value={String(inventarioNumeroContagemRodada)}
+                          onChange={(e) =>
+                            setInventarioNumeroContagemRodada(
+                              clampInventarioNumeroContagem(Number(e.target.value)) as 1 | 2 | 3 | 4,
+                            )
+                          }
+                          style={{
+                            padding: '8px 12px',
+                            borderRadius: 8,
+                            border: '1px solid var(--border, #ccc)',
+                            fontSize: 14,
+                            fontWeight: 700,
+                            minWidth: 120,
+                          }}
+                          aria-label="Número da contagem de 1 a 4"
+                        >
+                          <option value="1">1ª contagem</option>
+                          <option value="2">2ª contagem</option>
+                          <option value="3">3ª contagem</option>
+                          <option value="4">4ª contagem</option>
+                        </select>
+                      </label>
+                      <span style={{ fontSize: 12, color: 'var(--text, #888)', maxWidth: 420 }}>
+                        O cabeçalho da coluna de quantidade acompanha este número. Ao finalizar, o valor é gravado no
+                        banco para filtrar no relatório por data e por contagem.
+                      </span>
+                    </div>
+                    <InventarioPlanilhaAbas
+                      armazemGrupos={armazemGrupos}
+                      checklistPageSafe={checklistPageSafe}
+                      setChecklistPage={setChecklistPage}
+                    />
+                  </>
                 ) : null}
                 {isMobile ? (
                   <>
@@ -3399,7 +3562,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                               color: 'var(--text, #111)',
                             }}
                           >
-                            {formatArmazemGroupLabel(item.contagem)}
+                            {inventario ? inventarioAbaTitulo(item.contagem) : formatArmazemGroupLabel(item.contagem)}
                           </div>
                         )
                       }
@@ -3737,7 +3900,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                     color: 'var(--text, #111)',
                                   }}
                                 >
-                                  {formatArmazemGroupLabel(item.contagem)}
+                                  {inventario ? inventarioAbaTitulo(item.contagem) : formatArmazemGroupLabel(item.contagem)}
                                 </td>
                               </tr>
                             )
@@ -4073,7 +4236,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                       {checklistShowAll
                         ? `Exibindo todos os ${checklistProductTotal} registros`
                         : isArmazemPaginado
-                          ? `${checklistRangeFrom}–${checklistRangeTo} de ${checklistProductTotal} · Página ${checklistPageSafe} de ${checklistTotalPages} · ${formatContagemLabel(armazemGrupos[checklistPageSafe - 1]?.contagem ?? checklistPageSafe)}`
+                          ? `${checklistRangeFrom}–${checklistRangeTo} de ${checklistProductTotal} · Página ${checklistPageSafe} de ${checklistTotalPages} · ${inventario ? `${inventarioAbaTitulo(armazemGrupos[checklistPageSafe - 1]?.contagem ?? null)} · ${formatContagemLabel(inventarioNumeroContagemRodada)}` : formatContagemLabel(armazemGrupos[checklistPageSafe - 1]?.contagem ?? checklistPageSafe)}`
                           : `${checklistRangeFrom}–${checklistRangeTo} de ${checklistProductTotal} · Página ${checklistPageSafe} de ${checklistTotalPages} · ${CHECKLIST_PAGE_SIZE} por página`}
                     </span>
                     <button

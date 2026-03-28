@@ -80,8 +80,9 @@ export function filtrarItensPlanilhaInventario(
 
 /** Metadados alinhados à planilha / tabela `inventario_planilha_linhas`. */
 export type PlanilhaLayoutMeta = {
+  /** Aba física (CAMARA + RUA), 1–8. */
   grupo_armazem: number
-  /** No app atual, coincide com o grupo (1ª–4ª contagem por aba). */
+  /** Rodada da contagem escolhida pelo usuário (1–4), mesma em todas as abas. */
   numero_contagem: number
   rua: string
   posicao: number
@@ -92,10 +93,18 @@ export type PlanilhaLayoutMeta = {
  * Calcula RUA, POS, NIVEL e grupo por item da sessão, para gravar em `inventario_planilha_linhas`.
  * `getGrupo` deve retornar 1..N (mapa de armazém por código, `armazem_grupo` na linha em branco, etc.).
  */
+function clampNumeroContagemRodada(n: number): number {
+  if (!Number.isFinite(n)) return 1
+  return Math.min(4, Math.max(1, Math.round(n)))
+}
+
 export function buildPlanilhaLayoutPorItens(
   items: OfflineChecklistItem[],
   getGrupo: (it: OfflineChecklistItem) => number | null,
+  /** 1–4: qual contagem da rodada (cabeçalho da coluna na planilha). */
+  numeroContagemRodada: number,
 ): Map<string, PlanilhaLayoutMeta> {
+  const rodada = clampNumeroContagemRodada(numeroContagemRodada)
   const byGrupo = new Map<number, OfflineChecklistItem[]>()
   for (const it of items) {
     const raw = getGrupo(it)
@@ -121,7 +130,7 @@ export function buildPlanilhaLayoutPorItens(
       const nivel = Math.floor((pos - 1) / 3) + 1
       out.set(it.key, {
         grupo_armazem: grupo,
-        numero_contagem: grupo,
+        numero_contagem: rodada,
         rua,
         posicao: pos,
         nivel,

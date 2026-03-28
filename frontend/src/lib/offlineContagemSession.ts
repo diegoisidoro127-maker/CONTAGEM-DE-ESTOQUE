@@ -50,6 +50,11 @@ export type OfflineSession = {
   updatedAt: string
   /** Fluxo que criou a sessão (persistência em chave separada). */
   context?: OfflineSessionMode
+  /**
+   * Inventário: rodada da contagem (1ª–4ª), igual em todas as abas CAMARA/RUA.
+   * Gravado em `contagens_estoque.inventario_numero_contagem` ao finalizar.
+   */
+  inventario_numero_contagem?: 1 | 2 | 3 | 4
 }
 
 

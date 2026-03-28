@@ -223,6 +223,14 @@ export default function BaseProdutos() {
     setSuccess('')
   }
 
+  function limparBipEFiltroSolo() {
+    setBipSoloKey(null)
+    setBipCodigoBarras('')
+    setPage(1)
+    setShowAll(false)
+    setError('')
+  }
+
   function buscarPorBipEanDun() {
     const q = bipCodigoBarras.trim()
     if (!q) {
@@ -241,13 +249,13 @@ export default function BaseProdutos() {
       setSuccess('')
       return
     }
+    const soloK = rowKey(found)
+    setBipSoloKey(soloK)
     setError('')
     setFilterCodigo('')
     setFilterDescricao('')
     setShowAll(false)
-    const idx = rows.findIndex((r) => rowKey(r) === rowKey(found))
-    const pageNum = Math.max(1, Math.floor(idx / PAGE_SIZE) + 1)
-    setPage(pageNum)
+    setPage(1)
     startEdit(found)
     setSuccess(`Produto ${found.codigo_interno} — aberto para edição.`)
     setBipCodigoBarras('')
@@ -515,6 +523,7 @@ export default function BaseProdutos() {
             value={filterCodigo}
             onChange={(e) => {
               setFilterCodigo(e.target.value)
+              setBipSoloKey(null)
               setPage(1)
               setShowAll(false)
             }}
@@ -528,6 +537,7 @@ export default function BaseProdutos() {
             value={filterDescricao}
             onChange={(e) => {
               setFilterDescricao(e.target.value)
+              setBipSoloKey(null)
               setPage(1)
               setShowAll(false)
             }}
