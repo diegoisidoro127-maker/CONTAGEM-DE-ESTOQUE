@@ -1374,6 +1374,15 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       'id,data_hora_contagem,data_contagem,conferente_id,conferentes(nome),codigo_interno,descricao,unidade_medida,quantidade_up,up_adicional,lote,observacao,data_fabricacao,data_validade,ean,dun,foto_base64,inventario_numero_contagem'
     const previewSelectSemRepSemNcComOrigem =
       'id,data_hora_contagem,data_contagem,conferente_id,conferentes(nome),codigo_interno,descricao,unidade_medida,quantidade_up,up_adicional,lote,observacao,data_fabricacao,data_validade,ean,dun,foto_base64,origem,inventario_numero_contagem'
+    /** Mesmas colunas do “completo”, sem join em `conferentes` (RLS/embed quebra o SELECT inteiro). */
+    const previewSelectFlatFull =
+      'id,data_hora_contagem,data_contagem,conferente_id,codigo_interno,descricao,unidade_medida,quantidade_up,up_adicional,lote,observacao,data_fabricacao,data_validade,ean,dun,foto_base64,origem,inventario_repeticao,inventario_numero_contagem'
+    const previewSelectFlatSemOrigem =
+      'id,data_hora_contagem,data_contagem,conferente_id,codigo_interno,descricao,unidade_medida,quantidade_up,up_adicional,lote,observacao,data_fabricacao,data_validade,ean,dun,foto_base64,inventario_repeticao,inventario_numero_contagem'
+    const previewSelectFlatSemNc =
+      'id,data_hora_contagem,data_contagem,conferente_id,codigo_interno,descricao,unidade_medida,quantidade_up,up_adicional,lote,observacao,data_fabricacao,data_validade,ean,dun,foto_base64,origem,inventario_repeticao'
+    const previewSelectFlatSemOrigemSemNc =
+      'id,data_hora_contagem,data_contagem,conferente_id,codigo_interno,descricao,unidade_medida,quantidade_up,up_adicional,lote,observacao,data_fabricacao,data_validade,ean,dun,foto_base64,inventario_repeticao'
 
     let previewOrigemAusenteNoResultado = false
 
@@ -1416,9 +1425,28 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       error = rRep.error
     }
 
+    /** Falha comum: embed `conferentes(nome)` bloqueado por RLS — tenta colunas planas (sem join). */
+    if (error) {
+      const rFlat = await queryPreview(previewSelectFlatFull)
+      if (!rFlat.error) {
+        data = rFlat.data
+        error = null
+        previewOrigemAusenteNoResultado = false
+      }
+    }
+    if (error) {
+      const sel = previewOrigemAusenteNoResultado ? previewSelectFlatSemOrigemSemNc : previewSelectFlatSemNc
+      const rFlat2 = await queryPreview(sel)
+      if (!rFlat2.error) {
+        data = rFlat2.data
+        error = null
+        previewOrigemAusenteNoResultado = sel === previewSelectFlatSemOrigemSemNc
+      }
+    }
+
     if (error) {
       const legacySelect =
-        'id,data_hora_contagem,data_contagem,conferente_id,conferentes(nome),codigo_interno,descricao,unidade_medida,quantidade_up,up_adicional,lote,observacao,data_fabricacao,data_validade,ean,dun,foto_base64'
+        'id,data_hora_contagem,data_contagem,conferente_id,codigo_interno,descricao,unidade_medida,quantidade_up,up_adicional,lote,observacao,data_fabricacao,data_validade,ean,dun,foto_base64'
       const leg = await queryPreview(legacySelect)
       if (leg.error) {
         setSaveError(`Erro ao carregar prévia: ${leg.error.message}`)
@@ -1430,14 +1458,36 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     }
 
     if (!error) {
+      setSaveError('')
+
+      let planilhaContagemIds = new Set<string>()
+      if (inventario) {
+        try {
+          const { data: plData } = await supabase
+            .from('inventario_planilha_linhas')
+            .select('contagens_estoque_id')
+            .eq('data_inventario', dayKey)
+            .limit(5000)
+          for (const pr of plData ?? []) {
+            const cid = (pr as { contagens_estoque_id?: string | null }).contagens_estoque_id
+            if (cid != null) planilhaContagemIds.add(String(cid))
+          }
+        } catch {
+          /* tabela ausente ou RLS — byOrigem segue só com colunas em contagens_estoque */
+        }
+      }
+
       const hasInventarioMeta = (r: Record<string, unknown>) =>
         (r.inventario_repeticao != null && String(r.inventario_repeticao).trim() !== '') ||
         (r.inventario_numero_contagem != null && String(r.inventario_numero_contagem).trim() !== '')
 
       const byOrigem = (r: Record<string, unknown>) => {
         const o = r.origem != null ? String(r.origem) : ''
+        const rid = String(r.id ?? '')
         if (!inventario) return o !== 'inventario'
         if (o === 'inventario') return true
+        /** Vínculo na tabela planilha (mesmo quando o SELECT legado não traz origem/repetição/nº). */
+        if (planilhaContagemIds.has(rid)) return true
         /** Sem coluna `origem` no banco: só inventário se houver repetição ou nº da rodada (não misturar contagem diária). */
         if (previewOrigemAusenteNoResultado) return hasInventarioMeta(r)
         return hasInventarioMeta(r)
