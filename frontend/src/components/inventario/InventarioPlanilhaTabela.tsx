@@ -1,0 +1,399 @@
+import type { CSSProperties, Dispatch, SetStateAction } from 'react'
+import type { OfflineChecklistItem } from '../../lib/offlineContagemSession'
+import { getInventarioRuaArmazem, inventarioArmazemPosNivel } from './inventarioPlanilhaModel'
+
+export type ChecklistEditDraft = {
+  codigo_interno: string
+  descricao: string
+  quantidade_contada: string
+}
+
+export type InventarioPlanilhaTabelaProps = {
+  items: OfflineChecklistItem[]
+  armazemItemsSorted: OfflineChecklistItem[]
+  armazemContagem: number | null
+  planilhaQtdContagemHeader: string
+  showChecklistColumn: (id: string) => boolean
+  thStyle: CSSProperties
+  tdStyle: CSSProperties
+  buttonStyle: CSSProperties
+  checklistQtdInputStyle: CSSProperties
+  checklistEditingKey: string | null
+  checklistEditDraft: ChecklistEditDraft | null
+  setChecklistEditDraft: Dispatch<SetStateAction<ChecklistEditDraft | null>>
+  checklistSavedFlashKey: string | null
+  saveChecklistEdit: () => void
+  cancelChecklistEdit: () => void
+  openChecklistEdit: (it: OfflineChecklistItem) => void
+  updateOfflineItemFields: (key: string, patch: Partial<OfflineChecklistItem>) => void
+  updateOfflineItemQty: (key: string, value: string) => void
+  handleLimparQuantidadeOffline: (key: string) => void
+  openPhotoModalForCodigo: (codigo: string) => void
+  removePhotoFromChecklistItem: (it: OfflineChecklistItem) => void
+}
+
+/**
+ * Tabela HTML só do inventário físico no modo armazém (colunas como na planilha Excel).
+ * A checklist de contagem diária / tabela clássica fica em `ContagemEstoque`.
+ */
+export function InventarioPlanilhaTabela(props: InventarioPlanilhaTabelaProps) {
+  const {
+    items,
+    armazemItemsSorted,
+    armazemContagem,
+    planilhaQtdContagemHeader,
+    showChecklistColumn,
+    thStyle,
+    tdStyle,
+    buttonStyle,
+    checklistQtdInputStyle,
+    checklistEditingKey,
+    checklistEditDraft,
+    setChecklistEditDraft,
+    checklistSavedFlashKey,
+    saveChecklistEdit,
+    cancelChecklistEdit,
+    openChecklistEdit,
+    updateOfflineItemFields,
+    updateOfflineItemQty,
+    handleLimparQuantidadeOffline,
+    openPhotoModalForCodigo,
+    removePhotoFromChecklistItem,
+  } = props
+
+  const ruaPlanilha = getInventarioRuaArmazem(armazemContagem)
+
+  return (
+    <div style={{ overflowX: 'auto', marginTop: 0 }}>
+      <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 1200 }}>
+        <thead>
+          <tr>
+            <th style={thStyle}>RUA</th>
+            <th style={thStyle}>POS</th>
+            <th style={thStyle}>NIVEL</th>
+            <th style={thStyle}>CÓDIGO</th>
+            <th style={thStyle}>DESCRIÇÃO</th>
+            {showChecklistColumn('quantidade') ? (
+              <th style={thStyle}>{planilhaQtdContagemHeader}</th>
+            ) : null}
+            {showChecklistColumn('data_fabricacao') ? <th style={thStyle}>FABRICAÇÃO</th> : null}
+            {showChecklistColumn('data_validade') ? <th style={thStyle}>VENCIMENTO</th> : null}
+            {showChecklistColumn('lote') || showChecklistColumn('up') ? (
+              <th style={thStyle}>LOTE/UP</th>
+            ) : null}
+            {showChecklistColumn('observacao') ? <th style={thStyle}>Observação</th> : null}
+            {showChecklistColumn('foto') ? <th style={thStyle}>Foto</th> : null}
+            {showChecklistColumn('acoes') ? <th style={thStyle}>Ações</th> : null}
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((it) => {
+            const hasPhoto = Boolean(String(it.foto_base64 ?? '').trim())
+            const isEditing = checklistEditingKey === it.key && checklistEditDraft
+            const pn =
+              armazemItemsSorted.length > 0 ? inventarioArmazemPosNivel(armazemItemsSorted, it) : { pos: 0, nivel: 0 }
+            return (
+              <tr key={it.key}>
+                {isEditing && checklistEditDraft ? (
+                  <>
+                    <td style={tdStyle}>{ruaPlanilha}</td>
+                    <td style={tdStyle}>{pn.pos}</td>
+                    <td style={tdStyle}>{pn.nivel}</td>
+                    <td style={tdStyle}>
+                      <input
+                        value={checklistEditDraft.codigo_interno}
+                        onChange={(e) =>
+                          setChecklistEditDraft((d) => (d ? { ...d, codigo_interno: e.target.value } : d))
+                        }
+                        style={{ ...checklistQtdInputStyle, width: '100%', minWidth: 100 }}
+                        aria-label="Código do produto"
+                      />
+                    </td>
+                    <td style={{ ...tdStyle, whiteSpace: 'normal', maxWidth: 420 }}>
+                      <textarea
+                        value={checklistEditDraft.descricao}
+                        onChange={(e) =>
+                          setChecklistEditDraft((d) => (d ? { ...d, descricao: e.target.value } : d))
+                        }
+                        rows={2}
+                        style={{
+                          ...checklistQtdInputStyle,
+                          width: '100%',
+                          minWidth: 160,
+                          resize: 'vertical',
+                          fontFamily: 'inherit',
+                        }}
+                        aria-label="Descrição"
+                      />
+                    </td>
+                    {showChecklistColumn('quantidade') ? (
+                      <td style={tdStyle}>
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          value={checklistEditDraft.quantidade_contada}
+                          onChange={(e) =>
+                            setChecklistEditDraft((d) =>
+                              d ? { ...d, quantidade_contada: e.target.value } : d,
+                            )
+                          }
+                          style={checklistQtdInputStyle}
+                          placeholder="—"
+                          aria-label="Quantidade"
+                        />
+                      </td>
+                    ) : null}
+                    {showChecklistColumn('data_fabricacao') ? (
+                      <td style={tdStyle}>
+                        <input
+                          type="date"
+                          value={it.data_fabricacao ?? ''}
+                          onChange={(e) =>
+                            updateOfflineItemFields(it.key, { data_fabricacao: e.target.value })
+                          }
+                          style={{ ...checklistQtdInputStyle, width: 145 }}
+                          aria-label={`Data de fabricação ${it.codigo_interno}`}
+                        />
+                      </td>
+                    ) : null}
+                    {showChecklistColumn('data_validade') ? (
+                      <td style={tdStyle}>
+                        <input
+                          type="date"
+                          value={it.data_validade ?? ''}
+                          onChange={(e) =>
+                            updateOfflineItemFields(it.key, { data_validade: e.target.value })
+                          }
+                          style={{ ...checklistQtdInputStyle, width: 145 }}
+                          aria-label={`Data de vencimento ${it.codigo_interno}`}
+                        />
+                      </td>
+                    ) : null}
+                    {showChecklistColumn('lote') || showChecklistColumn('up') ? (
+                      <td style={{ ...tdStyle, whiteSpace: 'normal' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                          {showChecklistColumn('lote') ? (
+                            <input
+                              type="text"
+                              value={it.lote ?? ''}
+                              onChange={(e) => updateOfflineItemFields(it.key, { lote: e.target.value })}
+                              style={{ ...checklistQtdInputStyle, width: '100%', minWidth: 100 }}
+                              placeholder="Lote"
+                              aria-label={`Lote ${it.codigo_interno}`}
+                            />
+                          ) : null}
+                          {showChecklistColumn('up') ? (
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              value={it.up_quantidade ?? ''}
+                              onChange={(e) =>
+                                updateOfflineItemFields(it.key, { up_quantidade: e.target.value })
+                              }
+                              style={{ ...checklistQtdInputStyle, width: '100%', minWidth: 100 }}
+                              placeholder="UP"
+                              aria-label={`UP ${it.codigo_interno}`}
+                            />
+                          ) : null}
+                        </div>
+                      </td>
+                    ) : null}
+                    {showChecklistColumn('observacao') ? (
+                      <td style={tdStyle}>
+                        <input
+                          type="text"
+                          value={it.observacao ?? ''}
+                          onChange={(e) =>
+                            updateOfflineItemFields(it.key, { observacao: e.target.value })
+                          }
+                          style={{ ...checklistQtdInputStyle, width: 180 }}
+                          placeholder="—"
+                          aria-label={`Observação ${it.codigo_interno}`}
+                        />
+                      </td>
+                    ) : null}
+                    {showChecklistColumn('foto') ? (
+                      <td style={tdStyle}>{hasPhoto ? 'Com foto' : 'Sem foto'}</td>
+                    ) : null}
+                    {showChecklistColumn('acoes') ? (
+                      <td style={{ ...tdStyle, whiteSpace: 'normal' }}>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                          <button
+                            type="button"
+                            style={{ ...buttonStyle, background: '#0b5', fontSize: 12, padding: '6px 10px' }}
+                            onClick={() => saveChecklistEdit()}
+                          >
+                            Salvar
+                          </button>
+                          <button
+                            type="button"
+                            style={{ ...buttonStyle, background: '#666', fontSize: 12, padding: '6px 10px' }}
+                            onClick={() => cancelChecklistEdit()}
+                          >
+                            Cancelar
+                          </button>
+                        </div>
+                      </td>
+                    ) : null}
+                  </>
+                ) : (
+                  <>
+                    <td style={tdStyle}>{ruaPlanilha}</td>
+                    <td style={tdStyle}>{pn.pos}</td>
+                    <td style={tdStyle}>{pn.nivel}</td>
+                    <td style={tdStyle}>
+                      {it.codigo_interno}
+                      {it.inventario_repeticao ? (
+                        <span style={{ marginLeft: 6, fontSize: 11, color: '#0a7', fontWeight: 700 }}>
+                          ({it.inventario_repeticao}ª)
+                        </span>
+                      ) : null}
+                    </td>
+                    <td style={{ ...tdStyle, whiteSpace: 'normal', maxWidth: 420 }}>{it.descricao}</td>
+                    {showChecklistColumn('quantidade') ? (
+                      <td style={tdStyle}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                          <input
+                            type="text"
+                            inputMode="decimal"
+                            value={it.quantidade_contada}
+                            onChange={(e) => updateOfflineItemQty(it.key, e.target.value)}
+                            style={checklistQtdInputStyle}
+                            placeholder="—"
+                            aria-label={`Quantidade ${it.codigo_interno}${it.inventario_repeticao ? ` ${it.inventario_repeticao}ª` : ''}`}
+                          />
+                          {checklistSavedFlashKey === it.key ? (
+                            <span style={{ fontSize: 11, color: '#0a0', fontWeight: 700 }}>Salvo</span>
+                          ) : null}
+                        </div>
+                      </td>
+                    ) : null}
+                    {showChecklistColumn('data_fabricacao') ? (
+                      <td style={tdStyle}>
+                        <input
+                          type="date"
+                          value={it.data_fabricacao ?? ''}
+                          onChange={(e) =>
+                            updateOfflineItemFields(it.key, { data_fabricacao: e.target.value })
+                          }
+                          style={{ ...checklistQtdInputStyle, width: 145 }}
+                          aria-label={`Data de fabricação ${it.codigo_interno}`}
+                        />
+                      </td>
+                    ) : null}
+                    {showChecklistColumn('data_validade') ? (
+                      <td style={tdStyle}>
+                        <input
+                          type="date"
+                          value={it.data_validade ?? ''}
+                          onChange={(e) =>
+                            updateOfflineItemFields(it.key, { data_validade: e.target.value })
+                          }
+                          style={{ ...checklistQtdInputStyle, width: 145 }}
+                          aria-label={`Data de vencimento ${it.codigo_interno}`}
+                        />
+                      </td>
+                    ) : null}
+                    {showChecklistColumn('lote') || showChecklistColumn('up') ? (
+                      <td style={{ ...tdStyle, whiteSpace: 'normal' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                          {showChecklistColumn('lote') ? (
+                            <input
+                              type="text"
+                              value={it.lote ?? ''}
+                              onChange={(e) => updateOfflineItemFields(it.key, { lote: e.target.value })}
+                              style={{ ...checklistQtdInputStyle, width: '100%', minWidth: 100 }}
+                              placeholder="Lote"
+                              aria-label={`Lote ${it.codigo_interno}`}
+                            />
+                          ) : null}
+                          {showChecklistColumn('up') ? (
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              value={it.up_quantidade ?? ''}
+                              onChange={(e) =>
+                                updateOfflineItemFields(it.key, { up_quantidade: e.target.value })
+                              }
+                              style={{ ...checklistQtdInputStyle, width: '100%', minWidth: 100 }}
+                              placeholder="UP"
+                              aria-label={`UP ${it.codigo_interno}`}
+                            />
+                          ) : null}
+                        </div>
+                      </td>
+                    ) : null}
+                    {showChecklistColumn('observacao') ? (
+                      <td style={tdStyle}>
+                        <input
+                          type="text"
+                          value={it.observacao ?? ''}
+                          onChange={(e) =>
+                            updateOfflineItemFields(it.key, { observacao: e.target.value })
+                          }
+                          style={{ ...checklistQtdInputStyle, width: 180 }}
+                          placeholder="—"
+                          aria-label={`Observação ${it.codigo_interno}`}
+                        />
+                      </td>
+                    ) : null}
+                    {showChecklistColumn('foto') ? (
+                      <td style={tdStyle}>{hasPhoto ? 'Com foto' : 'Sem foto'}</td>
+                    ) : null}
+                    {showChecklistColumn('acoes') ? (
+                      <td style={{ ...tdStyle, whiteSpace: 'normal' }}>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                          <button
+                            type="button"
+                            style={{ ...buttonStyle, background: '#2a4d7a', fontSize: 12, padding: '6px 10px' }}
+                            onClick={() => openChecklistEdit(it)}
+                          >
+                            Editar
+                          </button>
+                          <button
+                            type="button"
+                            style={{ ...buttonStyle, background: '#666', fontSize: 12, padding: '6px 10px' }}
+                            onClick={() => handleLimparQuantidadeOffline(it.key)}
+                          >
+                            Limpar
+                          </button>
+                          <button
+                            type="button"
+                            style={{
+                              ...buttonStyle,
+                              background: hasPhoto ? '#0b5' : '#444',
+                              fontSize: 12,
+                              padding: '6px 10px',
+                            }}
+                            onClick={() => openPhotoModalForCodigo(it.codigo_interno)}
+                            title={hasPhoto ? 'Ver/atualizar foto' : 'Anexar foto'}
+                          >
+                            {hasPhoto ? 'Foto (ok)' : 'Sem foto'}
+                          </button>
+                          {hasPhoto ? (
+                            <button
+                              type="button"
+                              style={{ ...buttonStyle, background: '#a85a00', fontSize: 12, padding: '6px 10px' }}
+                              onClick={() => removePhotoFromChecklistItem(it)}
+                              title="Remover foto anexada"
+                            >
+                              Remover foto
+                            </button>
+                          ) : null}
+                        </div>
+                      </td>
+                    ) : null}
+                  </>
+                )}
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+/** @deprecated Use `InventarioPlanilhaTabela` */
+export const InventarioPlanilhaArmazemDesktopTable = InventarioPlanilhaTabela
+export type InventarioPlanilhaArmazemDesktopTableProps = InventarioPlanilhaTabelaProps

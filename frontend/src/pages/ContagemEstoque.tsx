@@ -16,6 +16,12 @@ import {
   saveOfflineSession,
   stableItemKey,
 } from '../lib/offlineContagemSession'
+import {
+  filtrarItensPlanilhaInventario,
+  InventarioPlanilhaAbas,
+  InventarioPlanilhaTabela,
+} from '../components/inventario/inventarioPlanilhaArmazem'
+import { buildPlanilhaLayoutPorItens } from '../components/inventario/inventarioPlanilhaModel'
 
 const PREVIEW_PAGE_SIZE = 15
 const CHECKLIST_PAGE_SIZE = 15
@@ -343,6 +349,16 @@ function isMissingDbColumnError(e: unknown, columnSqlName: string): boolean {
   const msg = (e && typeof e === 'object' && 'message' in e ? String((e as { message: unknown }).message) : String(e)).toLowerCase()
   const col = columnSqlName.toLowerCase()
   return code === '42703' || (msg.includes('does not exist') && msg.includes(col))
+}
+
+/** Tabela `inventario_planilha_linhas` ainda não criada no projeto Supabase. */
+function isMissingInventarioPlanilhaTableError(e: unknown): boolean {
+  const code = e && typeof e === 'object' && 'code' in e ? String((e as { code: unknown }).code) : ''
+  const msg = (e && typeof e === 'object' && 'message' in e ? String((e as { message: unknown }).message) : String(e)).toLowerCase()
+  return (
+    code === '42P01' ||
+    (msg.includes('inventario_planilha_linhas') && (msg.includes('does not exist') || msg.includes('não existe')))
+  )
 }
 
 function toISODateLocal(d: Date) {
@@ -1687,6 +1703,15 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
 
       const dataHoraIso = toISOStringFromDatetimeLocal(dataHoraContagem)
       const rows: Record<string, unknown>[] = []
+      /** Metadados paralelos a `rows` para gravar `inventario_planilha_linhas` após obter os ids de `contagens_estoque`. */
+      const finalizeMeta: Array<{
+        it: OfflineChecklistItem
+        q: number
+        up_adicional: number | null
+        dfRaw: string
+        dvRaw: string
+        produtoId: string | null
+      }> = []
       for (const it of itemsSnapshot) {
         const q = Number(String(it.quantidade_contada).replace(',', '.'))
         if (!Number.isFinite(q) || q < 0) {
@@ -1747,7 +1772,10 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
           rowPayload.inventario_repeticao = it.inventario_repeticao ?? null
         }
         rows.push(rowPayload)
+        finalizeMeta.push({ it, q, up_adicional, dfRaw, dvRaw, produtoId })
       }
+
+      const planilhaLayout = inventario ? buildPlanilhaLayoutPorItens(itemsSnapshot, getArmazemContagem) : null
 
       setFinalizeProgress('Conectando ao banco...')
       let delQ = supabase
@@ -1778,11 +1806,86 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       }
 
       const CHUNK = 250
+      const insertedContagensIds: string[] = []
       for (let i = 0; i < rows.length; i += CHUNK) {
         setFinalizeProgress(`Salvando: ${Math.min(i + CHUNK, rows.length)}/${rows.length} registros...`)
         const chunk = rows.slice(i, i + CHUNK)
-        const { error: insErr } = await supabase.from('contagens_estoque').insert(chunk)
+        const { data: insertedChunk, error: insErr } = await supabase
+          .from('contagens_estoque')
+          .insert(chunk)
+          .select('id')
         if (insErr) throw insErr
+        if (insertedChunk && insertedChunk.length > 0) {
+          for (const r of insertedChunk) {
+            if (r && typeof r === 'object' && 'id' in r && (r as { id: unknown }).id != null) {
+              insertedContagensIds.push(String((r as { id: string }).id))
+            }
+          }
+        }
+      }
+      if (insertedContagensIds.length !== rows.length) {
+        throw new Error(
+          'O banco não devolveu o id de cada linha em contagens_estoque. Verifique a política de SELECT após INSERT.',
+        )
+      }
+
+      let planilhaGravada = false
+      let planilhaAviso: string | null = null
+      if (inventario && planilhaLayout) {
+        setFinalizeProgress('Gravando tabela inventário (planilha)...')
+        const { error: delPlErr } = await supabase
+          .from('inventario_planilha_linhas')
+          .delete()
+          .eq('data_inventario', ymd)
+          .eq('conferente_id', offlineSession.conferente_id)
+        if (delPlErr) {
+          if (isMissingInventarioPlanilhaTableError(delPlErr)) {
+            planilhaAviso =
+              ' Tabela inventario_planilha_linhas não encontrada no banco — execute supabase/sql/create_inventario_planilha_linhas.sql.'
+          } else {
+            throw delPlErr
+          }
+        } else {
+          const planilhaRows: Record<string, unknown>[] = finalizeMeta.map((meta, idx) => {
+            const layout = planilhaLayout.get(meta.it.key)
+            if (!layout) {
+              throw new Error('Layout da planilha ausente para um item da sessão.')
+            }
+            return {
+              conferente_id: offlineSession.conferente_id,
+              data_inventario: ymd,
+              grupo_armazem: layout.grupo_armazem,
+              rua: layout.rua,
+              posicao: layout.posicao,
+              nivel: layout.nivel,
+              numero_contagem: layout.numero_contagem,
+              codigo_interno: meta.it.codigo_interno.trim(),
+              descricao: meta.it.descricao.trim(),
+              inventario_repeticao: meta.it.inventario_repeticao ?? null,
+              quantidade: meta.q,
+              data_fabricacao: meta.dfRaw === '' ? null : meta.dfRaw,
+              data_validade: meta.dvRaw === '' ? null : meta.dvRaw,
+              lote: String(meta.it.lote ?? '').trim() || null,
+              up_quantidade: meta.up_adicional,
+              observacao: String(meta.it.observacao ?? '').trim() || null,
+              produto_id: meta.produtoId,
+              contagens_estoque_id: insertedContagensIds[idx],
+            }
+          })
+          for (let i = 0; i < planilhaRows.length; i += CHUNK) {
+            const chunk = planilhaRows.slice(i, i + CHUNK)
+            const { error: plErr } = await supabase.from('inventario_planilha_linhas').insert(chunk)
+            if (plErr) {
+              if (isMissingInventarioPlanilhaTableError(plErr)) {
+                planilhaAviso =
+                  ' Tabela inventario_planilha_linhas não encontrada no banco — execute supabase/sql/create_inventario_planilha_linhas.sql.'
+                break
+              }
+              throw plErr
+            }
+          }
+          if (!planilhaAviso) planilhaGravada = true
+        }
       }
 
       clearOfflineSession(sessionMode)
@@ -1790,10 +1893,16 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       setChecklistListMode('todos')
       setSaveSuccess(
         inventario
-          ? `Inventário do dia ${ymd} finalizado: ${rows.length} registro(s) gravados.`
+          ? `Inventário do dia ${ymd} finalizado: ${rows.length} registro(s) em contagens_estoque.${
+              planilhaGravada ? ` ${rows.length} linha(s) também em inventario_planilha_linhas.` : ''
+            }${planilhaAviso ?? ''}`
           : `Contagem do dia ${ymd} finalizada: ${rows.length} registro(s) gravados no banco.`,
       )
-      setFinalizeProgress('Concluído: registros salvos com sucesso.')
+      setFinalizeProgress(
+        planilhaGravada
+          ? 'Concluído: contagens e planilha de inventário gravadas.'
+          : 'Concluído: registros salvos com sucesso.',
+      )
       await loadPreview(ymd)
     } catch (e: any) {
       setSaveError(`Erro ao finalizar: ${e?.message ? String(e.message) : 'verifique permissões (RLS) e tabelas.'}`)
@@ -2704,6 +2813,31 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
           return out
         })()
 
+  const inventarioPlanilhaArmazem = inventario && isArmazemPaginado && !checklistShowAll
+
+  const armazemGrupoAtual = isArmazemPaginado ? armazemGrupos[checklistPageSafe - 1] : null
+
+  const armazemItemsSorted = useMemo(() => {
+    if (!armazemGrupoAtual?.items?.length) return [] as OfflineChecklistItem[]
+    return [...armazemGrupoAtual.items].sort((a, b) => {
+      const c = a.codigo_interno.localeCompare(b.codigo_interno, 'pt-BR')
+      if (c !== 0) return c
+      return (a.inventario_repeticao ?? 0) - (b.inventario_repeticao ?? 0)
+    })
+  }, [armazemGrupoAtual])
+
+  const planilhaQtdContagemHeader = armazemGrupoAtual
+    ? formatContagemLabel(armazemGrupoAtual.contagem)
+    : 'CONTAGEM'
+
+  /**
+   * Linhas só para `InventarioPlanilhaTabela` (sem cabeçalhos de grupo). O restante da UI usa `checklistDisplayPageItems`.
+   */
+  const linhasTabelaPlanilhaInventario = useMemo((): OfflineChecklistItem[] => {
+    if (!inventarioPlanilhaArmazem) return []
+    return filtrarItensPlanilhaInventario(checklistDisplayPageItems)
+  }, [inventarioPlanilhaArmazem, checklistDisplayPageItems])
+
   const checklistColumns = useMemo(() => {
     const cols = [
       { id: 'codigo', label: 'Código do produto' },
@@ -2753,9 +2887,10 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
               <strong>Armazém</strong> (dividida em grupos 1ª–4ª contagem). Carregue a lista a partir de{' '}
               <strong>Todos os Produtos</strong>, preencha as quantidades e use <strong>Finalizar inventário</strong> para gravar
               em <code style={{ fontSize: 12 }}>contagens_estoque</code> (campos{' '}
-              <code style={{ fontSize: 12 }}>origem=inventario</code> e repetição). Execute o SQL em{' '}
-              <code style={{ fontSize: 12 }}>supabase/sql/alter_contagens_estoque_origem_inventario.sql</code> se ainda não
-              aplicou no banco.
+              <code style={{ fontSize: 12 }}>origem=inventario</code> e repetição) e uma linha correspondente em{' '}
+              <code style={{ fontSize: 12 }}>inventario_planilha_linhas</code> (formato planilha: RUA, POS, NIVEL, etc.). SQL:{' '}
+              <code style={{ fontSize: 12 }}>alter_contagens_estoque_origem_inventario.sql</code> e{' '}
+              <code style={{ fontSize: 12 }}>create_inventario_planilha_linhas.sql</code>.
             </>
           ) : (
             <>
@@ -3072,6 +3207,13 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                     Suas escolhas ficam salvas neste navegador (contagem e inventário têm preferências separadas).
                   </span>
                 </div>
+                {inventario && isArmazemPaginado && !checklistShowAll && armazemGrupos.length > 0 ? (
+                  <InventarioPlanilhaAbas
+                    armazemGrupos={armazemGrupos}
+                    checklistPageSafe={checklistPageSafe}
+                    setChecklistPage={setChecklistPage}
+                  />
+                ) : null}
                 {isMobile ? (
                   <>
                     <div style={{ marginTop: 8, display: 'grid', gap: 8 }}>
@@ -3351,6 +3493,44 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                     })}
                     </div>
                   </>
+                ) : inventarioPlanilhaArmazem ? (
+                  <section
+                    style={{
+                      marginTop: 12,
+                      padding: 12,
+                      borderRadius: 10,
+                      border: '1px solid var(--border, #ccc)',
+                      background: 'var(--panel-bg, rgba(0,0,0,.03))',
+                    }}
+                    aria-label="Inventário no formato da planilha"
+                  >
+                    <h4 style={{ margin: '0 0 10px', fontSize: 15, fontWeight: 700, color: 'var(--text, #111)' }}>
+                      Inventário — tabela no formato da planilha
+                    </h4>
+                    <InventarioPlanilhaTabela
+                      items={linhasTabelaPlanilhaInventario}
+                      armazemItemsSorted={armazemItemsSorted}
+                      armazemContagem={armazemGrupoAtual?.contagem ?? null}
+                      planilhaQtdContagemHeader={planilhaQtdContagemHeader}
+                      showChecklistColumn={showChecklistColumn}
+                      thStyle={thStyle}
+                      tdStyle={tdStyle}
+                      buttonStyle={buttonStyle}
+                      checklistQtdInputStyle={checklistQtdInputStyle}
+                      checklistEditingKey={checklistEditingKey}
+                      checklistEditDraft={checklistEditDraft}
+                      setChecklistEditDraft={setChecklistEditDraft}
+                      checklistSavedFlashKey={checklistSavedFlashKey}
+                      saveChecklistEdit={saveChecklistEdit}
+                      cancelChecklistEdit={cancelChecklistEdit}
+                      openChecklistEdit={openChecklistEdit}
+                      updateOfflineItemFields={updateOfflineItemFields}
+                      updateOfflineItemQty={updateOfflineItemQty}
+                      handleLimparQuantidadeOffline={handleLimparQuantidadeOffline}
+                      openPhotoModalForCodigo={openPhotoModalForCodigo}
+                      removePhotoFromChecklistItem={removePhotoFromChecklistItem}
+                    />
+                  </section>
                 ) : (
                   <div style={{ overflowX: 'auto', marginTop: 10 }}>
                     <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 1700 }}>
