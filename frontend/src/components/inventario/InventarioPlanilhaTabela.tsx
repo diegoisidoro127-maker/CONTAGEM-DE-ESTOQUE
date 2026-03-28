@@ -68,7 +68,7 @@ export function InventarioPlanilhaTabela(props: InventarioPlanilhaTabelaProps) {
 
   return (
     <div style={{ overflowX: 'auto', marginTop: 0 }}>
-      <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 1200 }}>
+      <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 1520 }}>
         <thead>
           <tr>
             <th style={thStyle}>RUA</th>
@@ -76,15 +76,17 @@ export function InventarioPlanilhaTabela(props: InventarioPlanilhaTabelaProps) {
             <th style={thStyle}>NIVEL</th>
             <th style={thStyle}>CÓDIGO</th>
             <th style={thStyle}>DESCRIÇÃO</th>
+            {showChecklistColumn('unidade') ? <th style={thStyle}>UNIDADE</th> : null}
             {showChecklistColumn('quantidade') ? (
               <th style={thStyle}>{planilhaQtdContagemHeader}</th>
             ) : null}
             {showChecklistColumn('data_fabricacao') ? <th style={thStyle}>FABRICAÇÃO</th> : null}
             {showChecklistColumn('data_validade') ? <th style={thStyle}>VENCIMENTO</th> : null}
-            {showChecklistColumn('lote') || showChecklistColumn('up') ? (
-              <th style={thStyle}>LOTE/UP</th>
-            ) : null}
+            {showChecklistColumn('lote') ? <th style={thStyle}>LOTE</th> : null}
+            {showChecklistColumn('up') ? <th style={thStyle}>UP</th> : null}
             {showChecklistColumn('observacao') ? <th style={thStyle}>Observação</th> : null}
+            {showChecklistColumn('ean') ? <th style={thStyle}>EAN</th> : null}
+            {showChecklistColumn('dun') ? <th style={thStyle}>DUN</th> : null}
             {showChecklistColumn('foto') ? <th style={thStyle}>Foto</th> : null}
             {showChecklistColumn('acoes') ? <th style={thStyle}>Ações</th> : null}
           </tr>
@@ -133,6 +135,22 @@ export function InventarioPlanilhaTabela(props: InventarioPlanilhaTabelaProps) {
                         aria-label="Descrição"
                       />
                     </td>
+                    {showChecklistColumn('unidade') ? (
+                      <td style={tdStyle}>
+                        <input
+                          type="text"
+                          value={it.unidade_medida ?? ''}
+                          onChange={(e) =>
+                            updateOfflineItemFields(it.key, {
+                              unidade_medida: e.target.value.trim() === '' ? null : e.target.value,
+                            })
+                          }
+                          style={{ ...checklistQtdInputStyle, width: 72, minWidth: 56 }}
+                          placeholder="—"
+                          aria-label="Unidade de medida"
+                        />
+                      </td>
+                    ) : null}
                     {showChecklistColumn('quantidade') ? (
                       <td style={tdStyle}>
                         <input
@@ -176,33 +194,31 @@ export function InventarioPlanilhaTabela(props: InventarioPlanilhaTabelaProps) {
                         />
                       </td>
                     ) : null}
-                    {showChecklistColumn('lote') || showChecklistColumn('up') ? (
-                      <td style={{ ...tdStyle, whiteSpace: 'normal' }}>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                          {showChecklistColumn('lote') ? (
-                            <input
-                              type="text"
-                              value={it.lote ?? ''}
-                              onChange={(e) => updateOfflineItemFields(it.key, { lote: e.target.value })}
-                              style={{ ...checklistQtdInputStyle, width: '100%', minWidth: 100 }}
-                              placeholder="Lote"
-                              aria-label={`Lote ${it.codigo_interno}`}
-                            />
-                          ) : null}
-                          {showChecklistColumn('up') ? (
-                            <input
-                              type="text"
-                              inputMode="decimal"
-                              value={it.up_quantidade ?? ''}
-                              onChange={(e) =>
-                                updateOfflineItemFields(it.key, { up_quantidade: e.target.value })
-                              }
-                              style={{ ...checklistQtdInputStyle, width: '100%', minWidth: 100 }}
-                              placeholder="UP"
-                              aria-label={`UP ${it.codigo_interno}`}
-                            />
-                          ) : null}
-                        </div>
+                    {showChecklistColumn('lote') ? (
+                      <td style={tdStyle}>
+                        <input
+                          type="text"
+                          value={it.lote ?? ''}
+                          onChange={(e) => updateOfflineItemFields(it.key, { lote: e.target.value })}
+                          style={{ ...checklistQtdInputStyle, width: '100%', minWidth: 88 }}
+                          placeholder="—"
+                          aria-label={`Lote ${it.codigo_interno}`}
+                        />
+                      </td>
+                    ) : null}
+                    {showChecklistColumn('up') ? (
+                      <td style={tdStyle}>
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          value={it.up_quantidade ?? ''}
+                          onChange={(e) =>
+                            updateOfflineItemFields(it.key, { up_quantidade: e.target.value })
+                          }
+                          style={{ ...checklistQtdInputStyle, width: '100%', minWidth: 72 }}
+                          placeholder="—"
+                          aria-label={`UP ${it.codigo_interno}`}
+                        />
                       </td>
                     ) : null}
                     {showChecklistColumn('observacao') ? (
@@ -216,6 +232,40 @@ export function InventarioPlanilhaTabela(props: InventarioPlanilhaTabelaProps) {
                           style={{ ...checklistQtdInputStyle, width: 180 }}
                           placeholder="—"
                           aria-label={`Observação ${it.codigo_interno}`}
+                        />
+                      </td>
+                    ) : null}
+                    {showChecklistColumn('ean') ? (
+                      <td style={tdStyle}>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          value={it.ean ?? ''}
+                          onChange={(e) =>
+                            updateOfflineItemFields(it.key, {
+                              ean: e.target.value.trim() === '' ? null : e.target.value,
+                            })
+                          }
+                          style={{ ...checklistQtdInputStyle, width: 130, minWidth: 100 }}
+                          placeholder="—"
+                          aria-label={`EAN ${it.codigo_interno}`}
+                        />
+                      </td>
+                    ) : null}
+                    {showChecklistColumn('dun') ? (
+                      <td style={tdStyle}>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          value={it.dun ?? ''}
+                          onChange={(e) =>
+                            updateOfflineItemFields(it.key, {
+                              dun: e.target.value.trim() === '' ? null : e.target.value,
+                            })
+                          }
+                          style={{ ...checklistQtdInputStyle, width: 130, minWidth: 100 }}
+                          placeholder="—"
+                          aria-label={`DUN ${it.codigo_interno}`}
                         />
                       </td>
                     ) : null}
@@ -275,6 +325,22 @@ export function InventarioPlanilhaTabela(props: InventarioPlanilhaTabelaProps) {
                       )}
                     </td>
                     <td style={{ ...tdStyle, whiteSpace: 'normal', maxWidth: 420 }}>{it.descricao}</td>
+                    {showChecklistColumn('unidade') ? (
+                      <td style={tdStyle}>
+                        <input
+                          type="text"
+                          value={it.unidade_medida ?? ''}
+                          onChange={(e) =>
+                            updateOfflineItemFields(it.key, {
+                              unidade_medida: e.target.value.trim() === '' ? null : e.target.value,
+                            })
+                          }
+                          style={{ ...checklistQtdInputStyle, width: 72, minWidth: 56 }}
+                          placeholder="—"
+                          aria-label={`Unidade ${it.codigo_interno}`}
+                        />
+                      </td>
+                    ) : null}
                     {showChecklistColumn('quantidade') ? (
                       <td style={tdStyle}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -319,33 +385,31 @@ export function InventarioPlanilhaTabela(props: InventarioPlanilhaTabelaProps) {
                         />
                       </td>
                     ) : null}
-                    {showChecklistColumn('lote') || showChecklistColumn('up') ? (
-                      <td style={{ ...tdStyle, whiteSpace: 'normal' }}>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                          {showChecklistColumn('lote') ? (
-                            <input
-                              type="text"
-                              value={it.lote ?? ''}
-                              onChange={(e) => updateOfflineItemFields(it.key, { lote: e.target.value })}
-                              style={{ ...checklistQtdInputStyle, width: '100%', minWidth: 100 }}
-                              placeholder="Lote"
-                              aria-label={`Lote ${it.codigo_interno}`}
-                            />
-                          ) : null}
-                          {showChecklistColumn('up') ? (
-                            <input
-                              type="text"
-                              inputMode="decimal"
-                              value={it.up_quantidade ?? ''}
-                              onChange={(e) =>
-                                updateOfflineItemFields(it.key, { up_quantidade: e.target.value })
-                              }
-                              style={{ ...checklistQtdInputStyle, width: '100%', minWidth: 100 }}
-                              placeholder="UP"
-                              aria-label={`UP ${it.codigo_interno}`}
-                            />
-                          ) : null}
-                        </div>
+                    {showChecklistColumn('lote') ? (
+                      <td style={tdStyle}>
+                        <input
+                          type="text"
+                          value={it.lote ?? ''}
+                          onChange={(e) => updateOfflineItemFields(it.key, { lote: e.target.value })}
+                          style={{ ...checklistQtdInputStyle, width: '100%', minWidth: 88 }}
+                          placeholder="—"
+                          aria-label={`Lote ${it.codigo_interno}`}
+                        />
+                      </td>
+                    ) : null}
+                    {showChecklistColumn('up') ? (
+                      <td style={tdStyle}>
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          value={it.up_quantidade ?? ''}
+                          onChange={(e) =>
+                            updateOfflineItemFields(it.key, { up_quantidade: e.target.value })
+                          }
+                          style={{ ...checklistQtdInputStyle, width: '100%', minWidth: 72 }}
+                          placeholder="—"
+                          aria-label={`UP ${it.codigo_interno}`}
+                        />
                       </td>
                     ) : null}
                     {showChecklistColumn('observacao') ? (
@@ -359,6 +423,40 @@ export function InventarioPlanilhaTabela(props: InventarioPlanilhaTabelaProps) {
                           style={{ ...checklistQtdInputStyle, width: 180 }}
                           placeholder="—"
                           aria-label={`Observação ${it.codigo_interno}`}
+                        />
+                      </td>
+                    ) : null}
+                    {showChecklistColumn('ean') ? (
+                      <td style={tdStyle}>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          value={it.ean ?? ''}
+                          onChange={(e) =>
+                            updateOfflineItemFields(it.key, {
+                              ean: e.target.value.trim() === '' ? null : e.target.value,
+                            })
+                          }
+                          style={{ ...checklistQtdInputStyle, width: 130, minWidth: 100 }}
+                          placeholder="—"
+                          aria-label={`EAN ${it.codigo_interno}`}
+                        />
+                      </td>
+                    ) : null}
+                    {showChecklistColumn('dun') ? (
+                      <td style={tdStyle}>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          value={it.dun ?? ''}
+                          onChange={(e) =>
+                            updateOfflineItemFields(it.key, {
+                              dun: e.target.value.trim() === '' ? null : e.target.value,
+                            })
+                          }
+                          style={{ ...checklistQtdInputStyle, width: 130, minWidth: 100 }}
+                          placeholder="—"
+                          aria-label={`DUN ${it.codigo_interno}`}
                         />
                       </td>
                     ) : null}
