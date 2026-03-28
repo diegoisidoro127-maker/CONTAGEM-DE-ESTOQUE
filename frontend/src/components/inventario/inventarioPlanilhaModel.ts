@@ -64,6 +64,10 @@ export const INVENTARIO_PLANILHA_LINHAS_POR_POSICAO =
 /** Referência: a planilha física tem 15 posições por RUA (POS 1–15); acima disso o índice segue a mesma lógica. */
 export const INVENTARIO_PLANILHA_NUM_POSICOES = 15
 
+/** Uma aba Excel = 15 POS × 15 linhas/POS (cobrindo todos os níveis em cada posição). */
+export const INVENTARIO_PLANILHA_LINHAS_TOTAIS_POR_ABA =
+  INVENTARIO_PLANILHA_NUM_POSICOES * INVENTARIO_PLANILHA_LINHAS_POR_POSICAO
+
 /**
  * POS e NIVEL a partir da ordem da linha (0-based), igual ao Excel:
  * em cada POS, NIVEL 1 repete 3×, depois NIVEL 2 repete 3×, … até NIVEL 5; a cada 15 linhas incrementa POS.

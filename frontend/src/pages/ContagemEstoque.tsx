@@ -27,6 +27,7 @@ import {
   buildPlanilhaLayoutPorItens,
   INVENTARIO_ARMAZEM_GRUPO_IDS,
   INVENTARIO_ARMAZEM_NUM_GRUPOS,
+  INVENTARIO_PLANILHA_LINHAS_TOTAIS_POR_ABA,
 } from '../components/inventario/inventarioPlanilhaModel'
 
 const PREVIEW_PAGE_SIZE = 15
@@ -391,6 +392,23 @@ function isMissingDbColumnError(e: unknown, columnSqlName: string): boolean {
   const msg = (e && typeof e === 'object' && 'message' in e ? String((e as { message: unknown }).message) : String(e)).toLowerCase()
   const col = columnSqlName.toLowerCase()
   return code === '42703' || (msg.includes('does not exist') && msg.includes(col))
+}
+
+/** INSERT em bancos sem migração `alter_contagens_estoque_origem_inventario.sql` / número da contagem. */
+function stripContagensEstoqueInventarioColumns(row: Record<string, unknown>): Record<string, unknown> {
+  const r = { ...row }
+  delete r.origem
+  delete r.inventario_repeticao
+  delete r.inventario_numero_contagem
+  return r
+}
+
+function isMissingAnyInventarioContagensColumn(e: unknown): boolean {
+  return (
+    isMissingDbColumnError(e, 'origem') ||
+    isMissingDbColumnError(e, 'inventario_repeticao') ||
+    isMissingDbColumnError(e, 'inventario_numero_contagem')
+  )
 }
 
 /** Tabela `inventario_planilha_linhas` ainda não criada no projeto Supabase. */
@@ -1515,7 +1533,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
 
       if (listModeEfetivo === 'planilha' && inventario) {
         setArmazemMissingCodes([])
-        const LINHAS_POR_ABA = 66
+        const LINHAS_POR_ABA = INVENTARIO_PLANILHA_LINHAS_TOTAIS_POR_ABA
         const items: OfflineChecklistItem[] = []
         let seq = 0
         for (const g of INVENTARIO_ARMAZEM_GRUPO_IDS) {
@@ -1554,7 +1572,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         setOfflineSession(sess)
         saveOfflineSession(sess, sessionMode)
         setSaveSuccess(
-          `Planilha em branco: ${items.length} linhas (${INVENTARIO_ARMAZEM_NUM_GRUPOS} abas × ${LINHAS_POR_ABA}). Digite o código em cada linha; ao sair do campo, a descrição é preenchida pelo cadastro.`,
+          `Planilha em branco: ${items.length} linhas (${INVENTARIO_ARMAZEM_NUM_GRUPOS} abas × ${LINHAS_POR_ABA} linhas = 15 posições × 15 linhas por posição). Digite o código em cada linha; ao sair do campo, a descrição é preenchida pelo cadastro.`,
         )
         setSaveError('')
         return
@@ -1861,10 +1879,10 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       return
     }
 
-    await finalizeInternal({ sendZerosForMissing: false })
+    await finalizeInternal()
   }
 
-  async function finalizeInternal({ sendZerosForMissing }: { sendZerosForMissing: boolean }) {
+  async function finalizeInternal() {
     if (!offlineSession || offlineSession.status !== 'aberta') return
     if (!conferenteId || offlineSession.conferente_id !== conferenteId) return
 
@@ -1873,16 +1891,12 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       const ymd = offlineSession.data_contagem_ymd
       let itemsSnapshot = offlineSession.items.map((i) => ({ ...i }))
 
-      if (sendZerosForMissing) {
-        itemsSnapshot = itemsSnapshot.map((i) =>
-          String(i.quantidade_contada ?? '').trim() === '' ? { ...i, quantidade_contada: '0' } : i,
-        )
-      }
-
       itemsSnapshot = itemsSnapshot.filter((it) => String(it.codigo_interno ?? '').trim() !== '')
+      /** Só grava linhas com quantidade digitada; vazio não vira 0 e não é enviado. */
+      itemsSnapshot = itemsSnapshot.filter((it) => String(it.quantidade_contada ?? '').trim() !== '')
       if (itemsSnapshot.length === 0) {
         setChecklistError(
-          'Nenhuma linha com código informado. Preencha ao menos um produto (código) antes de finalizar.',
+          'Nenhuma linha com código e quantidade preenchidos. Informe a quantidade nos produtos que deseja gravar (campos vazios permanecem de fora do banco).',
         )
         return
       }
@@ -1973,6 +1987,9 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         : null
 
       setFinalizeProgress('Conectando ao banco...')
+      let deleteSkippedNoOrigemColumn = false
+      let insertWithoutInventarioColumns = false
+
       let delQ = supabase
         .from('contagens_estoque')
         .delete()
@@ -1984,31 +2001,55 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       const { error: delErr } = await delQ
 
       if (delErr) {
-        const startIso = `${ymd}T00:00:00`
-        const endIso = `${ymd}T23:59:59`
-        setFinalizeProgress('Limpando registros antigos (fallback)...')
-        let del2q = supabase
-          .from('contagens_estoque')
-          .delete()
-          .eq('conferente_id', offlineSession.conferente_id)
-          .gte('data_hora_contagem', startIso)
-          .lte('data_hora_contagem', endIso)
-        if (inventario) {
-          del2q = del2q.eq('origem', 'inventario')
+        if (inventario && isMissingDbColumnError(delErr, 'origem')) {
+          deleteSkippedNoOrigemColumn = true
+          setFinalizeProgress(
+            'Coluna origem ausente no banco — não foi possível apagar só o inventário. Inserindo novos registros…',
+          )
+        } else {
+          const startIso = `${ymd}T00:00:00`
+          const endIso = `${ymd}T23:59:59`
+          setFinalizeProgress('Limpando registros antigos (fallback)...')
+          let del2q = supabase
+            .from('contagens_estoque')
+            .delete()
+            .eq('conferente_id', offlineSession.conferente_id)
+            .gte('data_hora_contagem', startIso)
+            .lte('data_hora_contagem', endIso)
+          if (inventario) {
+            del2q = del2q.eq('origem', 'inventario')
+          }
+          const { error: del2 } = await del2q
+          if (del2) {
+            if (inventario && isMissingDbColumnError(del2, 'origem')) {
+              deleteSkippedNoOrigemColumn = true
+              setFinalizeProgress(
+                'Coluna origem ausente — não foi possível limpar registros antigos por tipo. Inserindo…',
+              )
+            } else {
+              throw del2
+            }
+          }
         }
-        const { error: del2 } = await del2q
-        if (del2) throw del2
       }
 
       const CHUNK = 250
       const insertedContagensIds: string[] = []
       for (let i = 0; i < rows.length; i += CHUNK) {
         setFinalizeProgress(`Salvando: ${Math.min(i + CHUNK, rows.length)}/${rows.length} registros...`)
-        const chunk = rows.slice(i, i + CHUNK)
-        const { data: insertedChunk, error: insErr } = await supabase
+        const chunk = rows.slice(i, i + CHUNK) as Record<string, unknown>[]
+        let attemptPayload: Record<string, unknown>[] = chunk
+        let { data: insertedChunk, error: insErr } = await supabase
           .from('contagens_estoque')
-          .insert(chunk)
+          .insert(attemptPayload)
           .select('id')
+        if (insErr && inventario && isMissingAnyInventarioContagensColumn(insErr)) {
+          insertWithoutInventarioColumns = true
+          attemptPayload = chunk.map((r) => stripContagensEstoqueInventarioColumns(r))
+          const res = await supabase.from('contagens_estoque').insert(attemptPayload).select('id')
+          insertedChunk = res.data
+          insErr = res.error
+        }
         if (insErr) throw insErr
         if (insertedChunk && insertedChunk.length > 0) {
           for (const r of insertedChunk) {
@@ -2086,11 +2127,15 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       clearOfflineSession(sessionMode)
       setOfflineSession(null)
       setChecklistListMode('todos')
+      const inventarioDbCompatMsg =
+        inventario && (deleteSkippedNoOrigemColumn || insertWithoutInventarioColumns)
+          ? ' Recomendado: execute no Supabase os scripts `alter_contagens_estoque_origem_inventario.sql` e `alter_contagens_estoque_inventario_numero_contagem.sql` para gravar origem e evitar duplicar registros ao refinalizar.'
+          : ''
       setSaveSuccess(
         inventario
           ? `Inventário do dia ${ymd} finalizado: ${rows.length} registro(s) em contagens_estoque.${
               planilhaGravada ? ` ${rows.length} linha(s) também em inventario_planilha_linhas.` : ''
-            }${planilhaAviso ?? ''}`
+            }${planilhaAviso ?? ''}${inventarioDbCompatMsg}`
           : `Contagem do dia ${ymd} finalizada: ${rows.length} registro(s) gravados no banco.`,
       )
       setFinalizeProgress(
@@ -3086,6 +3131,10 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         })()
 
   const inventarioPlanilhaArmazem = inventario && isArmazemPaginado && !checklistShowAll
+
+  /** Modo planilha: troca de RUA/CAMARA só pelas abas — não usar Anterior/Próxima como “página da tabela”. */
+  const isPlanilhaInventarioNav =
+    Boolean(inventario && offlineSession?.status === 'aberta' && offlineSession.listMode === 'planilha')
 
   const armazemGrupoAtual = isArmazemPaginado ? armazemGrupos[checklistPageSafe - 1] : null
 
@@ -4246,60 +4295,71 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                       {checklistShowAll
                         ? `Exibindo todos os ${checklistProductTotal} registros`
                         : isArmazemPaginado
-                          ? `${checklistRangeFrom}–${checklistRangeTo} de ${checklistProductTotal} · Página ${checklistPageSafe} de ${checklistTotalPages} · ${inventario ? `${inventarioAbaTitulo(armazemGrupos[checklistPageSafe - 1]?.contagem ?? null)} · ${formatContagemLabel(inventarioNumeroContagemRodada)}` : formatContagemLabel(armazemGrupos[checklistPageSafe - 1]?.contagem ?? checklistPageSafe)}`
+                          ? isPlanilhaInventarioNav
+                            ? `${checklistRangeFrom}–${checklistRangeTo} de ${checklistProductTotal} · Aba ${checklistPageSafe} de ${checklistTotalPages} · ${inventarioAbaTitulo(armazemGrupos[checklistPageSafe - 1]?.contagem ?? null)} · ${formatContagemLabel(inventarioNumeroContagemRodada)} · ${INVENTARIO_PLANILHA_LINHAS_TOTAIS_POR_ABA} linhas nesta RUA`
+                            : `${checklistRangeFrom}–${checklistRangeTo} de ${checklistProductTotal} · Página ${checklistPageSafe} de ${checklistTotalPages} · ${inventario ? `${inventarioAbaTitulo(armazemGrupos[checklistPageSafe - 1]?.contagem ?? null)} · ${formatContagemLabel(inventarioNumeroContagemRodada)}` : formatContagemLabel(armazemGrupos[checklistPageSafe - 1]?.contagem ?? checklistPageSafe)}`
                           : `${checklistRangeFrom}–${checklistRangeTo} de ${checklistProductTotal} · Página ${checklistPageSafe} de ${checklistTotalPages} · ${CHECKLIST_PAGE_SIZE} por página`}
                     </span>
-                    <button
-                      type="button"
-                      disabled={checklistShowAll || checklistPageSafe <= 1}
-                      onClick={() => setChecklistPage((p) => Math.max(1, p - 1))}
-                      style={{
-                        ...buttonStyle,
-                        background: '#444',
-                        fontSize: 12,
-                        opacity: checklistShowAll || checklistPageSafe <= 1 ? 0.5 : 1,
-                        cursor: checklistShowAll || checklistPageSafe <= 1 ? 'not-allowed' : 'pointer',
-                      }}
-                    >
-                      Anterior
-                    </button>
-                    <button
-                      type="button"
-                      disabled={checklistShowAll || checklistPageSafe >= checklistTotalPages}
-                      onClick={() => setChecklistPage((p) => Math.min(checklistTotalPages, p + 1))}
-                      style={{
-                        ...buttonStyle,
-                        background: '#444',
-                        fontSize: 12,
-                        opacity: checklistShowAll || checklistPageSafe >= checklistTotalPages ? 0.5 : 1,
-                        cursor:
-                          checklistShowAll || checklistPageSafe >= checklistTotalPages ? 'not-allowed' : 'pointer',
-                      }}
-                    >
-                      Próxima
-                    </button>
-                    {checklistProductTotal > CHECKLIST_PAGE_SIZE ? (
-                      checklistShowAll ? (
+                    {isPlanilhaInventarioNav ? (
+                      <span style={{ fontSize: 12, color: 'var(--text, #888)', maxWidth: 420 }}>
+                        Troque de <strong>CAMARA/RUA</strong> apenas pelas <strong>abas</strong> acima — a tabela desta aba
+                        mostra as 15 posições inteiras ({INVENTARIO_PLANILHA_LINHAS_TOTAIS_POR_ABA} linhas).
+                      </span>
+                    ) : (
+                      <>
                         <button
                           type="button"
-                          onClick={() => {
-                            setChecklistShowAll(false)
-                            setChecklistPage(1)
+                          disabled={checklistShowAll || checklistPageSafe <= 1}
+                          onClick={() => setChecklistPage((p) => Math.max(1, p - 1))}
+                          style={{
+                            ...buttonStyle,
+                            background: '#444',
+                            fontSize: 12,
+                            opacity: checklistShowAll || checklistPageSafe <= 1 ? 0.5 : 1,
+                            cursor: checklistShowAll || checklistPageSafe <= 1 ? 'not-allowed' : 'pointer',
                           }}
-                          style={{ ...buttonStyle, background: '#444', fontSize: 12 }}
                         >
-                          Paginar ({CHECKLIST_PAGE_SIZE} por página)
+                          Anterior
                         </button>
-                      ) : (
                         <button
                           type="button"
-                          onClick={() => setChecklistShowAll(true)}
-                          style={{ ...buttonStyle, background: '#444', fontSize: 12 }}
+                          disabled={checklistShowAll || checklistPageSafe >= checklistTotalPages}
+                          onClick={() => setChecklistPage((p) => Math.min(checklistTotalPages, p + 1))}
+                          style={{
+                            ...buttonStyle,
+                            background: '#444',
+                            fontSize: 12,
+                            opacity: checklistShowAll || checklistPageSafe >= checklistTotalPages ? 0.5 : 1,
+                            cursor:
+                              checklistShowAll || checklistPageSafe >= checklistTotalPages ? 'not-allowed' : 'pointer',
+                          }}
                         >
-                          Mostrar tudo
+                          Próxima
                         </button>
-                      )
-                    ) : null}
+                        {checklistProductTotal > CHECKLIST_PAGE_SIZE ? (
+                          checklistShowAll ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setChecklistShowAll(false)
+                                setChecklistPage(1)
+                              }}
+                              style={{ ...buttonStyle, background: '#444', fontSize: 12 }}
+                            >
+                              Paginar ({CHECKLIST_PAGE_SIZE} por página)
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setChecklistShowAll(true)}
+                              style={{ ...buttonStyle, background: '#444', fontSize: 12 }}
+                            >
+                              Mostrar tudo
+                            </button>
+                          )
+                        ) : null}
+                      </>
+                    )}
                   </div>
                 ) : null}
               </>
@@ -4334,15 +4394,21 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                 padding: 16,
               }}
             >
-              <h3 style={{ margin: '0 0 8px' }}>Existem itens sem quantidade</h3>
+              <h3 style={{ margin: '0 0 8px' }}>Aviso — produtos sem preencher (quantidade)</h3>
               {finalizing ? (
                 <div style={{ marginBottom: 10, fontSize: 12, color: 'var(--text, #444)' }}>
                   {finalizeProgress || 'Processando...'}
                 </div>
               ) : null}
-              <div style={{ fontSize: 13, color: 'var(--text, #444)' }}>
-                Há <strong>{missingItemsForFinalize.length}</strong> item(ns) sem quantidade digitada.
-                Deseja finalizar mesmo assim?
+              <div style={{ fontSize: 13, color: 'var(--text, #444)', lineHeight: 1.45 }}>
+                Há <strong>{missingItemsForFinalize.length}</strong> produto(s) com <strong>quantidade em branco</strong>.
+                Esses <strong>não serão gravados</strong> no Supabase até você preencher a quantidade (nada é convertido
+                para 0). Lote, observação, UP, datas, EAN/DUN e foto podem ficar em branco nos itens que tiverem
+                quantidade informada.
+                <br />
+                <br />
+                Você pode voltar para preencher ou finalizar agora: serão salvos <strong>somente</strong> os produtos que
+                já têm quantidade digitada.
               </div>
 
               <div style={{ marginTop: 12, maxHeight: 320, overflow: 'auto' }}>
@@ -4388,10 +4454,10 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                 <button
                   type="button"
                   style={{ ...buttonStyle, background: '#0b5' }}
-                  onClick={() => void finalizeInternal({ sendZerosForMissing: true })}
+                  onClick={() => void finalizeInternal()}
                   disabled={finalizing}
                 >
-                  Finalizar mesmo assim (enviar 0)
+                  Finalizar e gravar só os preenchidos
                 </button>
               </div>
             </div>

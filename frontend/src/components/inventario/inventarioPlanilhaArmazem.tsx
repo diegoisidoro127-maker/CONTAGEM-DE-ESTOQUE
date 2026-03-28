@@ -23,7 +23,7 @@ export function InventarioPlanilhaAbas(props: {
   return (
     <div style={{ marginTop: 10, marginBottom: 10 }}>
       <div style={{ fontSize: 12, color: 'var(--text, #888)', marginBottom: 8 }}>
-        Abas (como na planilha de inventário — uma aba por página)
+        Abas (uma por CAMARA/RUA): use-as para trocar de rua — cada aba é a tabela completa daquela RUA (15 posições).
       </div>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
         {armazemGrupos.map((g, i) => {
