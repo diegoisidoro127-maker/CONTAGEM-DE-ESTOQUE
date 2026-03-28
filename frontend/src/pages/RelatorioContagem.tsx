@@ -39,6 +39,22 @@ function formatDateBR(dateStr: string) {
   return `${d}/${m}/${y}`
 }
 
+function formatDateBRFromYmd(ymd: string | null | undefined): string {
+  if (!ymd || String(ymd).trim() === '') return ''
+  return formatDateBR(String(ymd).slice(0, 10))
+}
+
+function isColumnMissingErrorRel(e: unknown): boolean {
+  const code =
+    e && typeof e === 'object' && 'code' in e ? String((e as { code: unknown }).code) : ''
+  const msg = (
+    e && typeof e === 'object' && 'message' in e ? String((e as { message: unknown }).message) : String(e)
+  ).toLowerCase()
+  return code === '42703' || msg.includes('does not exist')
+}
+
+const TABELA_PRODUTOS_REL = 'Todos os Produtos'
+
 function formatDateTimeBR(iso: string) {
   const dt = new Date(iso)
   if (Number.isNaN(dt.getTime())) return iso
@@ -103,6 +119,7 @@ export default function RelatorioContagem({ mode = 'periodo' }: RelatorioContage
   const [relatorioShowAll, setRelatorioShowAll] = useState(false)
   const prevLoadingRef = useRef(false)
   const [photoModal, setPhotoModal] = useState<{ src: string; title: string } | null>(null)
+  const [baseExportLoading, setBaseExportLoading] = useState(false)
 
   const dateRangeText = useMemo(() => {
     if (allTime) return 'Todas as datas'
@@ -340,6 +357,87 @@ export default function RelatorioContagem({ mode = 'periodo' }: RelatorioContage
     XLSX.writeFile(wb, `relatorio-contagem_${safeFile}.xlsx`)
   }
 
+  async function exportProdutosBaseExcel() {
+    setBaseExportLoading(true)
+    setError('')
+    setSuccess('')
+    try {
+      const selFull = 'id,codigo_interno,descricao,unidade,ean,dun'
+      const selLegado = 'id,codigo_interno,descricao,unidade_medida,ean,dun'
+      const selBasico = 'id,codigo_interno,descricao,ean,dun'
+      const candidates = [
+        `${selFull},ean_alterado_em,dun_alterado_em`,
+        `${selFull},ean_dun_alterado_em`,
+        selFull,
+        `${selLegado},ean_alterado_em,dun_alterado_em`,
+        `${selLegado},ean_dun_alterado_em`,
+        selLegado,
+        `${selBasico},ean_alterado_em,dun_alterado_em`,
+        `${selBasico},ean_dun_alterado_em`,
+        selBasico,
+      ]
+
+      let data: Record<string, unknown>[] | null = null
+      let qErr: { message?: string; code?: string } | null = null
+      for (const cols of candidates) {
+        const res = await supabase
+          .from(TABELA_PRODUTOS_REL)
+          .select(cols)
+          .order('codigo_interno', { ascending: true })
+          .limit(20000)
+        data = res.data as Record<string, unknown>[] | null
+        qErr = res.error
+        if (!qErr) break
+        if (!isColumnMissingErrorRel(qErr)) break
+      }
+      if (qErr) throw qErr
+
+      const mapped = (data ?? []).map((r: Record<string, unknown>) => {
+        const um = r.unidade ?? r.unidade_medida ?? r.UNIDADE
+        const leg = r.ean_dun_alterado_em
+        const legStr = leg != null && String(leg).trim() !== '' ? String(leg).slice(0, 10) : null
+        const eanA = r.ean_alterado_em
+        const dunA = r.dun_alterado_em
+        const eanStr =
+          eanA != null && String(eanA).trim() !== '' ? String(eanA).slice(0, 10) : legStr
+        const dunStr =
+          dunA != null && String(dunA).trim() !== '' ? String(dunA).slice(0, 10) : legStr
+        return {
+          codigo_interno: String(r.codigo_interno ?? r.codigo ?? ''),
+          descricao: String(r.descricao ?? ''),
+          unidade: um != null && String(um).trim() !== '' ? String(um).trim() : null,
+          ean: r.ean != null && String(r.ean).trim() !== '' ? String(r.ean) : null,
+          dun: r.dun != null && String(r.dun).trim() !== '' ? String(r.dun) : null,
+          ean_alterado_em: eanStr,
+          dun_alterado_em: dunStr,
+        }
+      })
+      const list = mapped.filter((r) => r.codigo_interno.trim() !== '')
+
+      const sheetRows = list.map((r) => ({
+        'Código do produto': r.codigo_interno,
+        Descrição: r.descricao,
+        'Unidade de medida': r.unidade ?? '',
+        EAN: r.ean ?? '',
+        DUN: r.dun ?? '',
+        'Alteração EAN': formatDateBRFromYmd(r.ean_alterado_em),
+        'Alteração DUN': formatDateBRFromYmd(r.dun_alterado_em),
+      }))
+
+      const ws = XLSX.utils.json_to_sheet(sheetRows)
+      const wb = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(wb, ws, 'Todos os Produtos')
+      const stamp = toISODateLocal(new Date()).replace(/-/g, '')
+      XLSX.writeFile(wb, `relatorio-base-todos-produtos_${stamp}.xlsx`)
+      setSuccess(`Planilha exportada com ${list.length} produto(s) da base.`)
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e)
+      setError(msg || 'Erro ao exportar a base de produtos.')
+    } finally {
+      setBaseExportLoading(false)
+    }
+  }
+
   const totalRel = rows.length
   const rangeFrom =
     totalRel === 0 ? 0 : relatorioShowAll ? 1 : (relatorioPageSafe - 1) * RELATORIO_PAGE_SIZE + 1
@@ -502,28 +600,48 @@ export default function RelatorioContagem({ mode = 'periodo' }: RelatorioContage
           </button>
 
           {showExportExcel ? (
-            <button
-              type="button"
-              onClick={exportToExcel}
-              disabled={loading || rows.length === 0}
-              style={{
-                padding: '10px 14px',
-                borderRadius: 8,
-                border: '1px solid #1b5e20',
-                background: '#2e7d32',
-                color: 'white',
-                cursor: loading || rows.length === 0 ? 'not-allowed' : 'pointer',
-                height: 40,
-                opacity: loading || rows.length === 0 ? 0.5 : 1,
-              }}
-              title={
-                rows.length === 0
-                  ? 'Carregue o relatório antes de exportar'
-                  : `Baixar planilha .xlsx com todos os ${rows.length} registros do filtro`
-              }
-            >
-              Exportar Excel
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={exportToExcel}
+                disabled={loading || rows.length === 0}
+                style={{
+                  padding: '10px 14px',
+                  borderRadius: 8,
+                  border: '1px solid #1b5e20',
+                  background: '#2e7d32',
+                  color: 'white',
+                  cursor: loading || rows.length === 0 ? 'not-allowed' : 'pointer',
+                  height: 40,
+                  opacity: loading || rows.length === 0 ? 0.5 : 1,
+                }}
+                title={
+                  rows.length === 0
+                    ? 'Carregue o relatório antes de exportar'
+                    : `Baixar planilha .xlsx com todos os ${rows.length} registros do filtro`
+                }
+              >
+                Exportar Excel
+              </button>
+              <button
+                type="button"
+                onClick={() => void exportProdutosBaseExcel()}
+                disabled={baseExportLoading}
+                style={{
+                  padding: '10px 14px',
+                  borderRadius: 8,
+                  border: '1px solid #1565c0',
+                  background: '#1976d2',
+                  color: 'white',
+                  cursor: baseExportLoading ? 'wait' : 'pointer',
+                  height: 40,
+                  opacity: baseExportLoading ? 0.7 : 1,
+                }}
+                title="Baixar planilha .xlsx com todos os produtos da tabela cadastrada (Todos os Produtos), sem filtro de data"
+              >
+                {baseExportLoading ? 'Exportando base…' : 'Exportar base Todos os Produtos (Excel)'}
+              </button>
+            </>
           ) : null}
         </div>
 

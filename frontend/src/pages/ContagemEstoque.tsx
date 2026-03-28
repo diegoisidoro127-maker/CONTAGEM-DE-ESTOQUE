@@ -2710,10 +2710,10 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       { id: 'descricao', label: 'Descrição' },
       { id: 'unidade', label: 'Unidade de medida' },
       { id: 'quantidade', label: 'Quantidade contada' },
-      { id: 'up', label: 'UP' },
       { id: 'data_fabricacao', label: 'Data de fabricação' },
       { id: 'data_validade', label: 'Data de vencimento' },
       { id: 'lote', label: 'Lote' },
+      { id: 'up', label: 'UP' },
       { id: 'observacao', label: 'Observação' },
       { id: 'ean', label: 'EAN' },
       { id: 'dun', label: 'DUN' },
@@ -3207,10 +3207,10 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                               </label>
 
                               {showChecklistColumn('unidade') ||
-                              showChecklistColumn('up') ||
                               showChecklistColumn('data_fabricacao') ||
                               showChecklistColumn('data_validade') ||
                               showChecklistColumn('lote') ||
+                              showChecklistColumn('up') ||
                               showChecklistColumn('observacao') ? (
                                 <div
                                   style={{
@@ -3231,19 +3231,6 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                             unidade_medida: e.target.value.trim() === '' ? null : e.target.value,
                                           })
                                         }
-                                        style={{ ...inputStyle, padding: '8px 10px', fontSize: 13 }}
-                                        placeholder="—"
-                                      />
-                                    </label>
-                                  ) : null}
-                                  {showChecklistColumn('up') ? (
-                                    <label style={{ ...labelStyle, gap: 4 }}>
-                                      <span>UP</span>
-                                      <input
-                                        type="text"
-                                        inputMode="decimal"
-                                        value={it.up_quantidade ?? ''}
-                                        onChange={(e) => updateOfflineItemFields(it.key, { up_quantidade: e.target.value })}
                                         style={{ ...inputStyle, padding: '8px 10px', fontSize: 13 }}
                                         placeholder="—"
                                       />
@@ -3278,6 +3265,19 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                         type="text"
                                         value={it.lote ?? ''}
                                         onChange={(e) => updateOfflineItemFields(it.key, { lote: e.target.value })}
+                                        style={{ ...inputStyle, padding: '8px 10px', fontSize: 13 }}
+                                        placeholder="—"
+                                      />
+                                    </label>
+                                  ) : null}
+                                  {showChecklistColumn('up') ? (
+                                    <label style={{ ...labelStyle, gap: 4 }}>
+                                      <span>UP</span>
+                                      <input
+                                        type="text"
+                                        inputMode="decimal"
+                                        value={it.up_quantidade ?? ''}
+                                        onChange={(e) => updateOfflineItemFields(it.key, { up_quantidade: e.target.value })}
                                         style={{ ...inputStyle, padding: '8px 10px', fontSize: 13 }}
                                         placeholder="—"
                                       />
@@ -3360,10 +3360,10 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                           {showChecklistColumn('descricao') ? <th style={thStyle}>Descrição</th> : null}
                           {showChecklistColumn('unidade') ? <th style={thStyle}>Unidade de medida</th> : null}
                           {showChecklistColumn('quantidade') ? <th style={thStyle}>Quantidade contada</th> : null}
-                          {showChecklistColumn('up') ? <th style={thStyle}>UP</th> : null}
                           {showChecklistColumn('data_fabricacao') ? <th style={thStyle}>Data de fabricação</th> : null}
                           {showChecklistColumn('data_validade') ? <th style={thStyle}>Data de vencimento</th> : null}
                           {showChecklistColumn('lote') ? <th style={thStyle}>Lote</th> : null}
+                          {showChecklistColumn('up') ? <th style={thStyle}>UP</th> : null}
                           {showChecklistColumn('observacao') ? <th style={thStyle}>Observação</th> : null}
                           {showChecklistColumn('ean') ? <th style={thStyle}>EAN</th> : null}
                           {showChecklistColumn('dun') ? <th style={thStyle}>DUN</th> : null}
@@ -3468,19 +3468,6 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                       />
                                     </td>
                                   ) : null}
-                                  {showChecklistColumn('up') ? (
-                                    <td style={tdStyle}>
-                                      <input
-                                        type="text"
-                                        inputMode="decimal"
-                                        value={it.up_quantidade ?? ''}
-                                        onChange={(e) => updateOfflineItemFields(it.key, { up_quantidade: e.target.value })}
-                                        style={{ ...checklistQtdInputStyle, width: 110 }}
-                                        placeholder="—"
-                                        aria-label={`UP ${it.codigo_interno}`}
-                                      />
-                                    </td>
-                                  ) : null}
                                   {showChecklistColumn('data_fabricacao') ? (
                                     <td style={tdStyle}>
                                       <input
@@ -3512,6 +3499,19 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                         style={{ ...checklistQtdInputStyle, width: 130 }}
                                         placeholder="—"
                                         aria-label={`Lote ${it.codigo_interno}`}
+                                      />
+                                    </td>
+                                  ) : null}
+                                  {showChecklistColumn('up') ? (
+                                    <td style={tdStyle}>
+                                      <input
+                                        type="text"
+                                        inputMode="decimal"
+                                        value={it.up_quantidade ?? ''}
+                                        onChange={(e) => updateOfflineItemFields(it.key, { up_quantidade: e.target.value })}
+                                        style={{ ...checklistQtdInputStyle, width: 110 }}
+                                        placeholder="—"
+                                        aria-label={`UP ${it.codigo_interno}`}
                                       />
                                     </td>
                                   ) : null}
@@ -3600,19 +3600,6 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                       </div>
                                     </td>
                                   ) : null}
-                                  {showChecklistColumn('up') ? (
-                                    <td style={tdStyle}>
-                                      <input
-                                        type="text"
-                                        inputMode="decimal"
-                                        value={it.up_quantidade ?? ''}
-                                        onChange={(e) => updateOfflineItemFields(it.key, { up_quantidade: e.target.value })}
-                                        style={{ ...checklistQtdInputStyle, width: 110 }}
-                                        placeholder="—"
-                                        aria-label={`UP ${it.codigo_interno}`}
-                                      />
-                                    </td>
-                                  ) : null}
                                   {showChecklistColumn('data_fabricacao') ? (
                                     <td style={tdStyle}>
                                       <input
@@ -3644,6 +3631,19 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                         style={{ ...checklistQtdInputStyle, width: 130 }}
                                         placeholder="—"
                                         aria-label={`Lote ${it.codigo_interno}`}
+                                      />
+                                    </td>
+                                  ) : null}
+                                  {showChecklistColumn('up') ? (
+                                    <td style={tdStyle}>
+                                      <input
+                                        type="text"
+                                        inputMode="decimal"
+                                        value={it.up_quantidade ?? ''}
+                                        onChange={(e) => updateOfflineItemFields(it.key, { up_quantidade: e.target.value })}
+                                        style={{ ...checklistQtdInputStyle, width: 110 }}
+                                        placeholder="—"
+                                        aria-label={`UP ${it.codigo_interno}`}
                                       />
                                     </td>
                                   ) : null}

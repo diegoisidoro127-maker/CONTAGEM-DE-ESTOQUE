@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type React from 'react'
 import { supabase } from '../lib/supabaseClient'
 
@@ -13,6 +13,12 @@ type ProdutoDbRow = {
   unidade: string | null
   ean: string | null
   dun: string | null
+  /** Data (YYYY-MM-DD) da última alteração do EAN no cadastro. */
+  ean_alterado_em: string | null
+  /** Data (YYYY-MM-DD) da última alteração do DUN no cadastro. */
+  dun_alterado_em: string | null
+  /** Só preenchido se o banco ainda expuser a coluna legada `ean_dun_alterado_em`. */
+  ean_dun_alterado_em?: string | null
 }
 
 function rowKey(r: ProdutoDbRow) {
@@ -24,6 +30,36 @@ function normEanDun(v: string | null | undefined): string | null {
   if (v == null) return null
   const t = String(v).trim()
   return t === '' ? null : t
+}
+
+function todayYmdLocal(): string {
+  const d = new Date()
+  const y = d.getFullYear()
+  const mo = String(d.getMonth() + 1).padStart(2, '0')
+  const da = String(d.getDate()).padStart(2, '0')
+  return `${y}-${mo}-${da}`
+}
+
+function formatDateBRFromYmd(ymd: string | null | undefined): string {
+  if (!ymd || String(ymd).trim() === '') return '—'
+  const s = String(ymd).slice(0, 10)
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/u.exec(s)
+  if (!m) return s
+  return `${m[3]}/${m[2]}/${m[1]}`
+}
+
+function onlyDigits(s: string): string {
+  return s.replace(/\D/g, '')
+}
+
+/** Compara valor cadastrado com o lido no bipador (com ou sem dígitos só). */
+function matchesBarcode(stored: string | null | undefined, scanned: string): boolean {
+  const q = scanned.trim()
+  if (!q) return false
+  const a = normEanDun(stored)
+  if (a != null && a === q) return true
+  if (a != null && onlyDigits(a) !== '' && onlyDigits(a) === onlyDigits(q)) return true
+  return false
 }
 
 function isColumnMissingError(e: unknown): boolean {
@@ -58,6 +94,10 @@ export default function BaseProdutos() {
   const [cadastroDun, setCadastroDun] = useState('')
   const [cadastroSaving, setCadastroSaving] = useState(false)
 
+  const [bipCodigoBarras, setBipCodigoBarras] = useState('')
+  const bipInputRef = useRef<HTMLInputElement | null>(null)
+  const rowRefs = useRef<Map<string, HTMLTableRowElement | null>>(new Map())
+
   const load = useCallback(async () => {
     setLoading(true)
     setError('')
@@ -68,22 +108,41 @@ export default function BaseProdutos() {
       const selFull = 'id,codigo_interno,descricao,unidade,ean,dun'
       const selLegado = 'id,codigo_interno,descricao,unidade_medida,ean,dun'
       const selBasico = 'id,codigo_interno,descricao,ean,dun'
-      let res = await supabase.from(TABELA_PRODUTOS).select(selFull).order('codigo_interno', { ascending: true }).limit(20000)
+
+      const trySelect = async (cols: string) =>
+        supabase.from(TABELA_PRODUTOS).select(cols).order('codigo_interno', { ascending: true }).limit(20000)
+
+      const candidates = [
+        `${selFull},ean_alterado_em,dun_alterado_em`,
+        `${selFull},ean_dun_alterado_em`,
+        selFull,
+        `${selLegado},ean_alterado_em,dun_alterado_em`,
+        `${selLegado},ean_dun_alterado_em`,
+        selLegado,
+        `${selBasico},ean_alterado_em,dun_alterado_em`,
+        `${selBasico},ean_dun_alterado_em`,
+        selBasico,
+      ]
+
+      let res = await trySelect(candidates[0])
       data = res.data as Record<string, unknown>[] | null
       qErr = res.error
-      if (qErr && (String(qErr.code) === '42703' || String(qErr.message ?? '').toLowerCase().includes('does not exist'))) {
-        res = await supabase.from(TABELA_PRODUTOS).select(selLegado).order('codigo_interno', { ascending: true }).limit(20000)
-        data = res.data as Record<string, unknown>[] | null
-        qErr = res.error
-      }
-      if (qErr && (String(qErr.code) === '42703' || String(qErr.message ?? '').toLowerCase().includes('does not exist'))) {
-        res = await supabase.from(TABELA_PRODUTOS).select(selBasico).order('codigo_interno', { ascending: true }).limit(20000)
+      for (let i = 1; i < candidates.length && qErr && isColumnMissingError(qErr); i++) {
+        res = await trySelect(candidates[i])
         data = res.data as Record<string, unknown>[] | null
         qErr = res.error
       }
       if (qErr) throw qErr
       const mapped: ProdutoDbRow[] = (data ?? []).map((r: Record<string, unknown>) => {
         const um = r.unidade ?? r.unidade_medida ?? r.UNIDADE
+        const leg = r.ean_dun_alterado_em
+        const legStr = leg != null && String(leg).trim() !== '' ? String(leg).slice(0, 10) : null
+        const eanA = r.ean_alterado_em
+        const dunA = r.dun_alterado_em
+        const eanStr =
+          eanA != null && String(eanA).trim() !== '' ? String(eanA).slice(0, 10) : legStr
+        const dunStr =
+          dunA != null && String(dunA).trim() !== '' ? String(dunA).slice(0, 10) : legStr
         return {
           id: String(r.id ?? ''),
           codigo_interno: String(r.codigo_interno ?? r.codigo ?? ''),
@@ -92,6 +151,9 @@ export default function BaseProdutos() {
             um != null && String(um).trim() !== '' ? String(um).trim() : null,
           ean: r.ean != null && String(r.ean).trim() !== '' ? String(r.ean) : null,
           dun: r.dun != null && String(r.dun).trim() !== '' ? String(r.dun) : null,
+          ean_alterado_em: eanStr,
+          dun_alterado_em: dunStr,
+          ean_dun_alterado_em: legStr,
         }
       })
       const list = mapped.filter((r) => r.codigo_interno.trim() !== '')
@@ -153,6 +215,46 @@ export default function BaseProdutos() {
     setSuccess('')
   }
 
+  function buscarPorBipEanDun() {
+    const q = bipCodigoBarras.trim()
+    if (!q) {
+      setError('Informe o código EAN ou DUN (ou use o leitor e pressione Enter).')
+      setSuccess('')
+      return
+    }
+    if (rows.length === 0) {
+      setError('Carregue a lista primeiro.')
+      setSuccess('')
+      return
+    }
+    const found = rows.find((r) => matchesBarcode(r.ean, q) || matchesBarcode(r.dun, q))
+    if (!found) {
+      setError(`Nenhum produto com EAN ou DUN: ${q}`)
+      setSuccess('')
+      return
+    }
+    setError('')
+    setFilterCodigo('')
+    setFilterDescricao('')
+    setShowAll(false)
+    const idx = rows.findIndex((r) => rowKey(r) === rowKey(found))
+    const pageNum = Math.max(1, Math.floor(idx / PAGE_SIZE) + 1)
+    setPage(pageNum)
+    startEdit(found)
+    setSuccess(`Produto ${found.codigo_interno} — aberto para edição.`)
+    setBipCodigoBarras('')
+    window.setTimeout(() => bipInputRef.current?.focus(), 0)
+  }
+
+  useEffect(() => {
+    if (!editingKey) return
+    const t = window.setTimeout(() => {
+      const el = rowRefs.current.get(editingKey)
+      el?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    }, 80)
+    return () => window.clearTimeout(t)
+  }, [editingKey, pageSafe, showAll])
+
   function cancelEditInternal() {
     if (editingKey && editSnapshot) {
       setRows((prev) => prev.map((x) => (rowKey(x) === editingKey ? { ...editSnapshot } : x)))
@@ -189,6 +291,16 @@ export default function BaseProdutos() {
       const unidadeRaw = String(r.unidade ?? '').trim()
       const unidade = unidadeRaw === '' ? null : unidadeRaw
 
+      const snap = editSnapshot
+      const eanChanged = normEanDun(r.ean) !== normEanDun(snap?.ean)
+      const dunChanged = normEanDun(r.dun) !== normEanDun(snap?.dun)
+      const ean_alterado_em = eanChanged ? todayYmdLocal() : (r.ean_alterado_em ?? null)
+      const dun_alterado_em = dunChanged ? todayYmdLocal() : (r.dun_alterado_em ?? null)
+      const legacy_combo =
+        eanChanged || dunChanged
+          ? todayYmdLocal()
+          : (r.ean_dun_alterado_em ?? snap?.ean_dun_alterado_em ?? null)
+
       const runUpdate = (
         payload: Record<string, unknown>,
         filter: (q: ReturnType<typeof supabase.from>) => ReturnType<typeof supabase.from>,
@@ -206,20 +318,23 @@ export default function BaseProdutos() {
         return res
       }
 
-      let payload: Record<string, unknown> = { descricao, ean, dun, unidade }
-      let { data, error: uErr } = await tryUpdate(payload)
+      const updateTries: Record<string, unknown>[] = [
+        { descricao, ean, dun, unidade, ean_alterado_em, dun_alterado_em },
+        { descricao, ean, dun, ean_alterado_em, dun_alterado_em },
+        { descricao, ean, dun, unidade, ean_dun_alterado_em: legacy_combo },
+        { descricao, ean, dun, ean_dun_alterado_em: legacy_combo },
+        { descricao, ean, dun, unidade },
+        { descricao, ean, dun },
+      ]
 
-      if (uErr && isColumnMissingError(uErr)) {
-        const { unidade: _u, ...rest } = payload
-        const r2 = await tryUpdate(rest)
-        data = r2.data
-        uErr = r2.error as typeof uErr
-      }
-
-      if (uErr && isColumnMissingError(uErr)) {
-        const r3 = await tryUpdate({ descricao, ean, dun })
-        data = r3.data
-        uErr = r3.error as typeof uErr
+      let data: { id: unknown; codigo_interno: unknown }[] | null = null
+      let uErr: { message?: string; code?: string } | null = null
+      for (const payload of updateTries) {
+        const res = await tryUpdate(payload)
+        data = res.data as typeof data
+        uErr = res.error
+        if (!uErr) break
+        if (!isColumnMissingError(uErr)) break
       }
 
       if (uErr) throw uErr
@@ -287,38 +402,31 @@ export default function BaseProdutos() {
         return supabase.from(TABELA_PRODUTOS).insert(payload).select('id,codigo_interno').limit(1)
       }
 
-      let payload: Record<string, unknown> = {
-        codigo_interno: cod,
-        descricao: desc,
-        ean,
-        dun,
-        unidade,
-      }
-      let { data, error: insErr } = await tryInsert(payload)
+      const patchNew: Record<string, unknown> = {}
+      if (ean != null) patchNew.ean_alterado_em = todayYmdLocal()
+      if (dun != null) patchNew.dun_alterado_em = todayYmdLocal()
+      const legacyIns =
+        ean != null || dun != null ? { ean_dun_alterado_em: todayYmdLocal() as string } : {}
 
-      if (insErr && isColumnMissingError(insErr)) {
-        const { unidade: _u, ...rest } = payload
-        const r2 = await tryInsert(rest)
-        data = r2.data
-        insErr = r2.error as typeof insErr
-      }
+      const insertTries: Record<string, unknown>[] = [
+        { codigo_interno: cod, descricao: desc, ean, dun, unidade, ...patchNew },
+        { codigo_interno: cod, descricao: desc, ean, dun, unidade, ...legacyIns },
+        { codigo_interno: cod, descricao: desc, ean, dun, ...patchNew },
+        { codigo_interno: cod, descricao: desc, ean, dun, ...legacyIns },
+        { codigo_interno: cod, descricao: desc, ean, dun, unidade_medida: unidade, ...patchNew },
+        { codigo_interno: cod, descricao: desc, ean, dun, unidade_medida: unidade, ...legacyIns },
+        { codigo_interno: cod, descricao: desc, ean, dun, unidade_medida: unidade },
+        { codigo_interno: cod, descricao: desc, ean, dun },
+      ]
 
-      if (insErr && isColumnMissingError(insErr)) {
-        const r3 = await tryInsert({
-          codigo_interno: cod,
-          descricao: desc,
-          ean,
-          dun,
-          unidade_medida: unidade,
-        })
-        data = r3.data
-        insErr = r3.error as typeof insErr
-      }
-
-      if (insErr && isColumnMissingError(insErr)) {
-        const r4 = await tryInsert({ codigo_interno: cod, descricao: desc, ean, dun })
-        data = r4.data
-        insErr = r4.error as typeof insErr
+      let data: { id: unknown; codigo_interno: unknown }[] | null = null
+      let insErr: { message?: string; code?: string } | null = null
+      for (const p of insertTries) {
+        const res = await tryInsert(p)
+        data = res.data as typeof data
+        insErr = res.error
+        if (!insErr) break
+        if (!isColumnMissingError(insErr)) break
       }
 
       if (insErr) throw insErr
@@ -352,9 +460,11 @@ export default function BaseProdutos() {
       <p style={{ margin: '0 0 16px', fontSize: 13, color: 'var(--text, #666)', maxWidth: 720 }}>
         Lista da tabela <code style={{ fontSize: 12 }}>public.&quot;{TABELA_PRODUTOS}&quot;</code>. Use{' '}
         <strong>Editar</strong> para alterar descrição, unidade, EAN e DUN e depois <strong>Salvar</strong> — a gravação é
-        confirmada no banco (se o Supabase retornar 0 linhas, aparece aviso de RLS). <strong>Excluir</strong> remove a
-        linha. Permissões INSERT/UPDATE/DELETE via RLS. Se aparecer <strong>0 linhas</strong> ao salvar, execute no SQL
-        Editor o arquivo{' '}
+        confirmada no banco (se o Supabase retornar 0 linhas, aparece aviso de RLS). As colunas{' '}
+        <strong>Alteração EAN</strong> e <strong>Alteração DUN</strong> mostram o dia da última alteração de cada código
+        (execute <code style={{ fontSize: 12 }}>supabase/sql/alter_todos_os_produtos_ean_dun_alterado_em.sql</code> no
+        Supabase se necessário). <strong>Excluir</strong> remove a linha. Permissões INSERT/UPDATE/DELETE via RLS. Se aparecer{' '}
+        <strong>0 linhas</strong> ao salvar, execute no SQL Editor o arquivo{' '}
         <code style={{ fontSize: 12 }}>supabase/sql/rls_todos_os_produtos_crud.sql</code>.
       </p>
 
@@ -416,6 +526,59 @@ export default function BaseProdutos() {
             style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid #ccc', width: '100%' }}
             placeholder="descrição"
           />
+        </label>
+      </div>
+
+      <div style={{ width: '100%', marginBottom: 16 }}>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13 }}>
+          <span style={{ color: 'var(--text, #ccc)' }}>
+            <strong>Bipar EAN ou DUN</strong> — encontra o produto na lista e abre para alteração (Enter ou Buscar)
+          </span>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            <input
+              ref={bipInputRef}
+              value={bipCodigoBarras}
+              onChange={(e) => setBipCodigoBarras(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  buscarPorBipEanDun()
+                }
+              }}
+              inputMode="numeric"
+              autoComplete="off"
+              placeholder="Aponte o leitor aqui e bip — ou digite e Enter"
+              style={{
+                padding: '10px 12px',
+                borderRadius: 8,
+                border: '1px solid var(--border, #555)',
+                flex: '1 1 260px',
+                minWidth: 200,
+                maxWidth: 480,
+                fontSize: 15,
+                fontFamily: 'monospace',
+                background: 'var(--input-bg, #1a1a1a)',
+                color: 'var(--text, #eee)',
+              }}
+              aria-label="Buscar produto por código EAN ou DUN"
+            />
+            <button
+              type="button"
+              onClick={() => buscarPorBipEanDun()}
+              disabled={loading}
+              style={{
+                padding: '10px 18px',
+                borderRadius: 8,
+                border: '1px solid #1565c0',
+                background: '#1976d2',
+                color: '#fff',
+                cursor: loading ? 'wait' : 'pointer',
+                fontSize: 13,
+              }}
+            >
+              Buscar
+            </button>
+          </div>
         </label>
       </div>
 
@@ -505,7 +668,7 @@ export default function BaseProdutos() {
               : `Mostrando ${rangeFrom}–${rangeTo} de ${filtered.length} · Página ${pageSafe} de ${totalPages} · ${PAGE_SIZE} por página (total no cadastro: ${rows.length})`}
           </div>
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 960 }}>
+            <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 1280 }}>
               <thead>
                 <tr>
                   <th style={thStyle}>Código do produto</th>
@@ -513,6 +676,8 @@ export default function BaseProdutos() {
                   <th style={thStyle}>Unidade de medida</th>
                   <th style={thStyle}>EAN</th>
                   <th style={thStyle}>DUN</th>
+                  <th style={{ ...thStyle, minWidth: 110 }}>Alteração EAN</th>
+                  <th style={{ ...thStyle, minWidth: 110 }}>Alteração DUN</th>
                   <th style={thStyle}>Ações</th>
                 </tr>
               </thead>
@@ -523,7 +688,13 @@ export default function BaseProdutos() {
                   const deleting = deletingKey === k
                   const edit = canEditRow(k)
                   return (
-                    <tr key={k}>
+                    <tr
+                      key={k}
+                      ref={(el) => {
+                        if (el) rowRefs.current.set(k, el)
+                        else rowRefs.current.delete(k)
+                      }}
+                    >
                       <td style={tdStyle}>
                         <span style={{ fontFamily: 'monospace', fontSize: 13 }}>{r.codigo_interno}</span>
                       </td>
@@ -592,6 +763,30 @@ export default function BaseProdutos() {
                           readOnly={!edit}
                           autoComplete="off"
                         />
+                      </td>
+                      <td
+                        style={{
+                          ...tdStyle,
+                          whiteSpace: 'nowrap',
+                          fontSize: 12,
+                          fontWeight: 600,
+                          color: 'var(--text, #bbb)',
+                        }}
+                        title="Última alteração do EAN no cadastro"
+                      >
+                        {formatDateBRFromYmd(r.ean_alterado_em)}
+                      </td>
+                      <td
+                        style={{
+                          ...tdStyle,
+                          whiteSpace: 'nowrap',
+                          fontSize: 12,
+                          fontWeight: 600,
+                          color: 'var(--text, #bbb)',
+                        }}
+                        title="Última alteração do DUN no cadastro"
+                      >
+                        {formatDateBRFromYmd(r.dun_alterado_em)}
                       </td>
                       <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
@@ -737,20 +932,22 @@ function navBtnStyle(disabled: boolean): React.CSSProperties {
 }
 
 const thStyle: React.CSSProperties = {
-  borderBottom: '1px solid #ddd',
+  borderBottom: '1px solid var(--border, #444)',
   textAlign: 'left',
   padding: 8,
   fontWeight: 700,
   fontSize: 13,
-  background: '#fafafa',
+  background: 'var(--table-head-bg, rgba(255,255,255,.08))',
+  color: 'var(--text, #eee)',
   whiteSpace: 'nowrap',
 }
 
 const tdStyle: React.CSSProperties = {
-  borderBottom: '1px solid #eee',
+  borderBottom: '1px solid var(--border, #333)',
   padding: 8,
   fontSize: 13,
   verticalAlign: 'middle',
+  color: 'var(--text, #eee)',
 }
 
 const inputStyle: React.CSSProperties = {
