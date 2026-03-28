@@ -32,6 +32,8 @@ export type InventarioPlanilhaTabelaProps = {
   removePhotoFromChecklistItem: (it: OfflineChecklistItem) => void
   /** Modo planilha em branco: ao sair do campo código, preenche descrição a partir do cadastro. */
   onPlanilhaCodigoBlur?: (key: string, codigo: string) => void
+  /** Nome do conferente da sessão (mesmo em todas as linhas). */
+  conferenteLabel: string
 }
 
 /**
@@ -62,18 +64,20 @@ export function InventarioPlanilhaTabela(props: InventarioPlanilhaTabelaProps) {
     openPhotoModalForCodigo,
     removePhotoFromChecklistItem,
     onPlanilhaCodigoBlur,
+    conferenteLabel,
   } = props
 
   const ruaPlanilha = getInventarioRuaArmazem(armazemContagem)
 
   return (
     <div style={{ overflowX: 'auto', marginTop: 0 }}>
-      <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 1520 }}>
+      <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 1660 }}>
         <thead>
           <tr>
             <th style={thStyle}>RUA</th>
             <th style={thStyle}>POS</th>
             <th style={thStyle}>NIVEL</th>
+            {showChecklistColumn('conferente') ? <th style={thStyle}>Conferente</th> : null}
             <th style={thStyle}>CÓDIGO</th>
             <th style={thStyle}>DESCRIÇÃO</th>
             {showChecklistColumn('unidade') ? <th style={thStyle}>UNIDADE</th> : null}
@@ -104,6 +108,11 @@ export function InventarioPlanilhaTabela(props: InventarioPlanilhaTabelaProps) {
                     <td style={tdStyle}>{ruaPlanilha}</td>
                     <td style={tdStyle}>{pn.pos}</td>
                     <td style={tdStyle}>{pn.nivel}</td>
+                    {showChecklistColumn('conferente') ? (
+                      <td style={{ ...tdStyle, color: 'var(--text-muted, #888)', maxWidth: 140 }} title="Conferente da sessão">
+                        {conferenteLabel}
+                      </td>
+                    ) : null}
                     <td style={tdStyle}>
                       <input
                         value={checklistEditDraft.codigo_interno}
@@ -298,6 +307,11 @@ export function InventarioPlanilhaTabela(props: InventarioPlanilhaTabelaProps) {
                     <td style={tdStyle}>{ruaPlanilha}</td>
                     <td style={tdStyle}>{pn.pos}</td>
                     <td style={tdStyle}>{pn.nivel}</td>
+                    {showChecklistColumn('conferente') ? (
+                      <td style={{ ...tdStyle, color: 'var(--text-muted, #888)', maxWidth: 140 }} title="Conferente da sessão">
+                        {conferenteLabel}
+                      </td>
+                    ) : null}
                     <td style={tdStyle}>
                       {onPlanilhaCodigoBlur ? (
                         <input

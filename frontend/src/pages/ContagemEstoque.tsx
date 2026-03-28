@@ -476,6 +476,13 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
   const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 768)
   const [conferenteId, setConferenteId] = useState<string>('')
 
+  const conferenteNomeSelecionado = useMemo(() => {
+    const c = conferentes.find((x) => x.id === conferenteId)
+    if (c?.nome && String(c.nome).trim() !== '') return String(c.nome).trim()
+    if (conferenteId.trim() !== '') return conferenteId
+    return '—'
+  }, [conferentes, conferenteId])
+
   const [codigoInterno, setCodigoInterno] = useState('')
   const [descricaoInput, setDescricaoInput] = useState('')
   const [produto, setProduto] = useState<Produto | null>(null)
@@ -3255,6 +3262,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
 
   const checklistColumns = useMemo(() => {
     const cols = [
+      { id: 'conferente', label: 'Conferente' },
       { id: 'codigo', label: 'Código do produto' },
       { id: 'descricao', label: 'Descrição' },
       { id: 'unidade', label: 'Unidade de medida' },
@@ -3774,6 +3782,11 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                             </>
                           ) : (
                             <>
+                              {showChecklistColumn('conferente') ? (
+                                <div style={{ fontSize: 11, color: 'var(--text, #666)', marginBottom: 6 }}>
+                                  Conferente: <strong style={{ fontWeight: 600 }}>{conferenteNomeSelecionado}</strong>
+                                </div>
+                              ) : null}
                               <div style={{ fontSize: 11, color: 'var(--text, #666)', marginBottom: 4 }}>
                                 Status: <strong style={{ color: pend ? '#a60' : '#0a0' }}>{pend ? 'Pendente' : 'Contado'}</strong>
                               </div>
@@ -3979,6 +3992,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                       armazemItemsSorted={armazemItemsSorted}
                       armazemContagem={armazemGrupoAtual?.contagem ?? null}
                       planilhaQtdContagemHeader={planilhaQtdContagemHeader}
+                      conferenteLabel={conferenteNomeSelecionado}
                       showChecklistColumn={showChecklistColumn}
                       thStyle={thStyle}
                       tdStyle={tdStyle}
@@ -4053,9 +4067,10 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                   </section>
                 ) : (
                   <div style={{ overflowX: 'auto', marginTop: 10 }}>
-                    <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 1700 }}>
+                    <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 1840 }}>
                       <thead>
                         <tr>
+                          {showChecklistColumn('conferente') ? <th style={thStyle}>Conferente</th> : null}
                           {showChecklistColumn('codigo') ? <th style={thStyle}>Código do produto</th> : null}
                           {showChecklistColumn('descricao') ? <th style={thStyle}>Descrição</th> : null}
                           {showChecklistColumn('unidade') ? <th style={thStyle}>Unidade de medida</th> : null}
@@ -4100,6 +4115,14 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                             <tr key={it.key}>
                               {isEditing && checklistEditDraft ? (
                                 <>
+                                  {showChecklistColumn('conferente') ? (
+                                    <td
+                                      style={{ ...tdStyle, color: 'var(--text-muted, #888)', maxWidth: 160 }}
+                                      title="Conferente selecionado acima (sessão)"
+                                    >
+                                      {conferenteNomeSelecionado}
+                                    </td>
+                                  ) : null}
                                   {showChecklistColumn('codigo') ? (
                                     <td style={tdStyle}>
                                       <input
@@ -4253,6 +4276,14 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                 </>
                               ) : (
                                 <>
+                                  {showChecklistColumn('conferente') ? (
+                                    <td
+                                      style={{ ...tdStyle, color: 'var(--text-muted, #888)', maxWidth: 160 }}
+                                      title="Conferente selecionado acima (sessão)"
+                                    >
+                                      {conferenteNomeSelecionado}
+                                    </td>
+                                  ) : null}
                                   {showChecklistColumn('codigo') ? (
                                     <td style={tdStyle}>
                                       {it.codigo_interno}
