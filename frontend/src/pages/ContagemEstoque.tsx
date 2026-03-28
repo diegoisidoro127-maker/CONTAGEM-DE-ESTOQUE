@@ -527,6 +527,8 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
 
   const [previewLoading, setPreviewLoading] = useState(false)
   const [previewRows, setPreviewRows] = useState<ContagemPreviewRow[]>([])
+  /** Dia consultado em `contagens_estoque.data_contagem` (alinha sessão / planilha; não só “hoje”). */
+  const [previewConsultaDiaYmd, setPreviewConsultaDiaYmd] = useState<string>(() => toISODateLocal(new Date()))
 
   /** Dia civil da contagem diária (lista + finalize usam este YMD). */
   const [contagemDiaYmd, setContagemDiaYmd] = useState(() => toISODateLocal(new Date()))
@@ -641,6 +643,13 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     const next = dataContagemYmdFromIso(toISOStringFromDatetimeLocal(dataHoraContagem))
     if (next && next !== contagemDiaYmd) setContagemDiaYmd(next)
   }, [dataHoraContagem, offlineSession?.status, contagemDiaYmd])
+
+  // Prévia do banco: mesmo dia da sessão de inventário/contagem (evita buscar “hoje” quando os dados são de outro dia).
+  useEffect(() => {
+    if (offlineSession?.status !== 'aberta') return
+    const y = offlineSession.data_contagem_ymd
+    if (y && /^\d{4}-\d{2}-\d{2}$/.test(y)) setPreviewConsultaDiaYmd(y)
+  }, [offlineSession?.status, offlineSession?.data_contagem_ymd])
 
   // Mantém conferente_id da sessão alinhado ao seletor.
   useEffect(() => {
@@ -1337,10 +1346,19 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     try {
     const pad = (n: number) => String(n).padStart(2, '0')
     const now = new Date()
+    const hojeYmd = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
     const dayKey =
       dayOverride && /^\d{4}-\d{2}-\d{2}$/.test(dayOverride)
         ? dayOverride
-        : `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
+        : /^\d{4}-\d{2}-\d{2}$/.test(previewConsultaDiaYmd)
+          ? previewConsultaDiaYmd
+          : offlineSession?.status === 'aberta' &&
+              offlineSession.data_contagem_ymd &&
+              /^\d{4}-\d{2}-\d{2}$/.test(offlineSession.data_contagem_ymd)
+            ? offlineSession.data_contagem_ymd
+            : /^\d{4}-\d{2}-\d{2}$/.test(contagemDiaYmd)
+              ? contagemDiaYmd
+              : hojeYmd
 
     const previewSelectFull =
       'id,data_hora_contagem,data_contagem,conferente_id,conferentes(nome),codigo_interno,descricao,unidade_medida,quantidade_up,up_adicional,lote,observacao,data_fabricacao,data_validade,ean,dun,foto_base64,origem,inventario_repeticao,inventario_numero_contagem'
@@ -2233,6 +2251,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
           ? 'Concluído: contagens e planilha de inventário gravadas.'
           : 'Concluído: registros salvos com sucesso.',
       )
+      setPreviewConsultaDiaYmd(ymd)
       await loadPreview(ymd)
     } catch (e: any) {
       setSaveError(`Erro ao finalizar: ${e?.message ? String(e.message) : 'verifique permissões (RLS) e tabelas.'}`)
@@ -5132,6 +5151,17 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
           )}
         </div>
         <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginTop: 10, flexWrap: 'wrap' }}>
+          <label style={{ ...labelStyle, marginBottom: 0, fontSize: 13 }}>
+            Dia no banco
+            <input
+              type="date"
+              value={previewConsultaDiaYmd}
+              onChange={(e) => setPreviewConsultaDiaYmd(e.target.value)}
+              disabled={previewLoading}
+              style={{ ...inputStyle, marginTop: 4, maxWidth: 200 }}
+              title="Filtra contagens_estoque por data_contagem (mesmo dia de data_inventario na planilha)"
+            />
+          </label>
           <button
             type="button"
             onClick={() => loadPreview()}
@@ -5181,9 +5211,10 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
           renderPreviewTable()
         ) : (
           <div style={{ marginTop: 10, fontSize: 13, color: 'var(--text, #888)' }}>
-            Nenhum registro carregado para a data consultada (por padrão, <strong>hoje</strong>). Isso é normal se ainda
-            não finalizou a contagem do dia — finalize para gravar no Supabase, ou clique em{' '}
-            <strong>Atualizar prévia</strong> para listar o que já existe no banco.
+            Nenhum registro em <code style={{ fontSize: 12 }}>contagens_estoque</code> para o dia em{' '}
+            <strong>Dia no banco</strong> (deve ser o mesmo <code style={{ fontSize: 12 }}>data_contagem</code> /
+            <code style={{ fontSize: 12 }}> data_inventario</code>). Ajuste a data e clique em{' '}
+            <strong>Atualizar prévia</strong>.
           </div>
         )}
       </div>
