@@ -122,6 +122,53 @@ type ProductOption = {
   foto_url?: string | null
 }
 
+/** Remove pontos para casar cadastro (ex.: 01.01.0001 ≡ digitação 01010001). */
+function codigoInternoSemPontos(s: string): string {
+  return String(s ?? '').trim().replace(/\./g, '')
+}
+
+function lookupProductOptionByCodigo(
+  codigo: string,
+  productByCode: Map<string, ProductOption>,
+  productByCodeNoDots: Map<string, ProductOption>,
+): ProductOption | undefined {
+  const c = codigo.trim()
+  if (!c) return undefined
+  let p = productByCode.get(c)
+  if (!p) {
+    for (const [k, v] of productByCode) {
+      if (k.trim() === c) {
+        p = v
+        break
+      }
+    }
+  }
+  if (!p) {
+    const key = codigoInternoSemPontos(c)
+    if (key) p = productByCodeNoDots.get(key)
+  }
+  return p
+}
+
+function lookupInCatalogMap(codigo: string, catalogMap: Map<string, ProductOption>): ProductOption | undefined {
+  const c = codigo.trim()
+  if (!c) return undefined
+  let p = catalogMap.get(c)
+  if (!p) {
+    const key = codigoInternoSemPontos(c)
+    if (key) p = catalogMap.get(key)
+  }
+  if (!p) {
+    for (const [k, v] of catalogMap) {
+      if (k.trim() === c) {
+        p = v
+        break
+      }
+    }
+  }
+  return p
+}
+
 function pickFirstString(row: Record<string, any>, keys: string[]) {
   for (const key of keys) {
     const v = row[key]
@@ -636,6 +683,16 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     return map
   }, [productOptions])
 
+  /** Índice por código sem pontos (um produto canônico por sequência numérica). */
+  const productByCodeNoDots = useMemo(() => {
+    const map = new Map<string, ProductOption>()
+    for (const p of productOptions) {
+      const k = codigoInternoSemPontos(p.codigo)
+      if (k && !map.has(k)) map.set(k, p)
+    }
+    return map
+  }, [productOptions])
+
   const productByDescricao = useMemo(() => {
     const map = new Map<string, ProductOption>()
     for (const p of productOptions) map.set(p.descricao.trim().toLowerCase(), p)
@@ -663,8 +720,13 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
   const SUGGEST_LIMIT = 400
   const codigoSuggestions = useMemo(() => {
     const q = codigoInterno.trim().toLowerCase()
+    const qNoDots = codigoInternoSemPontos(codigoInterno).toLowerCase()
     const list = q
-      ? productOptions.filter((p) => p.codigo.toLowerCase().includes(q))
+      ? productOptions.filter((p) => {
+          const pc = p.codigo.toLowerCase()
+          if (pc.includes(q)) return true
+          return codigoInternoSemPontos(p.codigo).toLowerCase().includes(qNoDots)
+        })
       : productOptions
     return list.slice(0, SUGGEST_LIMIT)
   }, [productOptions, codigoInterno])
@@ -688,7 +750,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
   }, [])
 
   function applyProductByCode(codigo: string, opts?: { updateBarcodeLeitura?: boolean }) {
-    const p = productByCode.get(codigo)
+    const p = lookupProductOptionByCodigo(codigo, productByCode, productByCodeNoDots)
     if (!p) return false
     setProduto({
       id: p.id,
@@ -744,7 +806,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     }
 
     // Fallback: se o bipador estiver enviando o próprio código interno.
-    const pCode = productByCode.get(code)
+    const pCode = lookupProductOptionByCodigo(code, productByCode, productByCodeNoDots)
     if (pCode) {
       setBarcodeTipoLeitura(null)
       setCodigoInterno(pCode.codigo)
@@ -816,7 +878,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       if (intervalId) window.clearInterval(intervalId)
       if (stream) stream.getTracks().forEach((t) => t.stop())
     }
-  }, [barcodeCameraOpen, productByDun, productByEan, productByCode])
+  }, [barcodeCameraOpen, productByDun, productByEan, productByCode, productByCodeNoDots])
 
   function openPhotoModalForCodigo(codigo: string) {
     const code = codigo.trim()
@@ -1039,7 +1101,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     }, 500)
 
     return () => clearTimeout(handle)
-  }, [codigoInterno, productByCode])
+  }, [codigoInterno, productByCode, productByCodeNoDots])
 
   const canSubmit = useMemo(() => {
     const datasOk = !isVencimentoAntesFabricacao(dataFabricacao, dataVencimento)
@@ -1177,7 +1239,8 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       }
 
       const catalog =
-        productByCode.get(codeFinal.trim()) ?? productByDescricao.get(descricaoFinal.trim().toLowerCase())
+        lookupProductOptionByCodigo(codeFinal.trim(), productByCode, productByCodeNoDots) ??
+        productByDescricao.get(descricaoFinal.trim().toLowerCase())
 
       const qtdStr = String(qtd)
       const itemPatch: Pick<OfflineChecklistItem, 'quantidade_contada'> & Partial<OfflineChecklistItem> = {
@@ -1675,7 +1738,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
 
       const items: OfflineChecklistItem[] = []
       itemsRaw.forEach((row, index) => {
-        const p = productByCode.get(row.codigo_interno.trim())
+        const p = lookupProductOptionByCodigo(row.codigo_interno.trim(), productByCode, productByCodeNoDots)
         const repeticoes = inventario ? ([1, 2, 3] as const) : ([1] as const)
         repeticoes.forEach((rep) => {
           const idx = inventario ? index * 3 + (rep - 1) : index
@@ -1853,7 +1916,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       return
     }
     setChecklistError('')
-    const p = productByCode.get(cod)
+    const p = lookupProductOptionByCodigo(cod, productByCode, productByCodeNoDots)
     updateOfflineItemFields(checklistEditingKey, {
       codigo_interno: cod,
       descricao: desc,
@@ -1894,17 +1957,9 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     }
     let p: ProductOption | undefined
     if (catalogMap) {
-      p = catalogMap.get(c)
+      p = lookupInCatalogMap(c, catalogMap)
     } else {
-      p = productByCode.get(c)
-      if (!p) {
-        for (const [k, v] of productByCode) {
-          if (k.trim() === c) {
-            p = v
-            break
-          }
-        }
-      }
+      p = lookupProductOptionByCodigo(c, productByCode, productByCodeNoDots)
     }
     if (p) {
       updateOfflineItemFields(key, {
@@ -1942,6 +1997,8 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     for (const p of normalized) {
       const k = p.codigo.trim()
       if (!mapPorCodigoTrim.has(k)) mapPorCodigoTrim.set(k, p)
+      const nd = codigoInternoSemPontos(k)
+      if (nd && !mapPorCodigoTrim.has(nd)) mapPorCodigoTrim.set(nd, p)
     }
     if (offlineSession?.status === 'aberta' && offlineSession.listMode === 'planilha') {
       for (const it of offlineSession.items) {
@@ -2044,7 +2101,11 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
           }
           up_adicional = u
         }
-        const catalog = productByCode.get(it.codigo_interno.trim())
+        const catalog = lookupProductOptionByCodigo(
+          it.codigo_interno.trim(),
+          productByCode,
+          productByCodeNoDots,
+        )
         const produtoId =
           catalog?.id != null && isUuid(String(catalog.id)) ? String(catalog.id) : null
         const rowPayload: Record<string, unknown> = {
@@ -2052,7 +2113,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
           data_hora_contagem: dataHoraIso,
           conferente_id: offlineSession.conferente_id,
           produto_id: produtoId,
-          codigo_interno: it.codigo_interno.trim(),
+          codigo_interno: String(catalog?.codigo ?? it.codigo_interno).trim(),
           descricao: it.descricao.trim(),
           unidade_medida:
             it.unidade_medida != null && String(it.unidade_medida).trim() !== ''
@@ -2353,27 +2414,20 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       ? 'inventário (apenas registros com origem = inventário)'
       : 'contagem diária (registros que não são inventário)'
 
-    if (
-      !window.confirm(
-        `ATENÇÃO\n\nSerão apagados permanentemente do banco todos os registros da tabela contagens_estoque deste tipo:\n• ${modoLabel}\n• Dia da contagem: ${dayLabel}\n\nEsta ação não pode ser desfeita.\n\nDeseja continuar?`,
-      )
-    ) {
-      return
-    }
-    if (
-      !window.confirm(
-        `Confirmação final\n\nTem certeza absoluta de que deseja EXCLUIR TODOS esses registros do dia ${dayLabel}?\n\nClique em OK apenas se tiver certeza.`,
-      )
-    ) {
-      return
-    }
-
     const senha = window.prompt(
       'Digite a senha para excluir todos os registros deste dia no banco (contagens_estoque):',
     )
     if (senha === null) return
     if (senha.trim() !== SENHA_EXCLUIR_TUDO_BANCO) {
       setPreviewRowError('Senha incorreta. Nenhum registro foi excluído.')
+      return
+    }
+
+    if (
+      !window.confirm(
+        `ATENÇÃO\n\nSerão apagados permanentemente do banco todos os registros da tabela contagens_estoque deste tipo:\n• ${modoLabel}\n• Dia da contagem: ${dayLabel}\n\nEsta ação não pode ser desfeita.\n\nDeseja continuar?`,
+      )
+    ) {
       return
     }
 
@@ -3155,7 +3209,10 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       ? offlineSession.items.filter((it) => {
           const codOk =
             !checklistFilterCodigo.trim() ||
-            it.codigo_interno.toLowerCase().includes(checklistFilterCodigo.trim().toLowerCase())
+            it.codigo_interno.toLowerCase().includes(checklistFilterCodigo.trim().toLowerCase()) ||
+            codigoInternoSemPontos(it.codigo_interno)
+              .toLowerCase()
+              .includes(codigoInternoSemPontos(checklistFilterCodigo).toLowerCase())
           const descOk =
             !checklistFilterDescricao.trim() ||
             it.descricao.toLowerCase().includes(checklistFilterDescricao.trim().toLowerCase())
@@ -5278,7 +5335,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
             title={
               !previewQueryDayYmd || previewRows.length === 0
                 ? 'Carregue a prévia com registros antes de excluir'
-                : 'Remove do banco todos os registros do dia mostrado na prévia. Será pedida a senha de confirmação.'
+                : 'Abre o campo de senha na hora; depois confirme o aviso para apagar o dia no banco.'
             }
             style={{
               ...buttonStyle,
