@@ -560,6 +560,8 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
   /** Feedback visual: linha da checklist acabou de ser gravada no `localStorage`. */
   const [checklistSavedFlashKey, setChecklistSavedFlashKey] = useState<string | null>(null)
   const checklistSavedFlashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  /** Ancora scroll após “Atualizar prévia” para a seção ficar visível (página longa no mobile). */
+  const previewSectionRef = useRef<HTMLDivElement | null>(null)
 
   function flashChecklistRowSaved(key: string) {
     setChecklistSavedFlashKey(key)
@@ -1332,6 +1334,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
 
   async function loadPreview(dayOverride?: string) {
     setPreviewLoading(true)
+    try {
     const pad = (n: number) => String(n).padStart(2, '0')
     const now = new Date()
     const dayKey =
@@ -1401,7 +1404,6 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       const leg = await queryPreview(legacySelect)
       if (leg.error) {
         setSaveError(`Erro ao carregar prévia: ${leg.error.message}`)
-        setPreviewLoading(false)
         return
       }
       data = leg.data
@@ -1502,8 +1504,16 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
 
       setPreviewQueryDayYmd(dayKey)
       setPreviewRows(Array.from(grouped.values()))
+      window.setTimeout(() => {
+        previewSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+      }, 0)
     }
-    setPreviewLoading(false)
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e)
+      setSaveError(`Erro ao carregar prévia: ${msg}`)
+    } finally {
+      setPreviewLoading(false)
+    }
   }
 
 
@@ -5101,7 +5111,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         </div>
       </form>
 
-      <div style={{ marginTop: 26 }}>
+      <div ref={previewSectionRef} style={{ marginTop: 26, scrollMarginTop: 12 }}>
         <h3>{inventario ? 'Prévia do inventário (Supabase)' : 'Prévia — o que já está no banco (Supabase)'}</h3>
         <div style={{ color: 'var(--text, #555)', fontSize: 13, marginTop: 6, maxWidth: 720 }}>
           {inventario ? (
