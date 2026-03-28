@@ -642,7 +642,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     return map
   }, [productOptions])
 
-  /** Índice por código sem pontos (um produto canônico por sequência numérica). */
+  /** Índice por `normalizeCodigoInternoCompareKey(codigo)` — mesma regra para todos os produtos. */
   const productByCodeNoDots = useMemo(() => {
     const map = new Map<string, ProductOption>()
     for (const p of productOptions) {

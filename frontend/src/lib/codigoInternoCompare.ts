@@ -1,9 +1,23 @@
 /**
- * Comparação de código interno em todo o app: trim nas bordas + ignorar pontos
- * (ex.: 01.01.0001 e 01010001 são o mesmo código). Espaços internos não são removidos.
+ * Chave única para comparar código interno em **todo o app** (contagem, planilha, prévia,
+ * relatório, armazém, enrich EAN/DUN, Base de produtos, filtros, etc.).
+ *
+ * Regras (cadastro costuma ser XX.XX.XXXX):
+ * - Só dígitos (remove pontos, espaços e outros não numéricos).
+ * - Com 8+ dígitos: usa a sequência inteira.
+ * - Com 6 ou 7 dígitos: completa o último bloco para 4 dígitos (ex.: 0110003 → 01100003,
+ *   equivalente a 01.10.0003 com um zero faltando no último grupo).
  */
 export function normalizeCodigoInternoCompareKey(s: string): string {
-  return String(s ?? '').trim().replace(/\./g, '')
+  const digits = String(s ?? '').trim().replace(/\D/g, '')
+  if (!digits) return ''
+  if (digits.length >= 8) return digits
+  if (digits.length === 6 || digits.length === 7) {
+    const head = digits.slice(0, 4)
+    const tail = digits.slice(4).padStart(4, '0')
+    return head + tail
+  }
+  return digits
 }
 
 export function codigoInternoIguais(a: string, b: string): boolean {
