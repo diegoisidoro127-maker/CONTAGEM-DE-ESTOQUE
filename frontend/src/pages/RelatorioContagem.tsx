@@ -11,6 +11,7 @@ import {
   ordenarLinhasInventarioComoPrevia,
 } from '../lib/contagemListagemCompat'
 import { inventarioCamaraLabelFromGrupo } from '../components/inventario/inventarioPlanilhaModel'
+import { deleteInventarioPlanilhaLinhasForContagensIds } from '../lib/inventarioPlanilhaLinhasDelete'
 
 type ContagemRow = {
   id: string
@@ -505,6 +506,9 @@ export default function RelatorioContagem({
     setError('')
     setSuccess('')
 
+    if (useInventarioCols) {
+      await deleteInventarioPlanilhaLinhasForContagensIds(supabase, idsToDelete)
+    }
     for (const uid of idsToDelete) {
       const { error: delError } = await supabase.from('contagens_estoque').delete().eq('id', uid)
       if (delError) {

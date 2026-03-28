@@ -37,6 +37,10 @@ import {
 } from '../lib/armazemInventarioMap'
 import { enrichContagemRowsWithPlanilhaLinhas } from '../lib/enrichContagemRowsWithPlanilhaLinhas'
 import {
+  deleteInventarioPlanilhaLinhasForContagensIds,
+  deleteInventarioPlanilhaLinhasForDay,
+} from '../lib/inventarioPlanilhaLinhasDelete'
+import {
   CHECKLIST_VISIBLE_COLS_STORAGE,
   loadChecklistVisibleColsFromStorage,
 } from '../lib/checklistVisibleCols'
@@ -2310,6 +2314,10 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     setPreviewRowError('')
     setPreviewRowActionLoading(true)
     try {
+      if (inventario) {
+        await deleteInventarioPlanilhaLinhasForDay(supabase, dayKey)
+      }
+
       let delQ = supabase.from('contagens_estoque').delete().eq('data_contagem', dayKey)
       if (inventario) {
         delQ = delQ.eq('origem', 'inventario')
@@ -2371,6 +2379,9 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     try {
       const row = previewRows.find((r) => r.id === id)
       const idsToDelete = row?.source_ids?.length ? row.source_ids : [id]
+      if (inventario) {
+        await deleteInventarioPlanilhaLinhasForContagensIds(supabase, idsToDelete)
+      }
       const { error } = await supabase.from('contagens_estoque').delete().in('id', idsToDelete)
       if (error) throw error
 
