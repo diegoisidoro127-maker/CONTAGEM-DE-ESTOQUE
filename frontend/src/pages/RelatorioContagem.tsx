@@ -77,8 +77,21 @@ function isColumnMissingErrorRel(e: unknown): boolean {
 
 const TABELA_PRODUTOS_REL = 'Todos os Produtos'
 
-/** Colunas fixas Câmara / Rua / POS / Nível (antes das colunas da checklist). */
-const RELATORIO_COLS_PLANILHA_LOCAL = 4
+/** Colunas fixas Câmara / Rua / POS / Nível / Conferente (antes das colunas da checklist). */
+const RELATORIO_COLS_PLANILHA_LOCAL = 5
+
+function conferenteNomeRelatorio(r: ContagemRow): string {
+  const c = r.conferentes
+  if (Array.isArray(c)) {
+    const n = c[0]?.nome
+    if (typeof n === 'string' && n.trim() !== '') return n.trim()
+  } else if (c && typeof c === 'object' && 'nome' in c) {
+    const n = (c as { nome?: string }).nome
+    if (typeof n === 'string' && n.trim() !== '') return n.trim()
+  }
+  const id = String(r.conferente_id ?? '').trim()
+  return id !== '' ? id : '—'
+}
 
 function mergeContagemRowsById(
   a: ContagemRow[] | null | undefined,
@@ -96,6 +109,8 @@ function mergeContagemRowsById(
 
 /** Paginação (15 + “Mostrar tudo”) vale para Relatório completo e Todas as contagens — mesmo componente. */
 const RELATORIO_PAGE_SIZE = 15
+/** PostgREST costuma limitar ~1000 linhas por requisição; buscamos em fatias para trazer o relatório inteiro. */
+const RELATORIO_FETCH_CHUNK = 2000
 
 type RelatorioContagemProps = {
   mode?: 'periodo' | 'dia'
@@ -158,6 +173,7 @@ export default function RelatorioContagem({
   const [relatorioShowAll, setRelatorioShowAll] = useState(false)
   const prevLoadingRef = useRef(false)
   const [baseExportLoading, setBaseExportLoading] = useState(false)
+  const [exportExcelLoading, setExportExcelLoading] = useState(false)
 
   const dateRangeText = useMemo(() => {
     if (allTime) return 'Todas as datas'
@@ -181,12 +197,7 @@ export default function RelatorioContagem({
     prevLoadingRef.current = loading
   }, [loading])
 
-  async function load() {
-    setLoading(true)
-    setError('')
-    setSuccess('')
-    setRows([])
-
+  async function fetchRelatorioContagemRows(): Promise<{ rows: ContagemRow[]; successMessage?: string }> {
     const selectCompleto = `
       id,
       data_contagem,
@@ -258,6 +269,22 @@ export default function RelatorioContagem({
       return q.eq('inventario_numero_contagem', Number(numeroContagemFilter))
     }
 
+    /** Nova query a cada fatia — evita reaproveitar builder com `.range()` mutado. */
+    async function fetchAllPaged(buildQ: () => any): Promise<ContagemRow[]> {
+      const out: ContagemRow[] = []
+      let from = 0
+      while (true) {
+        const { data, error: qError } = await buildQ().range(from, from + RELATORIO_FETCH_CHUNK - 1)
+        if (qError) throw qError
+        const batch = (data ?? []) as unknown as ContagemRow[]
+        out.push(...batch)
+        if (batch.length < RELATORIO_FETCH_CHUNK) break
+        from += RELATORIO_FETCH_CHUNK
+        if (from > 500000) break
+      }
+      return out
+    }
+
     async function fetchRows(selectCompact: string, withNumeroFilter: boolean): Promise<ContagemRow[]> {
       const base = () =>
         applyNumeroInventario(
@@ -270,36 +297,36 @@ export default function RelatorioContagem({
         )
 
       if (allTime) {
-        const { data, error: qError } = await base().limit(20000)
-        if (qError) throw qError
-        return (data ?? []) as unknown as ContagemRow[]
+        return fetchAllPaged(() => base())
       }
 
       if (useSingleDay) {
         const startIso = `${singleDay}T00:00:00`
         const endIso = `${singleDay}T23:59:59`
-        const qComDia = base().eq('data_contagem', singleDay)
-        const qLegado = base()
-          .is('data_contagem', null)
-          .gte('data_hora_contagem', startIso)
-          .lte('data_hora_contagem', endIso)
-        const [r1, r2] = await Promise.all([qComDia.limit(20000), qLegado.limit(20000)])
-        if (r1.error) throw r1.error
-        if (r2.error) throw r2.error
-        return mergeContagemRowsById(r1.data as ContagemRow[], r2.data as ContagemRow[])
+        const [a, b] = await Promise.all([
+          fetchAllPaged(() => base().eq('data_contagem', singleDay)),
+          fetchAllPaged(() =>
+            base()
+              .is('data_contagem', null)
+              .gte('data_hora_contagem', startIso)
+              .lte('data_hora_contagem', endIso),
+          ),
+        ])
+        return mergeContagemRowsById(a, b)
       }
 
       const startIso = `${startDate}T00:00:00`
       const endIso = `${endDate}T23:59:59`
-      const qComDia = base().gte('data_contagem', startDate).lte('data_contagem', endDate)
-      const qLegado = base()
-        .is('data_contagem', null)
-        .gte('data_hora_contagem', startIso)
-        .lte('data_hora_contagem', endIso)
-      const [r1, r2] = await Promise.all([qComDia.limit(20000), qLegado.limit(20000)])
-      if (r1.error) throw r1.error
-      if (r2.error) throw r2.error
-      return mergeContagemRowsById(r1.data as ContagemRow[], r2.data as ContagemRow[])
+      const [a, b] = await Promise.all([
+        fetchAllPaged(() => base().gte('data_contagem', startDate).lte('data_contagem', endDate)),
+        fetchAllPaged(() =>
+          base()
+            .is('data_contagem', null)
+            .gte('data_hora_contagem', startIso)
+            .lte('data_hora_contagem', endIso),
+        ),
+      ])
+      return mergeContagemRowsById(a, b)
     }
 
     const mapSemOrigem = (data: ContagemRow[]): ContagemRow[] =>
@@ -320,37 +347,34 @@ export default function RelatorioContagem({
 
     try {
       const data = await fetchRows(selectCompletoCompact, true)
-      setRows(
-        await enrichContagemRowsWithPlanilhaLinhas(mapSemOrigem(data as ContagemRow[]), 'RelatorioContagem'),
-      )
-    } catch (e: any) {
+      return {
+        rows: await enrichContagemRowsWithPlanilhaLinhas(mapSemOrigem(data as ContagemRow[]), 'RelatorioContagem'),
+      }
+    } catch (e: unknown) {
       if (!isColumnMissingErrorRel(e)) {
-        setError(e?.message ? String(e.message) : 'Erro ao carregar relatório.')
-        return
+        throw new Error(e && typeof e === 'object' && 'message' in e ? String((e as Error).message) : 'Erro ao carregar relatório.')
       }
       try {
         const data = await fetchRows(selectSemColunasInventarioCompact, true)
-        setRows(
-          await enrichContagemRowsWithPlanilhaLinhas(
+        return {
+          rows: await enrichContagemRowsWithPlanilhaLinhas(
             mapSemOrigem(injectNumeroSeFiltroAtivo(data as ContagemRow[])),
             'RelatorioContagem',
           ),
-        )
-        setSuccess(
-          'Colunas origem / nº contagem ausentes no SELECT (migre com os SQL em supabase/sql). O filtro por nº da contagem foi aplicado no servidor.',
-        )
-        setError('')
-        return
-      } catch (e2: any) {
+          successMessage:
+            'Colunas origem / nº contagem ausentes no SELECT (migre com os SQL em supabase/sql). O filtro por nº da contagem foi aplicado no servidor.',
+        }
+      } catch (e2: unknown) {
         if (!isColumnMissingErrorRel(e2)) {
-          setError(e2?.message ? String(e2.message) : 'Erro ao carregar relatório.')
-          return
+          throw new Error(
+            e2 && typeof e2 === 'object' && 'message' in e2 ? String((e2 as Error).message) : 'Erro ao carregar relatório.',
+          )
         }
       }
       try {
         const data = await fetchRows(selectSemColunasInventarioCompact, false)
-        setRows(
-          await enrichContagemRowsWithPlanilhaLinhas(
+        return {
+          rows: await enrichContagemRowsWithPlanilhaLinhas(
             (data as ContagemRow[]).map((r) => ({
               ...r,
               origem: null,
@@ -358,16 +382,14 @@ export default function RelatorioContagem({
             })) as ContagemRow[],
             'RelatorioContagem',
           ),
-        )
-        setSuccess(
-          'Colunas de inventário ausentes no Supabase: relatório sem filtro por nº da contagem. Execute alter_contagens_estoque_origem_inventario.sql e alter_contagens_estoque_inventario_numero_contagem.sql.',
-        )
-        setError('')
-        return
-      } catch (e3: any) {
+          successMessage:
+            'Colunas de inventário ausentes no Supabase: relatório sem filtro por nº da contagem. Execute alter_contagens_estoque_origem_inventario.sql e alter_contagens_estoque_inventario_numero_contagem.sql.',
+        }
+      } catch (e3: unknown) {
         if (!isColumnMissingErrorRel(e3)) {
-          setError(e3?.message ? String(e3.message) : 'Erro ao carregar relatório.')
-          return
+          throw new Error(
+            e3 && typeof e3 === 'object' && 'message' in e3 ? String((e3 as Error).message) : 'Erro ao carregar relatório.',
+          )
         }
       }
       try {
@@ -383,14 +405,30 @@ export default function RelatorioContagem({
           origem: null,
           inventario_numero_contagem: null,
         }))
-        setRows(await enrichContagemRowsWithPlanilhaLinhas(mapped as ContagemRow[], 'RelatorioContagem'))
-        setSuccess(
-          'Relatório em modo compatível (menos colunas). Execute os scripts SQL do projeto no Supabase para todos os campos.',
+        return {
+          rows: await enrichContagemRowsWithPlanilhaLinhas(mapped as ContagemRow[], 'RelatorioContagem'),
+          successMessage:
+            'Relatório em modo compatível (menos colunas). Execute os scripts SQL do projeto no Supabase para todos os campos.',
+        }
+      } catch (e4: unknown) {
+        throw new Error(
+          e4 && typeof e4 === 'object' && 'message' in e4 ? String((e4 as Error).message) : 'Erro ao carregar relatório (fallback).',
         )
-        setError('')
-      } catch (e4: any) {
-        setError(e4?.message ? String(e4.message) : 'Erro ao carregar relatório (fallback).')
       }
+    }
+  }
+
+  async function load() {
+    setLoading(true)
+    setError('')
+    setSuccess('')
+    setRows([])
+    try {
+      const { rows: data, successMessage } = await fetchRelatorioContagemRows()
+      setRows(data)
+      if (successMessage) setSuccess(successMessage)
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Erro ao carregar relatório.')
     } finally {
       setLoading(false)
     }
@@ -439,41 +477,74 @@ export default function RelatorioContagem({
     setRowActionLoading(false)
   }
 
-  function exportToExcel() {
-    if (!rows.length) return
+  /** Planilha com a mesma ordem de colunas da tela; `aoa_to_sheet` garante todas as linhas (sem depender só da página visível). */
+  function buildRelatorioExcelAoa(rowsToExport: ContagemRow[]): (string | number)[][] {
+    const header: (string | number)[] = ['Câmara', 'Rua', 'POS', 'Nível', 'Conferente']
+    if (prevCol('codigo')) header.push('Código do produto')
+    if (prevCol('descricao')) header.push('Descrição')
+    if (prevCol('unidade')) header.push('Unidade de medida')
+    if (prevCol('quantidade')) header.push('Quantidade contada')
+    if (prevCol('data_fabricacao')) header.push('Data de fabricação')
+    if (prevCol('data_validade')) header.push('Data de vencimento')
+    if (prevCol('lote')) header.push('Lote')
+    if (prevCol('up')) header.push('UP')
+    if (prevCol('observacao')) header.push('Observação')
+    if (prevCol('ean')) header.push('EAN')
+    if (prevCol('dun')) header.push('DUN')
+    if (prevCol('foto')) header.push('Foto')
 
-    // Mesmas colunas que a lista principal (Ocultar/mostrar colunas).
-    const sheetRows = rows.map((r) => {
-      const o: Record<string, string | number> = {}
+    const aoa: (string | number)[][] = [header]
+    for (const r of rowsToExport) {
+      const row: (string | number)[] = []
       const cam = inventarioCamaraLabelFromGrupo(r.planilha_grupo_armazem)
-      o['Câmara'] = cam === '—' ? '' : cam
-      o['Rua'] = r.planilha_rua != null && String(r.planilha_rua).trim() !== '' ? String(r.planilha_rua) : ''
-      o['POS'] =
-        r.planilha_posicao != null && Number.isFinite(Number(r.planilha_posicao)) ? Number(r.planilha_posicao) : ''
-      o['Nível'] =
-        r.planilha_nivel != null && Number.isFinite(Number(r.planilha_nivel)) ? Number(r.planilha_nivel) : ''
-      if (prevCol('codigo')) o['Código do produto'] = r.codigo_interno
-      if (prevCol('descricao')) o['Descrição'] = r.descricao
-      if (prevCol('unidade')) o['Unidade de medida'] = r.unidade_medida ?? ''
-      if (prevCol('quantidade')) o['Quantidade contada'] = r.quantidade_up
+      row.push(cam === '—' ? '' : cam)
+      row.push(r.planilha_rua != null && String(r.planilha_rua).trim() !== '' ? String(r.planilha_rua) : '')
+      row.push(
+        r.planilha_posicao != null && Number.isFinite(Number(r.planilha_posicao)) ? Number(r.planilha_posicao) : '',
+      )
+      row.push(r.planilha_nivel != null && Number.isFinite(Number(r.planilha_nivel)) ? Number(r.planilha_nivel) : '')
+      {
+        const nome = conferenteNomeRelatorio(r)
+        row.push(nome === '—' ? '' : nome)
+      }
+      if (prevCol('codigo')) row.push(r.codigo_interno)
+      if (prevCol('descricao')) row.push(r.descricao)
+      if (prevCol('unidade')) row.push(r.unidade_medida ?? '')
+      if (prevCol('quantidade')) row.push(r.quantidade_up)
       if (prevCol('data_fabricacao'))
-        o['Data de fabricação'] = r.data_fabricacao ? formatDateBR(String(r.data_fabricacao).slice(0, 10)) : ''
+        row.push(r.data_fabricacao ? formatDateBR(String(r.data_fabricacao).slice(0, 10)) : '')
       if (prevCol('data_validade'))
-        o['Data de vencimento'] = r.data_validade ? formatDateBR(String(r.data_validade).slice(0, 10)) : ''
-      if (prevCol('lote')) o['Lote'] = r.lote ?? ''
-      if (prevCol('up')) o['UP'] = r.up_adicional ?? ''
-      if (prevCol('observacao')) o['Observação'] = r.observacao ?? ''
-      if (prevCol('ean')) o['EAN'] = r.ean ?? ''
-      if (prevCol('dun')) o['DUN'] = r.dun ?? ''
-      if (prevCol('foto')) o['Foto'] = String(r.foto_base64 ?? '').trim() ? 'Com foto' : 'Sem foto'
-      return o
-    })
+        row.push(r.data_validade ? formatDateBR(String(r.data_validade).slice(0, 10)) : '')
+      if (prevCol('lote')) row.push(r.lote ?? '')
+      if (prevCol('up')) row.push(r.up_adicional ?? '')
+      if (prevCol('observacao')) row.push(r.observacao ?? '')
+      if (prevCol('ean')) row.push(r.ean ?? '')
+      if (prevCol('dun')) row.push(r.dun ?? '')
+      if (prevCol('foto')) row.push(String(r.foto_base64 ?? '').trim() ? 'Com foto' : 'Sem foto')
+      aoa.push(row)
+    }
+    return aoa
+  }
 
-    const ws = XLSX.utils.json_to_sheet(sheetRows)
-    const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, 'Contagens')
-    const safeFile = dateRangeText.replace(/[/\\?*[\]:]/g, '-').replace(/\s+/g, '_')
-    XLSX.writeFile(wb, `relatorio-contagem_${safeFile}.xlsx`)
+  async function exportToExcel() {
+    setExportExcelLoading(true)
+    setError('')
+    try {
+      const { rows: data } = await fetchRelatorioContagemRows()
+      if (!data.length) {
+        setError('Nenhum registro no período para exportar.')
+        return
+      }
+      const ws = XLSX.utils.aoa_to_sheet(buildRelatorioExcelAoa(data))
+      const wb = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(wb, ws, 'Contagens')
+      const safeFile = dateRangeText.replace(/[/\\?*[\]:]/g, '-').replace(/\s+/g, '_')
+      XLSX.writeFile(wb, `relatorio-contagem_${safeFile}.xlsx`)
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Erro ao exportar Excel.')
+    } finally {
+      setExportExcelLoading(false)
+    }
   }
 
   async function exportProdutosBaseExcel() {
@@ -738,25 +809,21 @@ export default function RelatorioContagem({
             <>
               <button
                 type="button"
-                onClick={exportToExcel}
-                disabled={loading || rows.length === 0}
+                onClick={() => void exportToExcel()}
+                disabled={loading || exportExcelLoading}
                 style={{
                   padding: '10px 14px',
                   borderRadius: 8,
                   border: '1px solid #1b5e20',
                   background: '#2e7d32',
                   color: 'white',
-                  cursor: loading || rows.length === 0 ? 'not-allowed' : 'pointer',
+                  cursor: loading || exportExcelLoading ? 'not-allowed' : 'pointer',
                   height: 40,
-                  opacity: loading || rows.length === 0 ? 0.5 : 1,
+                  opacity: loading || exportExcelLoading ? 0.5 : 1,
                 }}
-                title={
-                  rows.length === 0
-                    ? 'Carregue o relatório antes de exportar'
-                    : `Baixar planilha .xlsx com todos os ${rows.length} registros do filtro`
-                }
+                title="Busca de novo no banco todos os registros do filtro (data, nº contagem, etc.) e gera o .xlsx completo — não só a página visível na tela."
               >
-                Exportar Excel
+                {exportExcelLoading ? 'Exportando…' : 'Exportar Excel'}
               </button>
               <button
                 type="button"
@@ -826,6 +893,7 @@ export default function RelatorioContagem({
                   <th style={thStyle}>Rua</th>
                   <th style={thStyle}>POS</th>
                   <th style={thStyle}>Nível</th>
+                  <th style={thStyle}>Conferente</th>
                   {prevCol('codigo') ? <th style={thStyle}>Código do produto</th> : null}
                   {prevCol('descricao') ? <th style={thStyle}>Descrição</th> : null}
                   {prevCol('unidade') ? <th style={thStyle}>Unidade de medida</th> : null}
@@ -857,6 +925,9 @@ export default function RelatorioContagem({
                     </td>
                     <td style={tdStyle}>
                       {r.planilha_nivel != null && Number.isFinite(Number(r.planilha_nivel)) ? r.planilha_nivel : '—'}
+                    </td>
+                    <td style={{ ...tdStyle, whiteSpace: 'normal', maxWidth: 200 }}>
+                      {conferenteNomeRelatorio(r)}
                     </td>
                     {prevCol('codigo') ? <td style={tdStyle}>{r.codigo_interno}</td> : null}
                     {prevCol('descricao') ? (

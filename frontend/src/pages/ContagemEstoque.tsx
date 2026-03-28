@@ -36,8 +36,8 @@ import {
 } from '../lib/checklistVisibleCols'
 
 const PREVIEW_PAGE_SIZE = 15
-/** Colunas fixas na prévia (Câmara / Rua / POS / Nível), alinhadas ao relatório completo. */
-const PREVIEW_COLS_PLANILHA_LOCAL = 4
+/** Colunas fixas na prévia (Câmara / Rua / POS / Nível / Conferente), alinhadas ao relatório completo. */
+const PREVIEW_COLS_PLANILHA_LOCAL = 5
 const CHECKLIST_PAGE_SIZE = 15
 /** Linhas por página na tabela “Inventário — formato planilha” (cada aba pode ter centenas de linhas). */
 const PLANILHA_TABELA_PAGE_SIZE = 30
@@ -364,6 +364,18 @@ function conferenteNomeFromJoin(row: Record<string, unknown>): string {
   if (!c) return ''
   if (Array.isArray(c)) return String(c[0]?.nome ?? '')
   return String(c.nome ?? '')
+}
+
+/** Ao agrupar linhas da prévia com conferentes diferentes, lista nomes únicos separados por vírgula. */
+function mergeConferenteNomesUnicos(a: string, b: string): string {
+  const parts = new Set<string>()
+  for (const s of [a, b]) {
+    for (const part of String(s ?? '').split(',')) {
+      const t = part.trim()
+      if (t) parts.add(t)
+    }
+  }
+  return Array.from(parts).sort((x, y) => x.localeCompare(y, 'pt-BR')).join(', ') || '—'
 }
 
 /**
@@ -1456,6 +1468,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         }
         existing.quantidade_up += Number(row.quantidade_up ?? 0)
         existing.source_ids = existing.source_ids.concat(row.source_ids)
+        existing.conferente_nome = mergeConferenteNomesUnicos(existing.conferente_nome, row.conferente_nome)
         if (!existing.foto_base64 && row.foto_base64) existing.foto_base64 = row.foto_base64
         if (existing.planilha_grupo_armazem == null && row.planilha_grupo_armazem != null) {
           existing.planilha_grupo_armazem = row.planilha_grupo_armazem
@@ -2679,6 +2692,10 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                     <div style={{ fontSize: 13 }}>
                       {r.planilha_nivel != null && Number.isFinite(Number(r.planilha_nivel)) ? r.planilha_nivel : '—'}
                     </div>
+                    <div style={{ fontSize: 12, color: 'var(--text, #888)', marginTop: 8 }}>Conferente</div>
+                    <div style={{ fontSize: 13 }}>
+                      {String(r.conferente_nome ?? '').trim() !== '' ? r.conferente_nome : '—'}
+                    </div>
                     {prevCol('codigo') ? (
                       <>
                         <div style={{ fontSize: 12, color: 'var(--text, #888)', marginTop: 8 }}>
@@ -2853,6 +2870,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
               <th style={thStyle}>Rua</th>
               <th style={thStyle}>POS</th>
               <th style={thStyle}>Nível</th>
+              <th style={thStyle}>Conferente</th>
               {prevCol('codigo') ? <th style={thStyle}>Código do produto</th> : null}
               {prevCol('descricao') ? <th style={thStyle}>Descrição</th> : null}
               {prevCol('unidade') ? <th style={thStyle}>Unidade de medida</th> : null}
@@ -2884,6 +2902,9 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                   </td>
                   <td style={tdStyle}>
                     {r.planilha_nivel != null && Number.isFinite(Number(r.planilha_nivel)) ? r.planilha_nivel : '—'}
+                  </td>
+                  <td style={{ ...tdStyle, whiteSpace: 'normal', maxWidth: 200 }}>
+                    {String(r.conferente_nome ?? '').trim() !== '' ? r.conferente_nome : '—'}
                   </td>
                   {prevCol('codigo') ? <td style={tdStyle}>{r.codigo_interno}</td> : null}
                   {prevCol('descricao') ? (
