@@ -6,63 +6,21 @@
  *   $env:VITE_SUPABASE_ANON_KEY="eyJ..."
  *   node scripts/import-relatorio-contagem-xlsx.mjs "C:\Users\...\relatorio-contagem_Dia-_28-03-2026.xlsx" --data 2026-03-28
  *
+ * Só gerar SQL (sem Supabase):
+ *   node scripts/import-relatorio-contagem-xlsx.mjs "...\arquivo.xlsx" --data 2026-03-28 --sql-only
+ *   node scripts/import-relatorio-contagem-xlsx.mjs "...\arquivo.xlsx" --data 2026-03-28 --sql-only --out ..\supabase\sql\import_relatorio_manual.sql
+ *
  * --data YYYY-MM-DD = data_contagem (obrigatório se não estiver no nome do arquivo)
  */
 
 import { createClient } from '@supabase/supabase-js'
-import * as XLSX from 'xlsx'
 import fs from 'fs'
 import path from 'path'
-
-const INVENTARIO_ARMAZEM_ABA_TITULOS = {
-  1: 'CAMARA 11 - RUA V',
-  2: 'CAMARA 11 - RUA U',
-  3: 'CAMARA 12 - RUA X',
-  4: 'CAMARA 12 - RUA Y',
-  5: 'CAMARA 13 - RUA W',
-  6: 'CAMARA 13 - RUA Z',
-  7: 'CAMARA 21 - RUA A',
-  8: 'CAMARA 21 - RUA B',
-}
-const RUA_BY_GRUPO = { 1: 'V', 2: 'U', 3: 'X', 4: 'Y', 5: 'W', 6: 'Z', 7: 'A', 8: 'B' }
-
-function grupoFromCamaraRua(camara, rua) {
-  const c = String(camara ?? '').trim().toUpperCase()
-  const r = String(rua ?? '').trim().toUpperCase()
-  for (let g = 1; g <= 8; g++) {
-    const title = INVENTARIO_ARMAZEM_ABA_TITULOS[g]
-    if (!title) continue
-    const camaraPart = title.split(' - ')[0].trim().toUpperCase()
-    if (camaraPart === c && RUA_BY_GRUPO[g] === r) return g
-  }
-  return null
-}
-
-function parseRodada(contagemCell) {
-  const s = String(contagemCell ?? '')
-  const m = s.match(/(\d+)\s*°?\s*CONTAGEM/i)
-  if (m) return Math.min(4, Math.max(1, Number(m[1])))
-  const n = Number.parseInt(s, 10)
-  if (Number.isFinite(n) && n >= 1 && n <= 4) return n
-  return 1
-}
-
-function parseDateBR(s) {
-  const t = String(s ?? '').trim()
-  if (!t) return null
-  const m = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
-  if (!m) return null
-  const d = m[1].padStart(2, '0')
-  const mo = m[2].padStart(2, '0')
-  const y = m[3]
-  return `${y}-${mo}-${d}`
-}
-
-function ymdFromFilename(name) {
-  const m = String(name).match(/(\d{2})-(\d{2})-(\d{4})/)
-  if (!m) return null
-  return `${m[3]}-${m[2]}-${m[1]}`
-}
+import {
+  buildStagingFromXlsxBuffer,
+  generatePostgresImportSql,
+  ymdFromFilename,
+} from './relatorio-xlsx-import-core.mjs'
 
 function isMissingInventarioColError(e) {
   const msg = String(e?.message ?? e ?? '')
@@ -106,9 +64,14 @@ async function main() {
   let dataYmd = null
   const di = args.indexOf('--data')
   if (di >= 0 && args[di + 1]) dataYmd = args[di + 1]
+  const sqlOnly = args.includes('--sql-only')
+  const outIdx = args.indexOf('--out')
+  const outPath = outIdx >= 0 && args[outIdx + 1] ? args[outIdx + 1] : null
 
   if (!filePath) {
-    console.error('Uso: node scripts/import-relatorio-contagem-xlsx.mjs <arquivo.xlsx> [--data YYYY-MM-DD]')
+    console.error(
+      'Uso: node scripts/import-relatorio-contagem-xlsx.mjs <arquivo.xlsx> [--data YYYY-MM-DD] [--sql-only] [--out caminho.sql]',
+    )
     process.exit(1)
   }
 
@@ -123,50 +86,35 @@ async function main() {
     process.exit(1)
   }
 
+  const buf = fs.readFileSync(filePath)
+  const { staging, dataHoraIso, warnings } = buildStagingFromXlsxBuffer(buf, dataYmd)
+  for (const w of warnings) console.warn(w)
+
+  if (staging.length === 0) {
+    console.error('Nenhuma linha válida para importar.')
+    process.exit(1)
+  }
+
+  if (sqlOnly) {
+    const sql = generatePostgresImportSql(staging, dataYmd, dataHoraIso)
+    if (outPath) {
+      fs.writeFileSync(outPath, sql, 'utf8')
+      console.log('SQL gravado em:', outPath, `(${staging.length} linhas)`)
+    } else {
+      process.stdout.write(sql)
+    }
+    return
+  }
+
   const { url, key } = loadEnv()
   if (!url || !key) {
     console.error(
-      'Configure VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY no ambiente ou em frontend/.env',
+      'Configure VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY no ambiente ou em frontend/.env (ou use --sql-only).',
     )
     process.exit(1)
   }
 
   const supabase = createClient(url, key)
-
-  const buf = fs.readFileSync(filePath)
-  const wb = XLSX.read(buf, { type: 'buffer' })
-  const sheet = wb.Sheets[wb.SheetNames[0]]
-  const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' })
-  if (rows.length < 2) {
-    console.error('Planilha vazia.')
-    process.exit(1)
-  }
-
-  const header = rows[0].map((h) => String(h).trim())
-  const idx = (name) => header.findIndex((h) => h === name)
-
-  const iCam = idx('Câmara')
-  const iRua = idx('Rua')
-  const iPos = idx('POS')
-  const iNiv = idx('Nível')
-  const iCont = idx('Contagem')
-  const iConf = idx('Conferente')
-  const iCod = idx('Código do produto')
-  const iDesc = idx('Descrição')
-  const iUnd = idx('Unidade de medida')
-  const iQtd = idx('Quantidade contada')
-  const iFab = idx('Data de fabricação')
-  const iVen = idx('Data de vencimento')
-  const iLote = idx('Lote')
-  const iUp = idx('UP')
-  const iObs = idx('Observação')
-  const iEan = idx('EAN')
-  const iDun = idx('DUN')
-
-  if (iCod < 0 || iQtd < 0 || iConf < 0) {
-    console.error('Cabeçalho inválido: precisa Conferente, Código do produto, Quantidade contada.')
-    process.exit(1)
-  }
 
   const { data: confRows, error: confErr } = await supabase.from('conferentes').select('id,nome')
   if (confErr) throw confErr
@@ -174,76 +122,44 @@ async function main() {
     (confRows ?? []).map((r) => [String(r.nome ?? '').trim().toLowerCase(), String(r.id)]),
   )
 
-  const dataHoraIso = new Date(`${dataYmd}T12:00:00`).toISOString()
-
   const payloads = []
   const planilhaMeta = []
 
-  for (let r = 1; r < rows.length; r++) {
-    const row = rows[r]
-    const nomeConf = String(row[iConf] ?? '').trim()
-    if (!nomeConf) continue
-
-    const conferente_id = confByNome.get(nomeConf.toLowerCase())
+  for (const s of staging) {
+    const conferente_id = confByNome.get(String(s.conferente_nome).toLowerCase())
     if (!conferente_id) {
-      throw new Error(`Conferente não encontrado no banco: "${nomeConf}". Cadastre em conferentes.`)
+      throw new Error(`Conferente não encontrado no banco: "${s.conferente_nome}". Cadastre em conferentes.`)
     }
 
-    const codigo_interno = String(row[iCod] ?? '').trim()
-    const qtdRaw = row[iQtd]
-    const q = Number(String(qtdRaw).replace(',', '.'))
-    if (!codigo_interno || !Number.isFinite(q) || q < 0) continue
-
-    const grupo = grupoFromCamaraRua(row[iCam], row[iRua])
-    if (grupo == null) {
-      console.warn(`Linha ${r + 1}: não mapeou grupo para Câmara="${row[iCam]}" Rua="${row[iRua]}" — pulando planilha.`)
-    }
-
-    const numeroRodada = parseRodada(row[iCont])
-    const df = iFab >= 0 ? parseDateBR(row[iFab]) : null
-    const dv = iVen >= 0 ? parseDateBR(row[iVen]) : null
-    const upRaw = iUp >= 0 ? String(row[iUp] ?? '').trim() : ''
-    let up_adicional = null
-    if (upRaw !== '') {
-      const u = Number(upRaw.replace(',', '.'))
-      if (Number.isFinite(u) && u >= 0) up_adicional = u
-    }
-
-    const payload = {
+    payloads.push({
       data_contagem: dataYmd,
       data_hora_contagem: dataHoraIso,
       conferente_id,
       produto_id: null,
-      codigo_interno,
-      descricao: iDesc >= 0 ? String(row[iDesc] ?? '').trim() : '',
-      unidade_medida: iUnd >= 0 ? String(row[iUnd] ?? '').trim() || null : null,
-      quantidade_up: q,
-      up_adicional,
-      lote: iLote >= 0 ? String(row[iLote] ?? '').trim() || null : null,
-      observacao: iObs >= 0 ? String(row[iObs] ?? '').trim() || null : null,
-      data_fabricacao: df,
-      data_validade: dv,
-      ean: iEan >= 0 ? String(row[iEan] ?? '').trim() || null : null,
-      dun: iDun >= 0 ? String(row[iDun] ?? '').trim() || null : null,
+      codigo_interno: s.codigo_interno,
+      descricao: s.descricao,
+      unidade_medida: s.unidade_medida,
+      quantidade_up: s.quantidade_up,
+      up_adicional: s.up_adicional,
+      lote: s.lote,
+      observacao: s.observacao,
+      data_fabricacao: s.data_fabricacao,
+      data_validade: s.data_validade,
+      ean: s.ean,
+      dun: s.dun,
       foto_base64: null,
       origem: 'inventario',
-      inventario_repeticao: null,
-      inventario_numero_contagem: numeroRodada,
-    }
-
-    payloads.push(payload)
-    planilhaMeta.push({
-      grupo,
-      rua: String(row[iRua] ?? '').trim() || (RUA_BY_GRUPO[grupo] ?? ''),
-      posicao: iPos >= 0 ? Number(row[iPos]) || 0 : 0,
-      nivel: iNiv >= 0 ? Number(row[iNiv]) || 0 : 0,
-      numero_contagem: numeroRodada,
+      inventario_repeticao: s.inventario_repeticao,
+      inventario_numero_contagem: s.inventario_numero_contagem,
     })
-  }
 
-  if (payloads.length === 0) {
-    console.error('Nenhuma linha válida para importar.')
-    process.exit(1)
+    planilhaMeta.push({
+      grupo: s.grupo_armazem,
+      rua: String(s.rua),
+      posicao: s.posicao,
+      nivel: s.nivel,
+      numero_contagem: s.numero_contagem_planilha,
+    })
   }
 
   console.log(`Importando ${payloads.length} linhas em contagens_estoque (data_contagem=${dataYmd})...`)
@@ -317,7 +233,14 @@ async function main() {
     }
   }
 
-  console.log('OK:', payloads.length, 'registros em contagens_estoque.', planilhaRows.length ? `${planilhaRows.length} em inventario_planilha_linhas (onde grupo foi reconhecido).` : '')
+  console.log(
+    'OK:',
+    payloads.length,
+    'registros em contagens_estoque.',
+    planilhaRows.length
+      ? `${planilhaRows.length} em inventario_planilha_linhas (onde grupo foi reconhecido).`
+      : '',
+  )
 }
 
 main().catch((e) => {
