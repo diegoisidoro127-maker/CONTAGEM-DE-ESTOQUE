@@ -6,9 +6,14 @@
  *   $env:VITE_SUPABASE_ANON_KEY="eyJ..."
  *   node scripts/import-relatorio-contagem-xlsx.mjs "C:\Users\...\relatorio-contagem_Dia-_28-03-2026.xlsx" --data 2026-03-28
  *
- * Só gerar SQL (sem Supabase):
+ * Só gerar SQL (sem gravar pela API):
  *   node scripts/import-relatorio-contagem-xlsx.mjs "...\arquivo.xlsx" --data 2026-03-28 --sql-only
  *   node scripts/import-relatorio-contagem-xlsx.mjs "...\arquivo.xlsx" --data 2026-03-28 --sql-only --out ..\supabase\sql\import_relatorio_manual.sql
+ *
+ * Preencher EAN, DUN e unidade a partir de "Todos os Produtos" (requer .env com Supabase):
+ *   --enrich-ean-dun   obriga credenciais; falha se não houver .env
+ *   --no-enrich-ean-dun   não consulta o cadastro
+ *   Com .env e sem --no-enrich-ean-dun, enriquece automaticamente.
  *
  * --data YYYY-MM-DD = data_contagem (obrigatório se não estiver no nome do arquivo)
  */
@@ -21,6 +26,7 @@ import {
   generatePostgresImportSql,
   ymdFromFilename,
 } from './relatorio-xlsx-import-core.mjs'
+import { enrichStagingEanDunFromTodosOsProdutos } from './enrich-staging-ean-dun-supabase.mjs'
 
 function isMissingInventarioColError(e) {
   const msg = String(e?.message ?? e ?? '')
@@ -70,7 +76,7 @@ async function main() {
 
   if (!filePath) {
     console.error(
-      'Uso: node scripts/import-relatorio-contagem-xlsx.mjs <arquivo.xlsx> [--data YYYY-MM-DD] [--sql-only] [--out caminho.sql]',
+      'Uso: node scripts/import-relatorio-contagem-xlsx.mjs <arquivo.xlsx> [--data YYYY-MM-DD] [--sql-only] [--out caminho.sql] [--enrich-ean-dun | --no-enrich-ean-dun]',
     )
     process.exit(1)
   }
@@ -87,12 +93,33 @@ async function main() {
   }
 
   const buf = fs.readFileSync(filePath)
-  const { staging, dataHoraIso, warnings } = buildStagingFromXlsxBuffer(buf, dataYmd)
+  let { staging, dataHoraIso, warnings } = buildStagingFromXlsxBuffer(buf, dataYmd)
   for (const w of warnings) console.warn(w)
 
   if (staging.length === 0) {
     console.error('Nenhuma linha válida para importar.')
     process.exit(1)
+  }
+
+  const noEnrich = args.includes('--no-enrich-ean-dun')
+  const forceEnrich = args.includes('--enrich-ean-dun')
+  const { url: envUrl, key: envKey } = loadEnv()
+
+  if (forceEnrich && (!envUrl || !envKey)) {
+    console.error(
+      'Para --enrich-ean-dun, configure VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY em frontend/.env (ou variáveis de ambiente).',
+    )
+    process.exit(1)
+  }
+
+  const shouldEnrich = !noEnrich && envUrl && envKey
+  if (shouldEnrich) {
+    const sb = createClient(envUrl, envKey)
+    staging = await enrichStagingEanDunFromTodosOsProdutos(sb, staging)
+  } else if (!noEnrich && !envUrl) {
+    console.warn(
+      'Aviso: sem credenciais Supabase — EAN/DUN não foram preenchidos a partir de "Todos os Produtos". Coloque .env ou use --enrich-ean-dun após configurar.',
+    )
   }
 
   if (sqlOnly) {
@@ -106,15 +133,14 @@ async function main() {
     return
   }
 
-  const { url, key } = loadEnv()
-  if (!url || !key) {
+  if (!envUrl || !envKey) {
     console.error(
       'Configure VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY no ambiente ou em frontend/.env (ou use --sql-only).',
     )
     process.exit(1)
   }
 
-  const supabase = createClient(url, key)
+  const supabase = createClient(envUrl, envKey)
 
   const { data: confRows, error: confErr } = await supabase.from('conferentes').select('id,nome')
   if (confErr) throw confErr

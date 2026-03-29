@@ -48,6 +48,27 @@ export function parseDateBR(s) {
   return `${y}-${mo}-${d}`
 }
 
+/** Número serial Excel (dias desde 1899-12-30) → YYYY-MM-DD */
+export function excelSerialToYmd(serial) {
+  const n = Number(serial)
+  if (!Number.isFinite(n) || n < 1) return null
+  const utc = new Date((n - 25569) * 86400 * 1000)
+  if (Number.isNaN(utc.getTime())) return null
+  return utc.toISOString().slice(0, 10)
+}
+
+/** Célula de data: Date (sheet cellDates), serial Excel, ou texto dd/mm/aaaa */
+export function parseDateCell(val) {
+  if (val == null || val === '') return null
+  if (val instanceof Date && !Number.isNaN(val.getTime())) {
+    return val.toISOString().slice(0, 10)
+  }
+  if (typeof val === 'number' && val > 20000 && val < 60000) {
+    return excelSerialToYmd(val)
+  }
+  return parseDateBR(val)
+}
+
 export function ymdFromFilename(name) {
   const m = String(name).match(/(\d{2})-(\d{2})-(\d{4})/)
   if (!m) return null
@@ -58,7 +79,7 @@ export function ymdFromFilename(name) {
  * @returns {{ staging: Array<Record<string, unknown>>, dataHoraIso: string, warnings: string[] }}
  */
 export function buildStagingFromXlsxBuffer(buf, dataYmd) {
-  const wb = XLSX.read(buf, { type: 'buffer' })
+  const wb = XLSX.read(buf, { type: 'buffer', cellDates: true })
   const sheet = wb.Sheets[wb.SheetNames[0]]
   const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' })
   if (rows.length < 2) throw new Error('Planilha vazia.')
@@ -108,8 +129,8 @@ export function buildStagingFromXlsxBuffer(buf, dataYmd) {
     }
 
     const numeroRodada = parseRodada(row[iCont])
-    const df = iFab >= 0 ? parseDateBR(row[iFab]) : null
-    const dv = iVen >= 0 ? parseDateBR(row[iVen]) : null
+    const df = iFab >= 0 ? parseDateCell(row[iFab]) : null
+    const dv = iVen >= 0 ? parseDateCell(row[iVen]) : null
     const upRaw = iUp >= 0 ? String(row[iUp] ?? '').trim() : ''
     let up_adicional = null
     if (upRaw !== '') {
