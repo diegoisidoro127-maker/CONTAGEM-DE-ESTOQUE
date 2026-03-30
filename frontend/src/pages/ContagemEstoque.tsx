@@ -3344,9 +3344,22 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
   const showChecklistColumn = (id: string) => checklistVisibleCols[id] !== false
 
   const carregarListaDisabled = checklistLoading || finalizing || !conferenteId
+  const finalizarListaDisabled =
+    finalizing ||
+    !offlineSession ||
+    offlineSession.status !== 'aberta' ||
+    offlineSession.items.length === 0
 
   return (
-    <div style={{ padding: isMobile ? 10 : 16, maxWidth: 1200, margin: '0 auto', textAlign: 'left' }}>
+    <div
+      style={{
+        padding: isMobile ? 10 : 16,
+        maxWidth: 1200,
+        margin: '0 auto',
+        textAlign: 'left',
+        color: '#ffd95c',
+      }}
+    >
       <h2>{inventario ? 'Inventário físico' : 'Contagem de Estoque'}</h2>
 
       <section
@@ -3361,7 +3374,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         <h3 style={{ margin: '0 0 10px', fontSize: 18 }}>
           {inventario ? 'Inventário (offline → banco)' : 'Contagem diária (offline → banco)'}
         </h3>
-        <p style={{ margin: '0 0 12px', fontSize: 13, color: 'var(--text, #555)' }}>
+        <p style={{ margin: '0 0 12px', fontSize: 13, color: 'inherit', opacity: 0.95 }}>
           {inventario ? (
             <>
               <strong>Inventário:</strong> cada produto aparece <strong>três vezes</strong> na lista (1ª, 2ª e 3ª contagem).
@@ -3529,6 +3542,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
               type="button"
               style={{
                 ...buttonStyle,
+                ...checklistActionBtnCarregar,
                 ...(carregarListaDisabled ? { opacity: 0.45, cursor: 'not-allowed' } : {}),
               }}
               disabled={carregarListaDisabled}
@@ -3538,7 +3552,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
             </button>
             <button
               type="button"
-              style={{ ...buttonStyle, background: '#2a4a6a' }}
+              style={{ ...buttonStyle, ...checklistActionBtnAtualizar }}
               disabled={productOptionsLoading || finalizing}
               title="Recarrega a tabela Todos os Produtos e reaplica descrição/unidade nas linhas da planilha já preenchidas"
               onClick={() => void handleAtualizarCadastroProdutos()}
@@ -3547,7 +3561,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
             </button>
             <button
               type="button"
-              style={{ ...buttonStyle, background: '#444' }}
+              style={{ ...buttonStyle, ...checklistActionBtnLimpar }}
               disabled={finalizing}
               onClick={() => handleDescartarSessaoLocal()}
             >
@@ -3555,13 +3569,11 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
             </button>
             <button
               type="button"
-              style={{ ...buttonStyle, background: checklistPending > 0 ? '#555' : '#0b5' }}
-              disabled={
-                finalizing ||
-                !offlineSession ||
-                offlineSession.status !== 'aberta' ||
-                offlineSession.items.length === 0
-              }
+              style={{
+                ...buttonStyle,
+                ...checklistActionBtnFinalizar(finalizarListaDisabled, checklistPending),
+              }}
+              disabled={finalizarListaDisabled}
               onClick={() => void handleFinalizarContagemDiaria()}
             >
               {finalizing ? 'Finalizando…' : inventario ? 'Finalizar inventário' : 'Finalizar contagem diária'}
@@ -5535,6 +5547,54 @@ const buttonStyle: React.CSSProperties = {
   background: '#111',
   color: 'white',
   cursor: 'pointer',
+}
+
+/** Carregar / Atualizar / Limpar / Finalizar — Contagem diária e Inventário (mesmo `ContagemEstoque`). */
+const checklistActionBtnCarregar: React.CSSProperties = {
+  background: 'linear-gradient(180deg, #4f8eff 0%, #2f6fdf 100%)',
+  border: '1px solid #7fb0ff',
+  color: '#f4f9ff',
+  fontWeight: 700,
+}
+
+const checklistActionBtnAtualizar: React.CSSProperties = {
+  background: 'linear-gradient(180deg, #26c6da 0%, #00838f 100%)',
+  border: '1px solid #80deea',
+  color: '#001819',
+  fontWeight: 700,
+}
+
+const checklistActionBtnLimpar: React.CSSProperties = {
+  background: 'linear-gradient(180deg, #ffb74d 0%, #ef6c00 100%)',
+  border: '1px solid #ffcc80',
+  color: '#1f1200',
+  fontWeight: 700,
+}
+
+function checklistActionBtnFinalizar(disabled: boolean, pending: number): React.CSSProperties {
+  if (disabled) {
+    return {
+      background: 'linear-gradient(180deg, #5a5a5a 0%, #3a3a3a 100%)',
+      border: '1px solid #757575',
+      color: '#e8e8e8',
+      fontWeight: 600,
+      opacity: 0.75,
+    }
+  }
+  if (pending > 0) {
+    return {
+      background: 'linear-gradient(180deg, #b0bec5 0%, #78909c 100%)',
+      border: '1px solid #cfd8dc',
+      color: '#1a1a1a',
+      fontWeight: 700,
+    }
+  }
+  return {
+    background: 'linear-gradient(180deg, #66bb6a 0%, #2e7d32 100%)',
+    border: '1px solid #a5d6a7',
+    color: '#fff',
+    fontWeight: 700,
+  }
 }
 
 const thStyle: React.CSSProperties = {

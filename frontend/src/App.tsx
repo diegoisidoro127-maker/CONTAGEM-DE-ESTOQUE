@@ -49,7 +49,7 @@ export default function App() {
             alt="Ultra Pão Alimentos"
             style={{ width: 120, height: 'auto', borderRadius: 10, marginBottom: 16 }}
           />
-          <h1 style={{ margin: '0 0 12px', fontSize: 'clamp(22px, 5vw, 28px)', color: 'var(--text-h)' }}>
+          <h1 style={{ margin: '0 0 12px', fontSize: 'clamp(22px, 5vw, 28px)', color: '#ffd95c' }}>
             Painel de Contagem de Estoque
           </h1>
           <p
@@ -57,7 +57,7 @@ export default function App() {
               margin: '0 0 28px',
               fontSize: 14,
               lineHeight: 1.45,
-              color: 'var(--text)',
+              color: '#ffd95c',
               maxWidth: 420,
             }}
           >
@@ -200,20 +200,25 @@ function viewBtnStyle(active: boolean): React.CSSProperties {
 const homePrimaryBtnStyle: React.CSSProperties = {
   padding: '14px 18px',
   borderRadius: 10,
-  border: '1px solid var(--border, #333)',
-  background: 'var(--code-bg, #111)',
-  color: 'var(--text-h, #fff)',
+  border: '1px solid #dca900',
+  background: 'linear-gradient(180deg, #ffd95c 0%, #e6b400 100%)',
+  color: '#1a1300',
   fontSize: 16,
-  fontWeight: 600,
+  fontWeight: 700,
   cursor: 'pointer',
   width: '100%',
 }
 
 const homeSecondaryBtnStyle: React.CSSProperties = {
-  ...homePrimaryBtnStyle,
-  background: 'transparent',
-  color: 'var(--text-h)',
-  fontWeight: 500,
+  padding: '14px 18px',
+  borderRadius: 10,
+  border: '1px solid #1b6eff',
+  background: 'linear-gradient(180deg, #45a6ff 0%, #1b6eff 100%)',
+  color: '#f5fbff',
+  fontSize: 16,
+  fontWeight: 700,
+  cursor: 'pointer',
+  width: '100%',
 }
 
 const homeGhostBtnStyle: React.CSSProperties = {
@@ -221,7 +226,7 @@ const homeGhostBtnStyle: React.CSSProperties = {
   borderRadius: 8,
   border: 'none',
   background: 'transparent',
-  color: 'var(--text)',
+  color: '#ffd95c',
   fontSize: 13,
   cursor: 'pointer',
   textDecoration: 'underline',
