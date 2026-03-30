@@ -110,15 +110,21 @@ export default function App() {
               marginBottom: 12,
             }}
           >
-            <button type="button" onClick={() => setView('home')} style={viewBtnStyle(false)}>
+            <button
+              type="button"
+              onClick={() => setView('home')}
+              style={viewNavBtnStyle(false, NAV_ACCENT.inicio)}
+            >
+              <NavIcon emoji="🏠" anim="pulse" />
               Início
             </button>
             {view !== 'inventario' ? (
               <button
                 type="button"
                 onClick={() => setView('contagem')}
-                style={viewBtnStyle(view === 'contagem')}
+                style={viewNavBtnStyle(view === 'contagem', NAV_ACCENT.contagem)}
               >
+                <NavIcon emoji="📋" anim="bounce" />
                 Contagem
               </button>
             ) : null}
@@ -126,37 +132,42 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setView('inventario')}
-                style={viewBtnStyle(view === 'inventario')}
+                style={viewNavBtnStyle(view === 'inventario', NAV_ACCENT.inventario)}
               >
+                <NavIcon emoji="📦" anim="float" />
                 Inventário
               </button>
             ) : null}
             <button
               type="button"
               onClick={() => setView('relatorio')}
-              style={viewBtnStyle(view === 'relatorio')}
+              style={viewNavBtnStyle(view === 'relatorio', NAV_ACCENT.relatorio)}
             >
+              <NavIcon emoji="📊" anim="glow" />
               Relatório completo
             </button>
             <button
               type="button"
               onClick={() => setView('todas')}
-              style={viewBtnStyle(view === 'todas')}
+              style={viewNavBtnStyle(view === 'todas', NAV_ACCENT.todas)}
             >
+              <NavIcon emoji="📑" anim="bounce" />
               Todas as contagens
             </button>
             <button
               type="button"
               onClick={() => setView('baseDados')}
-              style={viewBtnStyle(view === 'baseDados')}
+              style={viewNavBtnStyle(view === 'baseDados', NAV_ACCENT.base)}
             >
+              <NavIcon emoji="🗄️" anim="pulse" />
               Base de dados
             </button>
             <button
               type="button"
               onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
-              style={viewBtnStyle(false)}
+              style={viewNavBtnStyle(false, NAV_ACCENT.tema)}
             >
+              <NavIcon emoji={theme === 'dark' ? '☀️' : '🌙'} anim="tilt" />
               {theme === 'dark' ? 'Tema claro' : 'Tema escuro'}
             </button>
           </header>
@@ -186,14 +197,44 @@ export default function App() {
   )
 }
 
-function viewBtnStyle(active: boolean): React.CSSProperties {
+/** Cores dos títulos da barra (claro + escuro). */
+const NAV_ACCENT = {
+  inicio: '#ffd95c',
+  contagem: '#4f8eff',
+  inventario: '#26c6da',
+  relatorio: '#c084fc',
+  todas: '#66bb6a',
+  base: '#ffb74d',
+  tema: '#ffd95c',
+} as const
+
+type NavIconAnim = 'pulse' | 'bounce' | 'float' | 'glow' | 'tilt'
+
+function NavIcon({ emoji, anim }: { emoji: string; anim: NavIconAnim }) {
+  return (
+    <span className={`app-nav-icon app-nav-icon--${anim}`} aria-hidden>
+      {emoji}
+    </span>
+  )
+}
+
+function navActiveTextColor(accent: string): string {
+  if (accent === '#ffd95c' || accent === '#ffb74d') return '#141109'
+  return '#ffffff'
+}
+
+function viewNavBtnStyle(active: boolean, accent: string): React.CSSProperties {
   return {
     padding: '10px 14px',
     borderRadius: 8,
-    border: '1px solid var(--border, #222)',
-    background: active ? '#111' : 'transparent',
-    color: active ? '#fff' : 'var(--text-h)',
+    border: `1px solid ${active ? accent : 'var(--border, #222)'}`,
+    background: active ? accent : 'transparent',
+    color: active ? navActiveTextColor(accent) : accent,
     cursor: 'pointer',
+    fontWeight: 600,
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 8,
   }
 }
 

@@ -182,3 +182,99 @@
     border-right-color: var(--border);
   }
 }
+
+/* Barra superior: ícones com animação suave (respeita prefers-reduced-motion) */
+.app-nav-icon {
+  font-size: 1.05em;
+  line-height: 1;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.app-nav-icon--pulse {
+  animation: app-nav-pulse 2.2s ease-in-out infinite;
+}
+
+.app-nav-icon--bounce {
+  animation: app-nav-bounce 1.8s ease-in-out infinite;
+}
+
+.app-nav-icon--float {
+  animation: app-nav-float 2.5s ease-in-out infinite;
+}
+
+.app-nav-icon--glow {
+  animation: app-nav-glow 2s ease-in-out infinite;
+}
+
+.app-nav-icon--tilt {
+  animation: app-nav-tilt 3s ease-in-out infinite;
+}
+
+@keyframes app-nav-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.85;
+    transform: scale(1.12);
+  }
+}
+
+@keyframes app-nav-bounce {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+@keyframes app-nav-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  33% {
+    transform: translateY(-2px);
+  }
+  66% {
+    transform: translateY(1px);
+  }
+}
+
+@keyframes app-nav-glow {
+  0%,
+  100% {
+    filter: brightness(1);
+  }
+  50% {
+    filter: brightness(1.35);
+  }
+}
+
+@keyframes app-nav-tilt {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  25% {
+    transform: rotate(-6deg);
+  }
+  75% {
+    transform: rotate(6deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-nav-icon--pulse,
+  .app-nav-icon--bounce,
+  .app-nav-icon--float,
+  .app-nav-icon--glow,
+  .app-nav-icon--tilt {
+    animation: none;
+  }
+}
