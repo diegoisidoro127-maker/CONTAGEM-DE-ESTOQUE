@@ -2941,8 +2941,8 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         <table
           style={{
             borderCollapse: 'collapse',
-            width: '100%',
-            minWidth: Math.max(520, previewVisColCount * 140),
+            width: 'max-content',
+            minWidth: Math.max(360, previewVisColCount * 90),
           }}
         >
           <thead>
