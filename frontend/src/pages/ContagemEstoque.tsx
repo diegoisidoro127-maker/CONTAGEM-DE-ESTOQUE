@@ -24,6 +24,8 @@ import {
 } from '../components/inventario/inventarioPlanilhaArmazem'
 import {
   buildPlanilhaLayoutPorItens,
+  getInventarioRuaArmazem,
+  inventarioArmazemPosNivel,
   inventarioCamaraLabelFromGrupo,
   INVENTARIO_ARMAZEM_GRUPO_IDS,
   INVENTARIO_ARMAZEM_NUM_GRUPOS,
@@ -63,7 +65,7 @@ const CHECKLIST_PAGE_SIZE = 15
 /** Linhas por página na tabela “Inventário — formato planilha” (cada aba pode ter centenas de linhas). */
 const PLANILHA_TABELA_PAGE_SIZE = 30
 
-/** Senha exigida em "Excluir tudo (banco)" na prévia (proteção contra exclusão acidental). */
+/** Senha exigida em "Excluir dia no banco" na prévia (proteção contra exclusão acidental). */
 const SENHA_EXCLUIR_TUDO_BANCO = 'AdminUltrapao'
 
 type Conferente = {
@@ -157,14 +159,20 @@ const TABELA_PRODUTOS = 'Todos os Produtos'
 /** Alguns códigos da tabela não devem entrar na checklist do app (lista vazia = nenhum). */
 const CHECKLIST_EXCLUIR_CODIGOS = new Set<string>([])
 
+/** Quantidade exibida/gravada na planilha de inventário: vazio = número da rodada (1–4). */
+function quantidadePlanilhaInventarioEfetiva(
+  it: OfflineChecklistItem,
+  inventarioNumeroContagem: 1 | 2 | 3 | 4,
+): string {
+  const t = String(it.quantidade_contada ?? '').trim()
+  return t === '' ? String(inventarioNumeroContagem) : t
+}
+
 function countPendingForSession(session: OfflineSession | null): number {
   if (!session || session.status !== 'aberta') return 0
+  /** Quantidade vazia na planilha usa o número da rodada (1–4), então não há pendência por “quantidade em branco”. */
   if (session.listMode === 'planilha') {
-    return session.items.filter((i) => {
-      const c = String(i.codigo_interno ?? '').trim()
-      if (!c) return false
-      return String(i.quantidade_contada ?? '').trim() === ''
-    }).length
+    return 0
   }
   return countPendingItems(session.items)
 }
@@ -1814,12 +1822,22 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
   }
 
   function setInventarioNumeroContagemRodada(n: 1 | 2 | 3 | 4) {
+    const nStr = String(n)
     setOfflineSession((prev) => {
       if (!prev || prev.status !== 'aberta') return prev
       const next = {
         ...prev,
         inventario_numero_contagem: n,
         updatedAt: new Date().toISOString(),
+        ...(prev.listMode === 'planilha'
+          ? {
+              items: prev.items.map((it) =>
+                String(it.quantidade_contada ?? '').trim() === ''
+                  ? { ...it, quantidade_contada: nStr }
+                  : it,
+              ),
+            }
+          : {}),
       }
       saveOfflineSession(next, sessionMode)
       return next
@@ -1848,10 +1866,15 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       if (!confirm('Há outra linha em edição. Descartar alterações nela e editar esta?')) return
     }
     setChecklistEditingKey(it.key)
+    const rodada = clampInventarioNumeroContagem(offlineSession?.inventario_numero_contagem ?? 1)
+    const qtdDraft =
+      inventario && offlineSession?.listMode === 'planilha'
+        ? quantidadePlanilhaInventarioEfetiva(it, rodada)
+        : it.quantidade_contada
     setChecklistEditDraft({
       codigo_interno: it.codigo_interno,
       descricao: it.descricao,
-      quantidade_contada: it.quantidade_contada,
+      quantidade_contada: qtdDraft,
     })
   }
 
@@ -2006,11 +2029,12 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         await finalizeInternal(nextSession)
         return
       }
+      const rodadaPend = clampInventarioNumeroContagem(offlineSession.inventario_numero_contagem ?? 1)
       const missing = itemsSnapshot.filter((i) => {
         if (offlineSession.listMode === 'planilha') {
           const c = String(i.codigo_interno ?? '').trim()
           if (!c) return false
-          return String(i.quantidade_contada ?? '').trim() === ''
+          return quantidadePlanilhaInventarioEfetiva(i, rodadaPend) === ''
         }
         return String(i.quantidade_contada ?? '').trim() === ''
       })
@@ -2039,8 +2063,14 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       let itemsSnapshot = session.items.map((i) => ({ ...i }))
 
       itemsSnapshot = itemsSnapshot.filter((it) => String(it.codigo_interno ?? '').trim() !== '')
-      /** Só grava linhas com quantidade digitada; vazio não vira 0 e não é enviado. */
-      itemsSnapshot = itemsSnapshot.filter((it) => String(it.quantidade_contada ?? '').trim() !== '')
+      /** Só grava linhas com quantidade digitada; vazio não vira 0 e não é enviado. Na planilha de inventário, vazio usa o número da rodada (1–4). */
+      const rodadaFin = clampInventarioNumeroContagem(session.inventario_numero_contagem ?? 1)
+      itemsSnapshot = itemsSnapshot.filter((it) => {
+        if (session.listMode === 'planilha') {
+          return quantidadePlanilhaInventarioEfetiva(it, rodadaFin) !== ''
+        }
+        return String(it.quantidade_contada ?? '').trim() !== ''
+      })
       if (itemsSnapshot.length === 0) {
         setChecklistError(
           'Nenhuma linha com código e quantidade preenchidos. Informe a quantidade nos produtos que deseja gravar (campos vazios permanecem de fora do banco).',
@@ -2060,7 +2090,11 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         produtoId: string | null
       }> = []
       for (const it of itemsSnapshot) {
-        const q = Number(String(it.quantidade_contada).replace(',', '.'))
+        const qStr =
+          session.listMode === 'planilha'
+            ? quantidadePlanilhaInventarioEfetiva(it, rodadaFin)
+            : String(it.quantidade_contada ?? '').trim()
+        const q = Number(String(qStr).replace(',', '.'))
         if (!Number.isFinite(q) || q < 0) {
           setChecklistError(
             `Quantidade inválida para ${it.codigo_interno}${it.inventario_repeticao ? ` (${it.inventario_repeticao}ª contagem)` : ''}.`,
@@ -2340,16 +2374,23 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
   ])
 
   async function handlePreviewDeleteAll() {
-    const dayKey = previewQueryDayYmd
-    if (!dayKey || !previewRows.length) return
+    const dayKey = /^\d{4}-\d{2}-\d{2}$/.test(previewConsultaDiaYmd) ? previewConsultaDiaYmd : null
+    if (!dayKey) {
+      setPreviewRowError('Selecione uma data válida em “Dia no banco”.')
+      return
+    }
 
     const dayLabel = formatDateBRFromYmd(dayKey)
     const modoLabel = inventario
       ? 'inventário (apenas registros com origem = inventário)'
       : 'contagem diária (registros que não são inventário)'
+    const avisoDiaPreview =
+      previewQueryDayYmd && previewQueryDayYmd !== dayKey
+        ? `\n\nObs.: a tabela abaixo está carregada para ${formatDateBRFromYmd(previewQueryDayYmd)}. A exclusão será somente do dia ${dayLabel} (data do campo “Dia no banco”).`
+        : ''
 
     const senha = window.prompt(
-      'Digite a senha para excluir todos os registros deste dia no banco (contagens_estoque):',
+      `Digite a senha para excluir do banco os registros de contagens_estoque APENAS do dia ${dayLabel} (data selecionada em “Dia no banco”), conforme o modo atual (${inventario ? 'inventário' : 'contagem diária'}):`,
     )
     if (senha === null) return
     if (senha.trim() !== SENHA_EXCLUIR_TUDO_BANCO) {
@@ -2359,7 +2400,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
 
     if (
       !window.confirm(
-        `ATENÇÃO\n\nSerão apagados permanentemente do banco todos os registros da tabela contagens_estoque deste tipo:\n• ${modoLabel}\n• Dia da contagem: ${dayLabel}\n\nEsta ação não pode ser desfeita.\n\nDeseja continuar?`,
+        `ATENÇÃO\n\nSerão apagados permanentemente do banco somente os registros da tabela contagens_estoque que tenham:\n• ${modoLabel}\n• data_contagem = ${dayLabel}${avisoDiaPreview}\n\nNão serão apagados registros de outros dias.\n\nEsta ação não pode ser desfeita.\n\nDeseja continuar?`,
       )
     ) {
       return
@@ -2391,16 +2432,22 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
           if (!delPorMeta.error) {
             error = null
           } else if (isMissingAnyInventarioContagensColumn(delPorMeta.error)) {
-            const ids = new Set<string>()
-            for (const row of previewRows) {
-              for (const sid of row.source_ids?.length ? row.source_ids : [row.id]) ids.add(sid)
-            }
-            if (ids.size === 0) {
+            /** Mesmo escopo do delete por metadados, sem depender da prévia na tela (evita outro dia se o seletor mudou). */
+            const rFetch = await supabase
+              .from('contagens_estoque')
+              .select('id')
+              .eq('data_contagem', dayKey)
+              .or('inventario_repeticao.not.is.null,inventario_numero_contagem.not.is.null')
+              .limit(5000)
+            const idList = (rFetch.data ?? [])
+              .map((row) => String((row as { id?: string }).id ?? ''))
+              .filter(Boolean)
+            if (idList.length === 0) {
               throw new Error(
-                'Sem coluna origem e sem linhas com repetição/nº de contagem. Rode supabase/sql/alter_contagens_estoque_origem_inventario.sql no Supabase e tente de novo.',
+                'Sem coluna origem e nenhum registro de inventário encontrado para este dia. Rode supabase/sql/alter_contagens_estoque_origem_inventario.sql no Supabase se necessário.',
               )
             }
-            const delPorIds = await supabase.from('contagens_estoque').delete().in('id', Array.from(ids))
+            const delPorIds = await supabase.from('contagens_estoque').delete().in('id', idList)
             error = delPorIds.error
           } else {
             error = delPorMeta.error
@@ -3307,6 +3354,42 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     offlineSession?.inventario_numero_contagem ?? 1,
   )
 
+  /** Planilha inventário: linhas novas com quantidade vazia recebem o número da rodada (1–4) no estado. */
+  const planilhaItensLen = offlineSession?.items?.length ?? 0
+  const planilhaItensComQtdVazia = useMemo(() => {
+    if (!offlineSession?.items) return 0
+    return offlineSession.items.filter((it) => String(it.quantidade_contada ?? '').trim() === '').length
+  }, [offlineSession?.items])
+
+  useEffect(() => {
+    if (!inventario || !offlineSession || offlineSession.status !== 'aberta') return
+    if (offlineSession.listMode !== 'planilha') return
+    if (planilhaItensComQtdVazia === 0) return
+    const nStr = String(inventarioNumeroContagemRodada)
+    setOfflineSession((prev) => {
+      if (!prev || prev.status !== 'aberta' || prev.listMode !== 'planilha') return prev
+      if (!prev.items.some((it) => String(it.quantidade_contada ?? '').trim() === '')) return prev
+      const next = {
+        ...prev,
+        items: prev.items.map((it) =>
+          String(it.quantidade_contada ?? '').trim() === '' ? { ...it, quantidade_contada: nStr } : it,
+        ),
+        updatedAt: new Date().toISOString(),
+      }
+      saveOfflineSession(next, sessionMode)
+      return next
+    })
+  }, [
+    inventario,
+    offlineSession?.sessionId,
+    offlineSession?.status,
+    offlineSession?.listMode,
+    planilhaItensLen,
+    planilhaItensComQtdVazia,
+    inventarioNumeroContagemRodada,
+    sessionMode,
+  ])
+
   const planilhaQtdContagemHeader =
     inventario && isArmazemPaginado
       ? formatContagemLabel(inventarioNumeroContagemRodada)
@@ -3833,9 +3916,16 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
 
                       const it = item as OfflineChecklistItem
                       const hasPhoto = Boolean(String(it.foto_base64 ?? '').trim())
-                      const pend = String(it.quantidade_contada ?? '').trim() === ''
+                      const pend =
+                        inventario && offlineSession?.listMode === 'planilha'
+                          ? String(quantidadePlanilhaInventarioEfetiva(it, inventarioNumeroContagemRodada)).trim() ===
+                            ''
+                          : String(it.quantidade_contada ?? '').trim() === ''
                       const isEditing = checklistEditingKey === it.key && checklistEditDraft
                       const datasOrdemInvalida = isVencimentoAntesFabricacao(it.data_fabricacao, it.data_validade)
+                      const itemArmazemContagem = inventario ? getArmazemContagemForItem(it) : null
+                      const itemRua = inventario ? getInventarioRuaArmazem(itemArmazemContagem) : null
+                      const itemPn = inventario ? inventarioArmazemPosNivel(armazemItemsSorted, it) : null
 
                       return (
                         <div
@@ -3910,30 +4000,40 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                             </>
                           ) : (
                             <>
-                              {showChecklistColumn('conferente') ? (
-                                <div style={{ fontSize: 10, lineHeight: 1.15, color: 'var(--text, #666)', marginBottom: 2 }}>
-                                  Conferente: <strong style={{ fontWeight: 600 }}>{conferenteNomeSelecionado}</strong>
-                                </div>
-                              ) : null}
+                              <div style={{ fontSize: 10, lineHeight: 1.15, color: 'var(--text, #666)', marginBottom: 2 }}>
+                                Conferente:{' '}
+                                <strong style={{ fontWeight: 600 }}>
+                                  {String(conferenteNomeSelecionado || '').trim() || '—'}
+                                </strong>
+                              </div>
                               <div style={{ fontSize: 10, lineHeight: 1.15, color: 'var(--text, #666)', marginBottom: 1 }}>
                                 Status: <strong style={{ color: pend ? '#a60' : '#0a0' }}>{pend ? 'Pendente' : 'Contado'}</strong>
                               </div>
+                              {inventario ? (
+                                <div style={{ fontSize: 10, lineHeight: 1.15, color: 'var(--text, #666)', marginBottom: 1 }}>
+                                  RUA: <strong style={{ fontWeight: 700 }}>{itemRua ?? '—'}</strong> · POS:{' '}
+                                  <strong style={{ fontWeight: 700 }}>{itemPn?.pos ?? '—'}</strong> · NÍVEL:{' '}
+                                  <strong style={{ fontWeight: 700 }}>{itemPn?.nivel ?? '—'}</strong>
+                                </div>
+                              ) : null}
                               <div style={{ fontSize: 11, lineHeight: 1.1, fontWeight: 800, fontFamily: 'monospace' }}>
-                                {it.codigo_interno}
+                                {String(it.codigo_interno || '').trim() || '—'}
                                 {it.inventario_repeticao ? (
                                   <span style={{ marginLeft: 6, fontSize: 10, color: '#0a7', fontWeight: 700 }}>
                                     ({it.inventario_repeticao}ª contagem)
                                   </span>
                                 ) : null}
                               </div>
-                              <div style={{ fontSize: 11, lineHeight: 1.15, whiteSpace: 'normal', color: 'var(--text, #111)', marginTop: 0 }}>{it.descricao}</div>
-                              {showChecklistColumn('ean') || showChecklistColumn('dun') ? (
+                              <div style={{ fontSize: 11, lineHeight: 1.15, whiteSpace: 'normal', color: 'var(--text, #111)', marginTop: 0 }}>
+                                {String(it.descricao || '').trim() || 'Descrição não informada'}
+                              </div>
+                              {inventario || showChecklistColumn('ean') || showChecklistColumn('dun') ? (
                                 <div style={{ marginTop: 6, fontSize: 11, color: 'var(--text, #666)', display: 'grid', gap: 2 }}>
-                                  {showChecklistColumn('ean') ? <div>EAN: {it.ean ?? '—'}</div> : null}
-                                  {showChecklistColumn('dun') ? <div>DUN: {it.dun ?? '—'}</div> : null}
+                                  {inventario || showChecklistColumn('ean') ? <div>EAN: {it.ean ?? '—'}</div> : null}
+                                  {inventario || showChecklistColumn('dun') ? <div>DUN: {it.dun ?? '—'}</div> : null}
                                 </div>
                               ) : null}
-                              {showChecklistColumn('foto') ? (
+                              {inventario || showChecklistColumn('foto') ? (
                                 <div style={{ marginTop: 6, fontSize: 11, color: 'var(--text, #666)' }}>
                                   Foto: {hasPhoto ? 'Com foto' : 'Sem foto'}
                                 </div>
@@ -3944,7 +4044,10 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                   marginTop: 4,
                                   display: 'grid',
                                   gap: 4,
-                                  gridTemplateColumns: showChecklistColumn('unidade') ? 'minmax(0, 1.2fr) minmax(0, 0.8fr)' : '1fr',
+                                  gridTemplateColumns:
+                                    inventario || showChecklistColumn('unidade')
+                                      ? 'minmax(0, 1.2fr) minmax(0, 0.8fr)'
+                                      : '1fr',
                                 }}
                               >
                                 <label style={{ ...labelStyle, gap: 2 }}>
@@ -3957,13 +4060,17 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                   <input
                                     type="text"
                                     inputMode="decimal"
-                                    value={it.quantidade_contada}
+                                    value={
+                                      inventario && offlineSession?.listMode === 'planilha'
+                                        ? quantidadePlanilhaInventarioEfetiva(it, inventarioNumeroContagemRodada)
+                                        : it.quantidade_contada
+                                    }
                                     onChange={(e) => updateOfflineItemQty(it.key, e.target.value)}
                                     style={{ ...inputStyle, padding: '4px 6px', fontSize: 10 }}
                                     placeholder="—"
                                   />
                                 </label>
-                                {showChecklistColumn('unidade') ? (
+                                {inventario || showChecklistColumn('unidade') ? (
                                   <label style={{ ...labelStyle, gap: 2 }}>
                                     <span>Unidade</span>
                                     <input
@@ -3981,7 +4088,8 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                 ) : null}
                               </div>
 
-                              {showChecklistColumn('data_fabricacao') ||
+                              {inventario ||
+                              showChecklistColumn('data_fabricacao') ||
                               showChecklistColumn('data_validade') ||
                               showChecklistColumn('lote') ||
                               showChecklistColumn('up') ||
@@ -3994,7 +4102,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                     gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
                                   }}
                                 >
-                                  {showChecklistColumn('data_fabricacao') ? (
+                                  {inventario || showChecklistColumn('data_fabricacao') ? (
                                     <label style={{ ...labelStyle, gap: 4 }}>
                                       <span>Data de fabricação</span>
                                       <input
@@ -4005,7 +4113,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                       />
                                     </label>
                                   ) : null}
-                                  {showChecklistColumn('data_validade') ? (
+                                  {inventario || showChecklistColumn('data_validade') ? (
                                     <label style={{ ...labelStyle, gap: 4 }}>
                                       <span>Data de vencimento</span>
                                       <input
@@ -4016,7 +4124,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                       />
                                     </label>
                                   ) : null}
-                                  {showChecklistColumn('lote') ? (
+                                  {inventario || showChecklistColumn('lote') ? (
                                     <label style={{ ...labelStyle, gap: 4 }}>
                                       <span>Lote</span>
                                       <input
@@ -4028,7 +4136,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                       />
                                     </label>
                                   ) : null}
-                                  {showChecklistColumn('up') ? (
+                                  {inventario || showChecklistColumn('up') ? (
                                     <label style={{ ...labelStyle, gap: 4 }}>
                                       <span>UP</span>
                                       <input
@@ -4041,7 +4149,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                       />
                                     </label>
                                   ) : null}
-                                  {showChecklistColumn('observacao') ? (
+                                  {inventario || showChecklistColumn('observacao') ? (
                                     <label style={{ ...labelStyle, gap: 4, gridColumn: '1 / -1' }}>
                                       <span>Observação</span>
                                       <input
@@ -4129,6 +4237,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                       armazemItemsSorted={armazemItemsSorted}
                       armazemContagem={armazemGrupoAtual?.contagem ?? null}
                       planilhaQtdContagemHeader={planilhaQtdContagemHeader}
+                      inventarioNumeroContagemRodada={inventarioNumeroContagemRodada}
                       conferenteLabel={conferenteNomeSelecionado}
                       showChecklistColumn={showChecklistColumn}
                       thStyle={thStyle}
@@ -5303,19 +5412,32 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
           >
             {previewLoading ? 'Atualizando...' : 'Atualizar prévia'}
           </button>
+          <span
+            style={{
+              fontSize: 12,
+              lineHeight: 1.45,
+              color: 'var(--text-muted, #aaa)',
+              maxWidth: 440,
+              flex: '1 1 200px',
+            }}
+          >
+            <strong style={{ color: 'var(--text, #ffd95c)' }}>Excluir dia:</strong> remove do banco apenas as linhas de{' '}
+            <code style={{ fontSize: 11 }}>contagens_estoque</code> com <code style={{ fontSize: 11 }}>data_contagem</code>{' '}
+            igual à data escolhida em <strong>Dia no banco</strong> (respeitando o modo atual — inventário ou contagem
+            diária). <em>Outros dias não são apagados.</em>
+          </span>
           <button
             type="button"
             onClick={() => void handlePreviewDeleteAll()}
             disabled={
               previewLoading ||
               previewRowActionLoading ||
-              !previewQueryDayYmd ||
-              previewRows.length === 0
+              !/^\d{4}-\d{2}-\d{2}$/.test(previewConsultaDiaYmd)
             }
             title={
-              !previewQueryDayYmd || previewRows.length === 0
-                ? 'Carregue a prévia com registros antes de excluir'
-                : 'Abre o campo de senha na hora; depois confirme o aviso para apagar o dia no banco.'
+              !/^\d{4}-\d{2}-\d{2}$/.test(previewConsultaDiaYmd)
+                ? 'Selecione uma data em “Dia no banco”'
+                : 'Excluir do banco somente registros (contagens_estoque) com data_contagem igual ao dia selecionado no campo acima — não apaga outros dias.'
             }
             style={{
               ...buttonStyle,
@@ -5324,20 +5446,18 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
               opacity:
                 previewLoading ||
                 previewRowActionLoading ||
-                !previewQueryDayYmd ||
-                previewRows.length === 0
+                !/^\d{4}-\d{2}-\d{2}$/.test(previewConsultaDiaYmd)
                   ? 0.5
                   : 1,
               cursor:
                 previewLoading ||
                 previewRowActionLoading ||
-                !previewQueryDayYmd ||
-                previewRows.length === 0
+                !/^\d{4}-\d{2}-\d{2}$/.test(previewConsultaDiaYmd)
                   ? 'not-allowed'
                   : 'pointer',
             }}
           >
-            Excluir tudo (banco)
+            Excluir dia no banco
           </button>
         </div>
         {previewRows.length ? (

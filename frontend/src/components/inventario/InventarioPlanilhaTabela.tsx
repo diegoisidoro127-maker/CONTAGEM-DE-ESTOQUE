@@ -36,6 +36,8 @@ export type InventarioPlanilhaTabelaProps = {
   onPlanilhaCodigoBlur?: (key: string, codigo: string) => void
   /** Nome do conferente da sessão (mesmo em todas as linhas). */
   conferenteLabel: string
+  /** Rodada selecionada (1–4): preenche a coluna de quantidade quando o campo está vazio. */
+  inventarioNumeroContagemRodada: 1 | 2 | 3 | 4
 }
 
 /**
@@ -67,7 +69,13 @@ export function InventarioPlanilhaTabela(props: InventarioPlanilhaTabelaProps) {
     removePhotoFromChecklistItem,
     onPlanilhaCodigoBlur,
     conferenteLabel,
+    inventarioNumeroContagemRodada,
   } = props
+
+  const qtdPlanilhaRodada = (it: OfflineChecklistItem) => {
+    const t = String(it.quantidade_contada ?? '').trim()
+    return t === '' ? String(inventarioNumeroContagemRodada) : t
+  }
 
   const ruaPlanilha = getInventarioRuaArmazem(armazemContagem)
 
@@ -209,7 +217,11 @@ export function InventarioPlanilhaTabela(props: InventarioPlanilhaTabelaProps) {
                         <input
                           type="text"
                           inputMode="decimal"
-                          value={checklistEditDraft.quantidade_contada}
+                          value={
+                            String(checklistEditDraft.quantidade_contada ?? '').trim() === ''
+                              ? String(inventarioNumeroContagemRodada)
+                              : checklistEditDraft.quantidade_contada
+                          }
                           onChange={(e) =>
                             setChecklistEditDraft((d) =>
                               d ? { ...d, quantidade_contada: e.target.value } : d,
@@ -405,7 +417,7 @@ export function InventarioPlanilhaTabela(props: InventarioPlanilhaTabelaProps) {
                           <input
                             type="text"
                             inputMode="decimal"
-                            value={it.quantidade_contada}
+                            value={qtdPlanilhaRodada(it)}
                             onChange={(e) => updateOfflineItemQty(it.key, e.target.value)}
                             style={inputPlanilha}
                             placeholder="—"
