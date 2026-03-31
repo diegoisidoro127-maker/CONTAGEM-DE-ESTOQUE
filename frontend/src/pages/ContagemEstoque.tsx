@@ -3911,14 +3911,14 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                           ) : (
                             <>
                               {showChecklistColumn('conferente') ? (
-                                <div style={{ fontSize: 10, color: 'var(--text, #666)', marginBottom: 4 }}>
+                                <div style={{ fontSize: 10, lineHeight: 1.15, color: 'var(--text, #666)', marginBottom: 2 }}>
                                   Conferente: <strong style={{ fontWeight: 600 }}>{conferenteNomeSelecionado}</strong>
                                 </div>
                               ) : null}
-                              <div style={{ fontSize: 10, color: 'var(--text, #666)', marginBottom: 2 }}>
+                              <div style={{ fontSize: 10, lineHeight: 1.15, color: 'var(--text, #666)', marginBottom: 1 }}>
                                 Status: <strong style={{ color: pend ? '#a60' : '#0a0' }}>{pend ? 'Pendente' : 'Contado'}</strong>
                               </div>
-                              <div style={{ fontSize: 11, fontWeight: 800, fontFamily: 'monospace' }}>
+                              <div style={{ fontSize: 11, lineHeight: 1.1, fontWeight: 800, fontFamily: 'monospace' }}>
                                 {it.codigo_interno}
                                 {it.inventario_repeticao ? (
                                   <span style={{ marginLeft: 6, fontSize: 10, color: '#0a7', fontWeight: 700 }}>
@@ -3926,7 +3926,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                   </span>
                                 ) : null}
                               </div>
-                              <div style={{ fontSize: 11, whiteSpace: 'normal', color: 'var(--text, #111)', marginTop: 1 }}>{it.descricao}</div>
+                              <div style={{ fontSize: 11, lineHeight: 1.15, whiteSpace: 'normal', color: 'var(--text, #111)', marginTop: 0 }}>{it.descricao}</div>
                               {showChecklistColumn('ean') || showChecklistColumn('dun') ? (
                                 <div style={{ marginTop: 6, fontSize: 11, color: 'var(--text, #666)', display: 'grid', gap: 2 }}>
                                   {showChecklistColumn('ean') ? <div>EAN: {it.ean ?? '—'}</div> : null}
@@ -3948,7 +3948,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                 }}
                               >
                                 <label style={{ ...labelStyle, gap: 2 }}>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap', lineHeight: 1.1 }}>
                                     <span>Quantidade</span>
                                     {checklistSavedFlashKey === it.key ? (
                                       <span style={{ fontSize: 10, color: '#0a0', fontWeight: 700 }}>Salvo</span>
