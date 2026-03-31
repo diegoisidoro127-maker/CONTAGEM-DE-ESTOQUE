@@ -3939,25 +3939,49 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                 </div>
                               ) : null}
 
-                              <label style={{ ...labelStyle, marginTop: 6, gap: 3 }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                                  <span>Quantidade contada</span>
-                                  {checklistSavedFlashKey === it.key ? (
-                                    <span style={{ fontSize: 11, color: '#0a0', fontWeight: 700 }}>Salvo na sessão</span>
-                                  ) : null}
-                                </div>
-                                <input
-                                  type="text"
-                                  inputMode="decimal"
-                                  value={it.quantidade_contada}
-                                  onChange={(e) => updateOfflineItemQty(it.key, e.target.value)}
-                                  style={{ ...inputStyle, padding: '6px 8px', fontSize: 12 }}
-                                  placeholder="—"
-                                />
-                              </label>
+                              <div
+                                style={{
+                                  marginTop: 4,
+                                  display: 'grid',
+                                  gap: 4,
+                                  gridTemplateColumns: showChecklistColumn('unidade') ? 'minmax(0, 1.2fr) minmax(0, 0.8fr)' : '1fr',
+                                }}
+                              >
+                                <label style={{ ...labelStyle, gap: 2 }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                    <span>Quantidade</span>
+                                    {checklistSavedFlashKey === it.key ? (
+                                      <span style={{ fontSize: 10, color: '#0a0', fontWeight: 700 }}>Salvo</span>
+                                    ) : null}
+                                  </div>
+                                  <input
+                                    type="text"
+                                    inputMode="decimal"
+                                    value={it.quantidade_contada}
+                                    onChange={(e) => updateOfflineItemQty(it.key, e.target.value)}
+                                    style={{ ...inputStyle, padding: '4px 6px', fontSize: 10 }}
+                                    placeholder="—"
+                                  />
+                                </label>
+                                {showChecklistColumn('unidade') ? (
+                                  <label style={{ ...labelStyle, gap: 2 }}>
+                                    <span>Unidade</span>
+                                    <input
+                                      type="text"
+                                      value={it.unidade_medida ?? ''}
+                                      onChange={(e) =>
+                                        updateOfflineItemFields(it.key, {
+                                          unidade_medida: e.target.value.trim() === '' ? null : e.target.value,
+                                        })
+                                      }
+                                      style={{ ...inputStyle, padding: '4px 6px', fontSize: 10 }}
+                                      placeholder="—"
+                                    />
+                                  </label>
+                                ) : null}
+                              </div>
 
-                              {showChecklistColumn('unidade') ||
-                              showChecklistColumn('data_fabricacao') ||
+                              {showChecklistColumn('data_fabricacao') ||
                               showChecklistColumn('data_validade') ||
                               showChecklistColumn('lote') ||
                               showChecklistColumn('up') ||
@@ -3970,22 +3994,6 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                     gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
                                   }}
                                 >
-                                  {showChecklistColumn('unidade') ? (
-                                    <label style={{ ...labelStyle, gap: 4 }}>
-                                      <span>Unidade de medida</span>
-                                      <input
-                                        type="text"
-                                        value={it.unidade_medida ?? ''}
-                                        onChange={(e) =>
-                                          updateOfflineItemFields(it.key, {
-                                            unidade_medida: e.target.value.trim() === '' ? null : e.target.value,
-                                          })
-                                        }
-                                        style={{ ...inputStyle, padding: '6px 8px', fontSize: 12 }}
-                                        placeholder="—"
-                                      />
-                                    </label>
-                                  ) : null}
                                   {showChecklistColumn('data_fabricacao') ? (
                                     <label style={{ ...labelStyle, gap: 4 }}>
                                       <span>Data de fabricação</span>
