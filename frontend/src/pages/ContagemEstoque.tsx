@@ -3553,7 +3553,9 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                 disabled={!!offlineSession && offlineSession.status === 'aberta'}
               >
                 <option value="todos">Todos os Produtos (cadastro)</option>
-                <option value="armazem">Armazém (dividida por grupo 1–{INVENTARIO_ARMAZEM_NUM_GRUPOS})</option>
+                {!inventario ? (
+                  <option value="armazem">Armazém (dividida por grupo 1–{INVENTARIO_ARMAZEM_NUM_GRUPOS})</option>
+                ) : null}
                 {inventario ? (
                   <option value="planilha">Inventário — formato planilha (CAMARA/RUA, abas)</option>
                 ) : null}
@@ -3806,7 +3808,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                   <>
                     <div
                       data-checklist-nav-root
-                      style={{ marginTop: 8, display: 'grid', gap: 8 }}
+                      style={{ marginTop: 6, display: 'grid', gap: 6 }}
                       onKeyDown={handleChecklistFieldNavKeyDown}
                     >
                     {checklistDisplayPageItems.map((item) => {
@@ -3840,8 +3842,8 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                           key={it.key}
                           style={{
                             border: datasOrdemInvalida ? '1px solid #c62828' : '1px solid var(--border, #ccc)',
-                            borderRadius: 10,
-                            padding: 8,
+                            borderRadius: 8,
+                            padding: 6,
                             background: datasOrdemInvalida ? 'rgba(198, 40, 40, 0.12)' : undefined,
                           }}
                         >
@@ -3909,22 +3911,22 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                           ) : (
                             <>
                               {showChecklistColumn('conferente') ? (
-                                <div style={{ fontSize: 11, color: 'var(--text, #666)', marginBottom: 6 }}>
+                                <div style={{ fontSize: 10, color: 'var(--text, #666)', marginBottom: 4 }}>
                                   Conferente: <strong style={{ fontWeight: 600 }}>{conferenteNomeSelecionado}</strong>
                                 </div>
                               ) : null}
-                              <div style={{ fontSize: 11, color: 'var(--text, #666)', marginBottom: 4 }}>
+                              <div style={{ fontSize: 10, color: 'var(--text, #666)', marginBottom: 2 }}>
                                 Status: <strong style={{ color: pend ? '#a60' : '#0a0' }}>{pend ? 'Pendente' : 'Contado'}</strong>
                               </div>
-                              <div style={{ fontSize: 12, fontWeight: 800, fontFamily: 'monospace' }}>
+                              <div style={{ fontSize: 11, fontWeight: 800, fontFamily: 'monospace' }}>
                                 {it.codigo_interno}
                                 {it.inventario_repeticao ? (
-                                  <span style={{ marginLeft: 8, fontSize: 11, color: '#0a7', fontWeight: 700 }}>
+                                  <span style={{ marginLeft: 6, fontSize: 10, color: '#0a7', fontWeight: 700 }}>
                                     ({it.inventario_repeticao}ª contagem)
                                   </span>
                                 ) : null}
                               </div>
-                              <div style={{ fontSize: 12, whiteSpace: 'normal', color: 'var(--text, #111)', marginTop: 2 }}>{it.descricao}</div>
+                              <div style={{ fontSize: 11, whiteSpace: 'normal', color: 'var(--text, #111)', marginTop: 1 }}>{it.descricao}</div>
                               {showChecklistColumn('ean') || showChecklistColumn('dun') ? (
                                 <div style={{ marginTop: 6, fontSize: 11, color: 'var(--text, #666)', display: 'grid', gap: 2 }}>
                                   {showChecklistColumn('ean') ? <div>EAN: {it.ean ?? '—'}</div> : null}
@@ -3937,7 +3939,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                 </div>
                               ) : null}
 
-                              <label style={{ ...labelStyle, marginTop: 8, gap: 4 }}>
+                              <label style={{ ...labelStyle, marginTop: 6, gap: 3 }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                                   <span>Quantidade contada</span>
                                   {checklistSavedFlashKey === it.key ? (
@@ -3949,7 +3951,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                   inputMode="decimal"
                                   value={it.quantidade_contada}
                                   onChange={(e) => updateOfflineItemQty(it.key, e.target.value)}
-                                  style={{ ...inputStyle, padding: '8px 10px', fontSize: 13 }}
+                                  style={{ ...inputStyle, padding: '6px 8px', fontSize: 12 }}
                                   placeholder="—"
                                 />
                               </label>
@@ -3962,9 +3964,9 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                               showChecklistColumn('observacao') ? (
                                 <div
                                   style={{
-                                    marginTop: 8,
+                                    marginTop: 6,
                                     display: 'grid',
-                                    gap: 8,
+                                    gap: 6,
                                     gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
                                   }}
                                 >
@@ -3979,7 +3981,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                             unidade_medida: e.target.value.trim() === '' ? null : e.target.value,
                                           })
                                         }
-                                        style={{ ...inputStyle, padding: '8px 10px', fontSize: 13 }}
+                                        style={{ ...inputStyle, padding: '6px 8px', fontSize: 12 }}
                                         placeholder="—"
                                       />
                                     </label>
@@ -3991,7 +3993,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                         type="date"
                                         value={it.data_fabricacao ?? ''}
                                         onChange={(e) => updateOfflineItemFields(it.key, { data_fabricacao: e.target.value })}
-                                        style={{ ...inputStyle, padding: '8px 10px', fontSize: 13 }}
+                                        style={{ ...inputStyle, padding: '6px 8px', fontSize: 12 }}
                                       />
                                     </label>
                                   ) : null}
@@ -4002,7 +4004,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                         type="date"
                                         value={it.data_validade ?? ''}
                                         onChange={(e) => updateOfflineItemFields(it.key, { data_validade: e.target.value })}
-                                        style={{ ...inputStyle, padding: '8px 10px', fontSize: 13 }}
+                                        style={{ ...inputStyle, padding: '6px 8px', fontSize: 12 }}
                                       />
                                     </label>
                                   ) : null}
@@ -4013,7 +4015,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                         type="text"
                                         value={it.lote ?? ''}
                                         onChange={(e) => updateOfflineItemFields(it.key, { lote: e.target.value })}
-                                        style={{ ...inputStyle, padding: '8px 10px', fontSize: 13 }}
+                                        style={{ ...inputStyle, padding: '6px 8px', fontSize: 12 }}
                                         placeholder="—"
                                       />
                                     </label>
@@ -4026,7 +4028,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                         inputMode="decimal"
                                         value={it.up_quantidade ?? ''}
                                         onChange={(e) => updateOfflineItemFields(it.key, { up_quantidade: e.target.value })}
-                                        style={{ ...inputStyle, padding: '8px 10px', fontSize: 13 }}
+                                        style={{ ...inputStyle, padding: '6px 8px', fontSize: 12 }}
                                         placeholder="—"
                                       />
                                     </label>
@@ -4038,7 +4040,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                         type="text"
                                         value={it.observacao ?? ''}
                                         onChange={(e) => updateOfflineItemFields(it.key, { observacao: e.target.value })}
-                                        style={{ ...inputStyle, padding: '8px 10px', fontSize: 13 }}
+                                        style={{ ...inputStyle, padding: '6px 8px', fontSize: 12 }}
                                         placeholder="—"
                                       />
                                     </label>
@@ -4046,17 +4048,17 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                 </div>
                               ) : null}
 
-                              <div style={{ marginTop: 8, display: 'grid', gap: 8, gridTemplateColumns: 'repeat(3, minmax(0, 1fr))' }}>
+                              <div style={{ marginTop: 6, display: 'grid', gap: 6, gridTemplateColumns: 'repeat(3, minmax(0, 1fr))' }}>
                                 <button
                                   type="button"
-                                  style={{ ...buttonStyle, background: '#2a4d7a', fontSize: 12, padding: '8px 8px' }}
+                                  style={{ ...buttonStyle, background: '#2a4d7a', fontSize: 11, padding: '6px 6px' }}
                                   onClick={() => openChecklistEdit(it)}
                                 >
                                   Editar
                                 </button>
                                 <button
                                   type="button"
-                                  style={{ ...buttonStyle, background: '#666', fontSize: 12, padding: '8px 8px' }}
+                                  style={{ ...buttonStyle, background: '#666', fontSize: 11, padding: '6px 6px' }}
                                   onClick={() => handleLimparQuantidadeOffline(it.key)}
                                 >
                                   Limpar
@@ -4066,8 +4068,8 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                   style={{
                                     ...buttonStyle,
                                     background: hasPhoto ? '#0b5' : '#444',
-                                    fontSize: 12,
-                                    padding: '8px 8px',
+                                    fontSize: 11,
+                                    padding: '6px 6px',
                                   }}
                                   onClick={() => openPhotoModalForCodigo(it.codigo_interno)}
                                   title={hasPhoto ? 'Ver/atualizar foto' : 'Anexar foto'}
@@ -4081,10 +4083,10 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                   style={{
                                     ...buttonStyle,
                                     background: '#a85a00',
-                                    fontSize: 12,
-                                    padding: '8px 10px',
+                                    fontSize: 11,
+                                    padding: '6px 8px',
                                     width: '100%',
-                                    marginTop: 8,
+                                    marginTop: 6,
                                     boxSizing: 'border-box',
                                   }}
                                   onClick={() => removePhotoFromChecklistItem(it)}
