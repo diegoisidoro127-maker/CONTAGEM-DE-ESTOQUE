@@ -40,6 +40,7 @@ export default function App() {
     <div>
       {view === 'home' ? (
         <div
+          className="home-animated-wrap"
           style={{
             minHeight: '100svh',
             display: 'flex',
@@ -52,11 +53,15 @@ export default function App() {
           }}
         >
           <img
+            className="home-animated-logo"
             src={logoUltrapao}
             alt="Ultra Pão Alimentos"
             style={{ width: 120, height: 'auto', borderRadius: 10, marginBottom: 16 }}
           />
-          <h1 style={{ margin: '0 0 12px', fontSize: 'clamp(22px, 5vw, 28px)', color: '#ffd95c' }}>
+          <h1
+            className="home-animated-title"
+            style={{ margin: '0 0 12px', fontSize: 'clamp(22px, 5vw, 28px)', color: '#ffd95c' }}
+          >
             Painel de Contagem de Estoque
           </h1>
           <p
