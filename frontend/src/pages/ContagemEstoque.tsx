@@ -1986,6 +1986,26 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     const itemsSnapshot = offlineSession.items.map((i) => ({ ...i }))
     const pend = countPendingForSession(offlineSession)
     if (pend > 0) {
+      if (!inventario) {
+        const nowIso = new Date().toISOString()
+        const nextSession: OfflineSession = {
+          ...offlineSession,
+          updatedAt: nowIso,
+          items: offlineSession.items.map((it) => {
+            const codigo = String(it.codigo_interno ?? '').trim()
+            const qtd = String(it.quantidade_contada ?? '').trim()
+            if (!codigo || qtd !== '') return it
+            return { ...it, quantidade_contada: '0' }
+          }),
+        }
+        setOfflineSession(nextSession)
+        saveOfflineSession(nextSession, sessionMode)
+        setSaveSuccess(
+          `Contagem diária: ${pend} item(ns) pendente(s) foram preenchidos automaticamente com 0 para finalização.`,
+        )
+        await finalizeInternal(nextSession)
+        return
+      }
       const missing = itemsSnapshot.filter((i) => {
         if (offlineSession.listMode === 'planilha') {
           const c = String(i.codigo_interno ?? '').trim()
@@ -2002,20 +2022,21 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     await finalizeInternal()
   }
 
-  async function finalizeInternal() {
-    if (!offlineSession || offlineSession.status !== 'aberta') {
+  async function finalizeInternal(sessionOverride?: OfflineSession) {
+    const session = sessionOverride ?? offlineSession
+    if (!session || session.status !== 'aberta') {
       setChecklistError('Sessão inválida ou já finalizada. Carregue a lista de produtos de novo.')
       return
     }
-    if (!conferenteId || offlineSession.conferente_id !== conferenteId) {
+    if (!conferenteId || session.conferente_id !== conferenteId) {
       setChecklistError('Selecione o mesmo conferente da sessão (ou recarregue a lista).')
       return
     }
 
     setFinalizing(true)
     try {
-      const ymd = offlineSession.data_contagem_ymd
-      let itemsSnapshot = offlineSession.items.map((i) => ({ ...i }))
+      const ymd = session.data_contagem_ymd
+      let itemsSnapshot = session.items.map((i) => ({ ...i }))
 
       itemsSnapshot = itemsSnapshot.filter((it) => String(it.codigo_interno ?? '').trim() !== '')
       /** Só grava linhas com quantidade digitada; vazio não vira 0 e não é enviado. */
@@ -2076,7 +2097,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         const rowPayload: Record<string, unknown> = {
           data_contagem: ymd,
           data_hora_contagem: dataHoraIso,
-          conferente_id: offlineSession.conferente_id,
+          conferente_id: session.conferente_id,
           produto_id: produtoId,
           codigo_interno: String(catalog?.codigo ?? it.codigo_interno).trim(),
           descricao: it.descricao.trim(),
@@ -2101,7 +2122,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
           rowPayload.origem = 'inventario'
           rowPayload.inventario_repeticao = it.inventario_repeticao ?? null
           rowPayload.inventario_numero_contagem = clampInventarioNumeroContagem(
-            offlineSession.inventario_numero_contagem ?? 1,
+            session.inventario_numero_contagem ?? 1,
           )
         }
         rows.push(rowPayload)
@@ -2114,15 +2135,15 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
        * gravaria POS/Nível como se fossem as primeiras da aba — divergente da lista.
        */
       const itemsParaLayoutPlanilha =
-        inventario && isListModeArmazem(offlineSession.listMode)
-          ? offlineSession.items.map((i) => ({ ...i }))
+        inventario && isListModeArmazem(session.listMode)
+          ? session.items.map((i) => ({ ...i }))
           : itemsSnapshot
 
       const planilhaLayout = inventario
         ? buildPlanilhaLayoutPorItens(
             itemsParaLayoutPlanilha,
             getArmazemContagemForItem,
-            clampInventarioNumeroContagem(offlineSession.inventario_numero_contagem ?? 1),
+            clampInventarioNumeroContagem(session.inventario_numero_contagem ?? 1),
           )
         : null
 
@@ -2172,7 +2193,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
             throw new Error('Layout da planilha ausente para um item da sessão.')
           }
           return {
-            conferente_id: offlineSession.conferente_id,
+            conferente_id: session.conferente_id,
             data_inventario: ymd,
             grupo_armazem: layout.grupo_armazem,
             rua: layout.rua,
