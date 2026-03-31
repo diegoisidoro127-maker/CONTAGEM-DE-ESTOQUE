@@ -1,4 +1,4 @@
-var WEBHOOK_VERSION = 'no-auto-create-v3-clear-empty'
+var WEBHOOK_VERSION = 'no-auto-create-v3-clear-empty-batch'
 
 function onOpen() {
   try {
@@ -345,6 +345,14 @@ function doPostLocked(data) {
   var targetYmd = fromClient || fromIso
   if (fromClient && fromIso && fromClient !== fromIso) {
     targetYmd = fromClient
+  }
+  if (!targetYmd && Array.isArray(data.records) && data.records.length > 0) {
+    var fr0 = data.records[0]
+    if (fr0) {
+      var frIso0 = fr0.data_hora_contagem ? instantIsoToYmdInTz(fr0.data_hora_contagem, tz) : ''
+      var frClient0 = incomingStringToYMD(String(fr0.data_contagem || ''))
+      targetYmd = frClient0 || frIso0
+    }
   }
   if (!targetYmd) {
     return ContentService.createTextOutput(JSON.stringify({ ok: false, error: 'data_hora_contagem/data_contagem inválidos' })).setMimeType(

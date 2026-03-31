@@ -42,6 +42,15 @@ function quantidadeAsText(v: number | null | undefined): string {
   return String(n)
 }
 
+/** Mesmo dia civil do Postgres (coluna `date`) vira sempre `yyyy-mm-dd` — evita dois grupos/POSTs para o mesmo dia. */
+function normalizeDataContagemToYmd(v: unknown): string {
+  if (v == null || v === '') return ''
+  const s = String(v).trim()
+  const m = s.match(/^(\d{4}-\d{2}-\d{2})/)
+  if (m) return m[1]
+  return ''
+}
+
 function incomingRequestUrl(req: Request): URL {
   const raw = req.url
   if (raw.startsWith('http://') || raw.startsWith('https://')) return new URL(raw)
@@ -198,29 +207,34 @@ Deno.serve(async (req) => {
     claimedRows.push(claimedRow as unknown as OutboxRow)
   }
 
-  const groups = new Map<string, OutboxRow[]>()
+  // Uma chamada por aba com todos os itens reivindicados: menos corridas no Apps Script e uma única passagem
+  // de consolidação antes de gravar (mesmo dia / vários conferentes → mesma coluna no Sheet).
+  const byAba = new Map<string, OutboxRow[]>()
   for (const row of claimedRows) {
-    const key = `${row.aba ?? 'CONTAGEM DE ESTOQUE FISICA'}|${row.data_contagem}`
-    const arr = groups.get(key) ?? []
+    const aba = row.aba ?? 'CONTAGEM DE ESTOQUE FISICA'
+    const arr = byAba.get(aba) ?? []
     arr.push(row)
-    groups.set(key, arr)
+    byAba.set(aba, arr)
   }
 
-  for (const [, groupRows] of groups) {
-    const one = groupRows[0]
-    const body = {
-      aba: one.aba ?? 'CONTAGEM DE ESTOQUE FISICA',
-      data_contagem: one.data_contagem,
-      records: groupRows.map((r) => ({
+  for (const [, abaRows] of byAba) {
+    const records = abaRows.map((r) => {
+      const ymd = normalizeDataContagemToYmd(r.data_contagem)
+      return {
         tipo: r.event_type,
-        data_contagem: r.data_contagem,
+        data_contagem: ymd,
         codigo_interno: r.codigo_interno,
         descricao: r.descricao,
-        // Campo legado (numérico) mantido por compatibilidade.
         quantidade_contada: r.event_type === 'upsert' ? (r.quantidade_contada ?? 0) : undefined,
-        // Campo textual para preservar "0" de forma inequívoca no receptor.
         quantidade_contada_text: r.event_type === 'upsert' ? quantidadeAsText(r.quantidade_contada) : undefined,
-      })),
+      }
+    })
+
+    const firstYmd = normalizeDataContagemToYmd(abaRows[0]?.data_contagem) || records[0]?.data_contagem || ''
+    const body = {
+      aba: abaRows[0]?.aba ?? 'CONTAGEM DE ESTOQUE FISICA',
+      data_contagem: firstYmd,
+      records,
     }
 
     try {
@@ -231,15 +245,14 @@ Deno.serve(async (req) => {
       })
       if (!res.ok) throw new Error(`Webhook falhou: ${res.status} ${res.statusText}`)
 
-      const ids = groupRows.map((r) => r.id)
+      const ids = abaRows.map((r) => r.id)
       okCount += ids.length
       const { error: deleteErr } = await supabase.from('sheet_outbox').delete().in('id', ids)
       if (deleteErr) throw deleteErr
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-      const ids = groupRows.map((r) => r.id)
-      failedCount += ids.length
-      for (const r of groupRows) {
+      failedCount += abaRows.length
+      for (const r of abaRows) {
         const finalStatus = (r.attempts ?? 0) + 1 >= maxAttempts ? 'failed' : 'pending'
         await supabase
           .from('sheet_outbox')
