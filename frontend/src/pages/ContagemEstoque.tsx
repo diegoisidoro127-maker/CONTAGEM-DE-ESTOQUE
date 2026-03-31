@@ -1584,6 +1584,12 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     setTimeout(() => {
       void kickOutboxSync()
     }, 5000)
+    setTimeout(() => {
+      void kickOutboxSync()
+    }, 12000)
+    setTimeout(() => {
+      void kickOutboxSync()
+    }, 30000)
   }
 
   async function fetchListaChecklistFromDb(): Promise<Array<{ codigo_interno: string; descricao: string }>> {

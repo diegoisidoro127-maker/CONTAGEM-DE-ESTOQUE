@@ -28,7 +28,8 @@ const webhookUrl = Deno.env.get('SHEET_WEBHOOK_URL')!
 
 const supabase = createClient(supabaseUrl, serviceRoleKey)
 
-const batchSize = Number(Deno.env.get('OUTBOX_BATCH_SIZE') ?? '20')
+// Lotes maiores = menos voltas edge↔webhook; o Apps Script agora consolida a planilha 1× por lote (não por linha).
+const batchSize = Number(Deno.env.get('OUTBOX_BATCH_SIZE') ?? '80')
 const maxAttempts = Number(Deno.env.get('OUTBOX_MAX_ATTEMPTS') ?? '5')
 
 /**

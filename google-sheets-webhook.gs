@@ -1,4 +1,4 @@
-var WEBHOOK_VERSION = 'no-auto-create-v3-clear-empty-batch'
+var WEBHOOK_VERSION = 'no-auto-create-v3-clear-empty-batch-fast'
 
 function onOpen() {
   try {
@@ -914,8 +914,8 @@ function doPostLocked(data) {
   }
 
   function processOne(rec) {
-    // Blindagem máxima: consolida SEMPRE antes de processar cada input.
-    consolidateAllDateColumnsCurrentSheet()
+    // Consolidação completa roda 1× antes do lote e 1× no fim — não aqui por registro
+    // (evita timeout do Apps Script e fila “não sobe” quando há muitos itens no POST).
 
     var thisTipo = String(rec.tipo || tipo || 'upsert')
     var thisCodigo = String(rec.codigo_interno || incomingCodigo || '').trim().toLowerCase()
@@ -984,6 +984,7 @@ function doPostLocked(data) {
 
   if (Array.isArray(data.records) && data.records.length > 0) {
     refreshDateIndexFromHeader()
+    consolidateAllDateColumnsCurrentSheet()
     for (var k = 0; k < data.records.length; k++) {
       processOne(data.records[k] || {})
     }
@@ -995,6 +996,7 @@ function doPostLocked(data) {
   }
 
   refreshDateIndexFromHeader()
+  consolidateAllDateColumnsCurrentSheet()
   processOne(data)
   // Garantia final no mesmo request: sai sempre consolidado.
   consolidateAllDateColumnsCurrentSheet()
