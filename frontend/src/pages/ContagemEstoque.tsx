@@ -2280,7 +2280,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
           ? `Inventário do dia ${ymd} finalizado: ${rows.length} novo(s) registro(s) em contagens_estoque (acumula com contagens anteriores do mesmo dia).${
               planilhaGravada ? ` ${rows.length} linha(s) em inventario_planilha_linhas.` : ''
             }${planilhaAviso ?? ''}${inventarioDbCompatMsg}`
-          : `Contagem do dia ${ymd} finalizada: ${rows.length} novo(s) registro(s) no banco (acumula com finalizações anteriores do mesmo dia).`,
+          : `Contagem do dia ${ymd} finalizada: ${rows.length} novo(s) registro(s) no banco (acumula com finalizações anteriores do mesmo dia). A sincronização com a planilha Google foi pedida em seguida — aguarde alguns segundos e confira a aba.`,
       )
       setFinalizeProgress(
         planilhaGravada
@@ -2289,6 +2289,8 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       )
       setPreviewConsultaDiaYmd(ymd)
       await loadPreview(ymd)
+      // Dispara a Edge Function que drena `sheet_outbox` → Google Sheets (o trigger só enfileira).
+      kickOutboxSyncNowWithRetry()
     } catch (e: any) {
       setSaveError(`Erro ao finalizar: ${e?.message ? String(e.message) : 'verifique permissões (RLS) e tabelas.'}`)
     } finally {
