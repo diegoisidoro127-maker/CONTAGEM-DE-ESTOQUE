@@ -3364,6 +3364,10 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
   const visibleChecklistColCount = Math.max(1, visibleChecklistColumns.length)
   const showChecklistColumn = (id: string) => checklistVisibleCols[id] !== false
 
+  // "Armazém" foi descontinuado no seletor; mantém compatibilidade com estado salvo antigo.
+  const checklistListModeUi: ChecklistListMode =
+    checklistListMode === 'armazem' ? 'todos' : checklistListMode
+
   const carregarListaDisabled = checklistLoading || finalizing || !conferenteId
   const finalizarListaDisabled =
     finalizing ||
@@ -3547,13 +3551,12 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
             <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13, minWidth: 260 }}>
               Tipo de lista
               <select
-                value={checklistListMode}
+                value={checklistListModeUi}
                 onChange={(e) => setChecklistListMode(e.target.value as ChecklistListMode)}
                 style={inputStyle}
                 disabled={!!offlineSession && offlineSession.status === 'aberta'}
               >
                 <option value="todos">Todos os Produtos (cadastro)</option>
-                <option value="armazem">Armazém (dividida por grupo 1–{INVENTARIO_ARMAZEM_NUM_GRUPOS})</option>
                 {inventario ? (
                   <option value="planilha">Inventário — formato planilha (CAMARA/RUA, abas)</option>
                 ) : null}
@@ -5242,6 +5245,12 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
           >
             {saving ? 'Gravando…' : 'Salvar na lista (offline)'}
           </button>
+          {!canPressSalvarLista && !saving ? (
+            <div style={{ fontSize: 12, color: '#ffcc80', maxWidth: 560 }}>
+              Para salvar, selecione um <strong>conferente</strong> e clique em{' '}
+              <strong>Carregar lista de produtos</strong>.
+            </div>
+          ) : null}
           {saveError ? <div style={{ color: '#b00020', maxWidth: 640 }}>{saveError}</div> : null}
           {saveSuccess ? <div style={{ color: '#0f7a0f' }}>{saveSuccess}</div> : null}
         </div>
