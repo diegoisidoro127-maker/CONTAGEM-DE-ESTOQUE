@@ -4194,7 +4194,13 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                   </section>
                 ) : (
                   <div style={{ overflowX: 'auto', marginTop: 10 }}>
-                    <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 1840 }}>
+                    <table
+                      style={{
+                        borderCollapse: 'collapse',
+                        width: 'max-content',
+                        minWidth: Math.max(360, visibleChecklistColCount * 90),
+                      }}
+                    >
                       <thead>
                         <tr>
                           {showChecklistColumn('conferente') ? <th style={thStyle}>Conferente</th> : null}
