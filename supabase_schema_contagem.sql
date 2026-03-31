@@ -463,33 +463,55 @@ declare
   v_event text;
   v_payload jsonb;
 begin
-  -- Em DELETE, NEW é NULL; então não podemos acessar new.*
+  -- Inventário não enfileira Google Sheet (somente contagem diária).
+  -- Critério alinhado ao app: origem = inventario OU metadados de rodada/repetição.
   if (tg_op = 'DELETE') then
+    if (
+      coalesce(old.origem, '') = 'inventario'
+      or old.inventario_repeticao is not null
+      or old.inventario_numero_contagem is not null
+    ) then
+      return old;
+    end if;
     v_codigo := old.codigo_interno;
     v_desc := old.descricao;
     v_data_contagem := timezone('America/Sao_Paulo', old.data_hora_contagem)::date;
   else
+    if (
+      coalesce(new.origem, '') = 'inventario'
+      or new.inventario_repeticao is not null
+      or new.inventario_numero_contagem is not null
+    ) then
+      return new;
+    end if;
     v_codigo := new.codigo_interno;
     v_desc := new.descricao;
     v_data_contagem := timezone('America/Sao_Paulo', new.data_hora_contagem)::date;
   end if;
 
-  -- Soma atual para garantir que DELETE (ex.: deletar duplicados) não “limpa” a célula
-  -- quando ainda existe outro registro para o mesmo (codigo/descricao/dia).
+  -- Soma atual só de contagem diária (garante que DELETE de inventário não altere o Sheet).
   select sum(c.quantidade_up)::numeric(18,3)
     into v_sum
     from public.contagens_estoque c
    where c.codigo_interno = v_codigo
      and c.descricao = v_desc
-     and timezone('America/Sao_Paulo', c.data_hora_contagem)::date = v_data_contagem;
+     and timezone('America/Sao_Paulo', c.data_hora_contagem)::date = v_data_contagem
+     and coalesce(c.origem, '') <> 'inventario'
+     and c.inventario_repeticao is null
+     and c.inventario_numero_contagem is null;
 
-  v_event := case when v_sum is null then 'clear_qty' else 'upsert' end;
+  -- Soma 0 ou sem linhas: não grava "0" na planilha — limpa a célula (igual linhas em branco).
+  v_event := case
+    when v_sum is null then 'clear_qty'
+    when v_sum = 0 then 'clear_qty'
+    else 'upsert'
+  end;
 
   v_payload := jsonb_build_object(
     'codigo_interno', v_codigo,
     'descricao', v_desc,
     'data_contagem', v_data_contagem,
-    'quantidade_contada', v_sum
+    'quantidade_contada', case when v_event = 'upsert' then v_sum else null end
   );
 
   insert into public.sheet_outbox (
@@ -508,7 +530,7 @@ begin
     v_desc,
     v_data_contagem,
     v_event,
-    v_sum,
+    case when v_event = 'upsert' then v_sum else null end,
     v_payload,
     'pending'
   )
