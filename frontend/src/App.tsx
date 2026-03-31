@@ -29,6 +29,13 @@ export default function App() {
     }
   }, [view])
 
+  // Na Base de dados, mostra só um atalho (último modo usado: contagem ou inventário).
+  const preferredChecklistView: 'contagem' | 'inventario' = readLastListWasInventario()
+    ? 'inventario'
+    : 'contagem'
+  const showContagemBtn = view === 'baseDados' ? preferredChecklistView === 'contagem' : view !== 'inventario'
+  const showInventarioBtn = view === 'baseDados' ? preferredChecklistView === 'inventario' : view !== 'contagem'
+
   return (
     <div>
       {view === 'home' ? (
@@ -118,7 +125,7 @@ export default function App() {
               <NavIcon emoji="🏠" anim="pulse" />
               Início
             </button>
-            {view !== 'inventario' ? (
+            {showContagemBtn ? (
               <button
                 type="button"
                 onClick={() => setView('contagem')}
@@ -128,7 +135,7 @@ export default function App() {
                 Contagem
               </button>
             ) : null}
-            {view !== 'contagem' ? (
+            {showInventarioBtn ? (
               <button
                 type="button"
                 onClick={() => setView('inventario')}

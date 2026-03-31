@@ -2913,7 +2913,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     }
 
     return (
-      <div style={{ overflowX: 'auto', marginTop: 16 }}>
+      <div style={{ overflowX: 'auto', marginTop: 10 }}>
         {previewRowError ? <div style={{ color: '#b00020', marginBottom: 8 }}>{previewRowError}</div> : null}
         {previewFiltersBar}
         {previewPagination}
@@ -2991,7 +2991,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                           step="0.001"
                           value={editingPreviewQuantidade}
                           onChange={(e) => setEditingPreviewQuantidade(e.target.value)}
-                          style={{ padding: '8px 10px', border: '1px solid #ccc', borderRadius: 8, width: 120 }}
+                          style={{ padding: '6px 8px', border: '1px solid #ccc', borderRadius: 8, width: 104 }}
                         />
                       ) : (
                         r.quantidade_up
@@ -3024,7 +3024,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                   ) : null}
                   {prevCol('acoes') ? (
                     <td style={tdStyle}>
-                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                         {editingPreviewId === r.id ? (
                           <>
                             <button
@@ -3548,6 +3548,9 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
               disabled={carregarListaDisabled}
               onClick={() => void handleCarregarListaPlanilha()}
             >
+              <span className="app-nav-icon app-nav-icon--bounce" aria-hidden>
+                📥
+              </span>
               {checklistLoading ? 'Carregando lista…' : 'Carregar lista de produtos'}
             </button>
             <button
@@ -3557,6 +3560,9 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
               title="Recarrega a tabela Todos os Produtos e reaplica descrição/unidade nas linhas da planilha já preenchidas"
               onClick={() => void handleAtualizarCadastroProdutos()}
             >
+              <span className="app-nav-icon app-nav-icon--pulse" aria-hidden>
+                🔄
+              </span>
               {productOptionsLoading ? 'Atualizando cadastro…' : 'Atualizar cadastro'}
             </button>
             <button
@@ -3565,6 +3571,9 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
               disabled={finalizing}
               onClick={() => handleDescartarSessaoLocal()}
             >
+              <span className="app-nav-icon app-nav-icon--float" aria-hidden>
+                🧹
+              </span>
               Limpar sessão local
             </button>
             <button
@@ -3576,6 +3585,9 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
               disabled={finalizarListaDisabled}
               onClick={() => void handleFinalizarContagemDiaria()}
             >
+              <span className="app-nav-icon app-nav-icon--glow" aria-hidden>
+                {finalizarListaDisabled ? '🔒' : checklistPending > 0 ? '⏳' : '✅'}
+              </span>
               {finalizing ? 'Finalizando…' : inventario ? 'Finalizar inventário' : 'Finalizar contagem diária'}
             </button>
           </div>
@@ -5550,7 +5562,15 @@ const buttonStyle: React.CSSProperties = {
 }
 
 /** Carregar / Atualizar / Limpar / Finalizar — Contagem diária e Inventário (mesmo `ContagemEstoque`). */
+const checklistBtnRowBase: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  gap: 8,
+}
+
 const checklistActionBtnCarregar: React.CSSProperties = {
+  ...checklistBtnRowBase,
   background: 'linear-gradient(180deg, #4f8eff 0%, #2f6fdf 100%)',
   border: '1px solid #7fb0ff',
   color: '#f4f9ff',
@@ -5558,6 +5578,7 @@ const checklistActionBtnCarregar: React.CSSProperties = {
 }
 
 const checklistActionBtnAtualizar: React.CSSProperties = {
+  ...checklistBtnRowBase,
   background: 'linear-gradient(180deg, #26c6da 0%, #00838f 100%)',
   border: '1px solid #80deea',
   color: '#001819',
@@ -5565,6 +5586,7 @@ const checklistActionBtnAtualizar: React.CSSProperties = {
 }
 
 const checklistActionBtnLimpar: React.CSSProperties = {
+  ...checklistBtnRowBase,
   background: 'linear-gradient(180deg, #ffb74d 0%, #ef6c00 100%)',
   border: '1px solid #ffcc80',
   color: '#1f1200',
@@ -5572,24 +5594,29 @@ const checklistActionBtnLimpar: React.CSSProperties = {
 }
 
 function checklistActionBtnFinalizar(disabled: boolean, pending: number): React.CSSProperties {
+  const base: React.CSSProperties = { ...checklistBtnRowBase }
   if (disabled) {
     return {
-      background: 'linear-gradient(180deg, #5a5a5a 0%, #3a3a3a 100%)',
-      border: '1px solid #757575',
-      color: '#e8e8e8',
-      fontWeight: 600,
-      opacity: 0.75,
+      ...base,
+      background: 'linear-gradient(180deg, #2f4a32 0%, #1e2b20 100%)',
+      border: '1px solid #4caf50',
+      color: '#c8e6c9',
+      fontWeight: 700,
+      opacity: 0.92,
+      cursor: 'not-allowed',
     }
   }
   if (pending > 0) {
     return {
-      background: 'linear-gradient(180deg, #b0bec5 0%, #78909c 100%)',
-      border: '1px solid #cfd8dc',
-      color: '#1a1a1a',
+      ...base,
+      background: 'linear-gradient(180deg, #ffcc80 0%, #fb8c00 100%)',
+      border: '1px solid #ffe0b2',
+      color: '#3e2723',
       fontWeight: 700,
     }
   }
   return {
+    ...base,
     background: 'linear-gradient(180deg, #66bb6a 0%, #2e7d32 100%)',
     border: '1px solid #a5d6a7',
     color: '#fff',
@@ -5600,18 +5627,20 @@ function checklistActionBtnFinalizar(disabled: boolean, pending: number): React.
 const thStyle: React.CSSProperties = {
   borderBottom: '1px solid #ddd',
   textAlign: 'left',
-  padding: 8,
+  padding: '6px 8px',
   fontWeight: 700,
-  fontSize: 13,
+  fontSize: 12,
   background: '#fafafa',
   whiteSpace: 'nowrap',
+  lineHeight: 1.25,
 }
 
 const tdStyle: React.CSSProperties = {
   borderBottom: '1px solid #eee',
-  padding: 8,
-  fontSize: 13,
+  padding: '6px 8px',
+  fontSize: 12,
   whiteSpace: 'nowrap',
+  lineHeight: 1.25,
 }
 
 const checklistQtdInputStyle: React.CSSProperties = {
