@@ -1,7 +1,10 @@
 import type { CSSProperties, Dispatch, SetStateAction } from 'react'
 import type { OfflineChecklistItem } from '../../lib/offlineContagemSession'
 import { isVencimentoAntesFabricacao } from '../../lib/contagemDatasValidacao'
-import { handleChecklistFieldNavKeyDown } from '../../lib/checklistFieldNavigation'
+import {
+  CHECKLIST_QTY_NAV_ATTR,
+  handleChecklistFieldNavKeyDown,
+} from '../../lib/checklistFieldNavigation'
 import { getInventarioRuaArmazem, inventarioArmazemPosNivel } from './inventarioPlanilhaModel'
 
 export type ChecklistEditDraft = {
@@ -227,6 +230,7 @@ export function InventarioPlanilhaTabela(props: InventarioPlanilhaTabelaProps) {
                               d ? { ...d, quantidade_contada: e.target.value } : d,
                             )
                           }
+                          {...{ [CHECKLIST_QTY_NAV_ATTR]: '' }}
                           style={inputPlanilha}
                           placeholder="—"
                           aria-label="Quantidade"
@@ -419,6 +423,7 @@ export function InventarioPlanilhaTabela(props: InventarioPlanilhaTabelaProps) {
                             inputMode="decimal"
                             value={qtdPlanilhaRodada(it)}
                             onChange={(e) => updateOfflineItemQty(it.key, e.target.value)}
+                            {...{ [CHECKLIST_QTY_NAV_ATTR]: '' }}
                             style={inputPlanilha}
                             placeholder="—"
                             aria-label={`Quantidade ${it.codigo_interno}${it.inventario_repeticao ? ` ${it.inventario_repeticao}ª` : ''}`}

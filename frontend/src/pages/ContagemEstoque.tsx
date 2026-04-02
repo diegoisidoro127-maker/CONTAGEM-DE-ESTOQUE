@@ -46,7 +46,10 @@ import {
   lookupProductOptionByCodigoGeneric as lookupProductOptionByCodigo,
   normalizeCodigoInternoCompareKey,
 } from '../lib/codigoInternoCompare'
-import { handleChecklistFieldNavKeyDown } from '../lib/checklistFieldNavigation'
+import {
+  CHECKLIST_QTY_NAV_ATTR,
+  handleChecklistFieldNavKeyDown,
+} from '../lib/checklistFieldNavigation'
 import {
   deleteInventarioPlanilhaLinhasForContagensIds,
   deleteInventarioPlanilhaLinhasForDay,
@@ -3001,6 +3004,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                             step="0.001"
                             value={editingPreviewQuantidade}
                             onChange={(e) => setEditingPreviewQuantidade(e.target.value)}
+                            {...{ [CHECKLIST_QTY_NAV_ATTR]: '' }}
                             style={{
                               marginLeft: 8,
                               padding: '8px 10px',
@@ -3204,6 +3208,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                           step="0.001"
                           value={editingPreviewQuantidade}
                           onChange={(e) => setEditingPreviewQuantidade(e.target.value)}
+                          {...{ [CHECKLIST_QTY_NAV_ATTR]: '' }}
                           style={{ padding: '6px 8px', border: '1px solid #ccc', borderRadius: 8, width: 104 }}
                         />
                       ) : (
@@ -4121,6 +4126,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                         d ? { ...d, quantidade_contada: e.target.value } : d,
                                       )
                                     }
+                                    {...{ [CHECKLIST_QTY_NAV_ATTR]: '' }}
                                     style={{ ...inputStyle, padding: '8px 10px', fontSize: 13 }}
                                     placeholder="—"
                                   />
@@ -4211,6 +4217,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                         : it.quantidade_contada
                                     }
                                     onChange={(e) => updateOfflineItemQty(it.key, e.target.value)}
+                                    {...{ [CHECKLIST_QTY_NAV_ATTR]: '' }}
                                     style={{ ...inputStyle, padding: '4px 6px', fontSize: 10 }}
                                     placeholder="—"
                                   />
@@ -4593,6 +4600,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                             d ? { ...d, quantidade_contada: e.target.value } : d,
                                           )
                                         }
+                                        {...{ [CHECKLIST_QTY_NAV_ATTR]: '' }}
                                         style={checklistQtdInputStyle}
                                         placeholder="—"
                                         aria-label="Quantidade"
@@ -4729,6 +4737,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                           inputMode="decimal"
                                           value={it.quantidade_contada}
                                           onChange={(e) => updateOfflineItemQty(it.key, e.target.value)}
+                                          {...{ [CHECKLIST_QTY_NAV_ATTR]: '' }}
                                           style={checklistQtdInputStyle}
                                           placeholder="—"
                                           aria-label={`Quantidade ${it.codigo_interno}${it.inventario_repeticao ? ` ${it.inventario_repeticao}ª` : ''}`}

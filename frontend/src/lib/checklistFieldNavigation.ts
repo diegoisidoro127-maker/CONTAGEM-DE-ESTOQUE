@@ -3,6 +3,9 @@ import type { KeyboardEvent } from 'react'
 /** Raiz da lista (tbody ou div que envolve os cards) para navegação com setas. */
 export const CHECKLIST_NAV_ROOT_ATTR = 'data-checklist-nav-root'
 
+/** Marca o input da coluna "Quantidade contada" para ↑/↓ saltarem só entre esses campos. */
+export const CHECKLIST_QTY_NAV_ATTR = 'data-checklist-qty-nav'
+
 function shouldLetArrowMoveCursorInsideField(el: HTMLElement, key: 'ArrowRight' | 'ArrowLeft'): boolean {
   if (el instanceof HTMLSelectElement) return false
   if (el instanceof HTMLInputElement) {
@@ -24,6 +27,29 @@ function shouldLetArrowMoveCursorInsideField(el: HTMLElement, key: 'ArrowRight' 
     return start > 0
   }
   return false
+}
+
+export function focusAdjacentQtyField(
+  container: HTMLElement | null,
+  current: HTMLElement,
+  direction: 1 | -1,
+): void {
+  if (!container) return
+  const sel = `input[${CHECKLIST_QTY_NAV_ATTR}]:not([disabled]):not([type="hidden"])`
+  const list = Array.from(container.querySelectorAll<HTMLInputElement>(sel)).filter((el) => {
+    const st = window.getComputedStyle(el)
+    return st.display !== 'none' && st.visibility !== 'hidden'
+  })
+  const idx = list.indexOf(current as HTMLInputElement)
+  if (idx < 0) return
+  const next = list[idx + direction]
+  if (!next) return
+  next.focus()
+  try {
+    next.select()
+  } catch {
+    /* ignore */
+  }
 }
 
 export function focusAdjacentChecklistField(
@@ -58,10 +84,23 @@ export function focusAdjacentChecklistField(
 }
 
 /**
+ * Setas ↑ / ↓ nos campos de quantidade (`data-checklist-qty-nav`): linha anterior/próxima.
  * Setas ← / → mudam o foco para o campo anterior/próximo (como Tab / Shift+Tab).
  * Em texto longo, a seta só “pula” quando o cursor está no início/fim para não atrapalhar a edição.
  */
 export function handleChecklistFieldNavKeyDown(e: KeyboardEvent<HTMLElement>): void {
+  if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+    const target = e.target as HTMLElement
+    if (!target.matches(`input[${CHECKLIST_QTY_NAV_ATTR}]`)) return
+    if (e.altKey || e.metaKey || e.ctrlKey) return
+    e.preventDefault()
+    const root =
+      (e.currentTarget as HTMLElement).closest(`[${CHECKLIST_NAV_ROOT_ATTR}]`) ??
+      (e.currentTarget as HTMLElement)
+    focusAdjacentQtyField(root, target, e.key === 'ArrowDown' ? 1 : -1)
+    return
+  }
+
   if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return
   const target = e.target as HTMLElement
   if (!target.matches('input, select, textarea')) return
