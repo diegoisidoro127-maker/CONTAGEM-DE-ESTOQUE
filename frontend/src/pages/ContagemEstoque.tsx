@@ -1675,21 +1675,33 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     }
   }
 
-  /** Reenvios após o primeiro await (fila/trigger podem atrasar milissegundos). */
+  /**
+   * Após gravar no Postgres, chama a Edge em rajada curta até processar a fila (ou erro).
+   * Se a 1ª resposta já tiver processed_ok / processed_failed, não espera de novo.
+   */
+  async function kickOutboxSyncImmediateBurst(): Promise<SheetOutboxKickResult> {
+    let last = await kickOutboxSync()
+    if (!last.ok) return last
+    if (last.processed_ok > 0 || last.processed_failed > 0) return last
+
+    for (let i = 0; i < 6; i++) {
+      await new Promise((r) => setTimeout(r, 40 + i * 45))
+      last = await kickOutboxSync()
+      if (!last.ok) break
+      if (last.processed_ok > 0 || last.processed_failed > 0) break
+    }
+    return last
+  }
+
+  /** Reenvios curtos caso ainda reste algo na fila (rede/Edge). */
   function scheduleOutboxKickRetries() {
     if (!enableOutboxKick) return
-    setTimeout(() => {
-      void kickOutboxSync()
-    }, 1500)
-    setTimeout(() => {
-      void kickOutboxSync()
-    }, 5000)
-    setTimeout(() => {
-      void kickOutboxSync()
-    }, 12000)
-    setTimeout(() => {
-      void kickOutboxSync()
-    }, 30000)
+    const delays = [200, 450, 900, 1800, 3500]
+    for (const ms of delays) {
+      setTimeout(() => {
+        void kickOutboxSync()
+      }, ms)
+    }
   }
 
   function kickOutboxSyncNowWithRetry() {
@@ -2396,7 +2408,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         )
       } else {
         setFinalizeProgress('Sincronizando com a planilha Google (fila Supabase)...')
-        const sheetSync = await kickOutboxSync()
+        const sheetSync = await kickOutboxSyncImmediateBurst()
         const confRow = conferentes.find((x) => x.id === session.conferente_id)
         const nomeConf =
           confRow?.nome != null && String(confRow.nome).trim() !== '' ? String(confRow.nome).trim() : undefined
