@@ -24,7 +24,8 @@ type OutboxRow = {
 
 const supabaseUrl = Deno.env.get('DB_URL') ?? Deno.env.get('SUPABASE_URL')!
 const serviceRoleKey = Deno.env.get('DB_SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-const webhookUrl = Deno.env.get('SHEET_WEBHOOK_URL')!
+/** URL do Web App (/exec); se vazia, a fila não pode ser drenada (erro explícito). */
+const webhookUrlRaw = (Deno.env.get('SHEET_WEBHOOK_URL') ?? '').trim()
 
 const supabase = createClient(supabaseUrl, serviceRoleKey)
 
@@ -73,52 +74,60 @@ function jsonWithCors(obj: unknown, status = 200) {
   })
 }
 
-/** Proxy checklist → Apps Script (doGet). Só consome req em GET ou POST JSON com action. */
-async function tryChecklistProxy(req: Request): Promise<Response | null> {
-  let action = ''
-  let ymd = ''
-  const paramsToForward = new URLSearchParams()
-
-  if (req.method === 'GET') {
-    let incoming: URL
-    try {
-      incoming = incomingRequestUrl(req)
-    } catch {
-      return jsonWithCors({ ok: false, error: 'URL da requisição inválida' }, 400)
-    }
-    action = incoming.searchParams.get('action') || ''
-    ymd = (incoming.searchParams.get('ymd') || '').trim()
-    incoming.searchParams.forEach((v, k) => paramsToForward.set(k, v))
-  } else if (req.method === 'POST') {
-    const ct = req.headers.get('content-type') || ''
-    if (!ct.includes('application/json')) return null
-    let body: Record<string, unknown>
-    try {
-      body = (await req.json()) as Record<string, unknown>
-    } catch {
-      return null
-    }
-    if (!body || typeof body !== 'object') return null
-    action = typeof body.action === 'string' ? body.action : ''
-    if (!action) return null
-    ymd = typeof body.ymd === 'string' ? body.ymd.trim() : ''
-    paramsToForward.set('action', action)
-    if (ymd) paramsToForward.set('ymd', ymd)
-  } else {
-    return null
+/** POST JSON com action=list_items | check_date_column → repassa ao doGet do Apps Script (body lido uma vez no handler). */
+async function forwardChecklistFromPostBody(parsed: Record<string, unknown>): Promise<Response | null> {
+  const action = typeof parsed.action === 'string' ? parsed.action : ''
+  if (!action) return null
+  if (action !== 'list_items' && action !== 'check_date_column') return null
+  const ymd = typeof parsed.ymd === 'string' ? parsed.ymd.trim() : ''
+  if (action === 'check_date_column' && !/^\d{4}-\d{2}-\d{2}$/.test(ymd)) {
+    return jsonWithCors({ ok: false, error: 'Parâmetro ymd inválido (use yyyy-mm-dd)' }, 400)
   }
+  if (!webhookUrlRaw) {
+    return jsonWithCors({ ok: false, error: 'SHEET_WEBHOOK_URL não configurada na edge function.' }, 500)
+  }
+  const target = new URL(webhookUrlRaw)
+  target.searchParams.set('action', action)
+  if (ymd) target.searchParams.set('ymd', ymd)
+  try {
+    const scriptRes = await fetch(target.toString(), { redirect: 'follow' })
+    const bodyText = await scriptRes.text()
+    const ct = scriptRes.headers.get('content-type') || 'application/json'
+    return new Response(bodyText, {
+      status: scriptRes.status,
+      headers: { ...corsHeaders, 'content-type': ct },
+    })
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    return jsonWithCors({ ok: false, error: `Falha ao contatar Apps Script: ${msg}` }, 502)
+  }
+}
+
+/** Proxy checklist → Apps Script (doGet). Só GET (POST consome body uma vez em Deno.serve). */
+async function tryChecklistProxyGet(req: Request): Promise<Response | null> {
+  if (req.method !== 'GET') return null
+
+  let incoming: URL
+  try {
+    incoming = incomingRequestUrl(req)
+  } catch {
+    return jsonWithCors({ ok: false, error: 'URL da requisição inválida' }, 400)
+  }
+
+  const action = incoming.searchParams.get('action') || ''
+  const ymd = (incoming.searchParams.get('ymd') || '').trim()
 
   if (action !== 'list_items' && action !== 'check_date_column') return null
   if (action === 'check_date_column' && !/^\d{4}-\d{2}-\d{2}$/.test(ymd)) {
     return jsonWithCors({ ok: false, error: 'Parâmetro ymd inválido (use yyyy-mm-dd)' }, 400)
   }
 
-  if (!webhookUrl?.trim()) {
+  if (!webhookUrlRaw) {
     return jsonWithCors({ ok: false, error: 'SHEET_WEBHOOK_URL não configurada na edge function.' }, 500)
   }
 
-  const target = new URL(webhookUrl.trim())
-  paramsToForward.forEach((value, key) => target.searchParams.set(key, value))
+  const target = new URL(webhookUrlRaw)
+  incoming.searchParams.forEach((v, k) => target.searchParams.set(k, v))
 
   try {
     const scriptRes = await fetch(target.toString(), { redirect: 'follow' })
@@ -140,14 +149,32 @@ Deno.serve(async (req) => {
   }
 
   if (req.method === 'GET') {
-    const checklist = await tryChecklistProxy(req)
+    const checklist = await tryChecklistProxyGet(req)
     if (checklist) return checklist
   }
 
+  // POST: lê o body uma única vez (evita falha ao combinar clone + req.json + dreno da outbox).
   if (req.method === 'POST') {
-    const cloned = req.clone()
-    const checklist = await tryChecklistProxy(cloned)
-    if (checklist) return checklist
+    const ct = req.headers.get('content-type') || ''
+    if (ct.includes('application/json')) {
+      let text = ''
+      try {
+        text = await req.text()
+      } catch {
+        /* ignore */
+      }
+      let parsed: Record<string, unknown> = {}
+      if (text && text.trim()) {
+        try {
+          const j = JSON.parse(text) as unknown
+          if (j && typeof j === 'object' && !Array.isArray(j)) parsed = j as Record<string, unknown>
+        } catch {
+          /* JSON inválido: não é checklist; segue para outbox */
+        }
+      }
+      const checklist = await forwardChecklistFromPostBody(parsed)
+      if (checklist) return checklist
+    }
   }
 
   if (req.method !== 'POST' && req.method !== 'GET') {
@@ -169,6 +196,17 @@ Deno.serve(async (req) => {
   }
 
   const rows = (pending ?? []) as unknown as OutboxRow[]
+
+  if (rows.length > 0 && !webhookUrlRaw) {
+    return jsonWithCors(
+      {
+        ok: false,
+        error:
+          'SHEET_WEBHOOK_URL não configurada na Edge Function (Secrets). Sem ela não é possível enviar dados ao Google Sheets.',
+      },
+      500,
+    )
+  }
 
   let claimed = 0
   let okCount = 0
@@ -208,8 +246,6 @@ Deno.serve(async (req) => {
     claimedRows.push(claimedRow as unknown as OutboxRow)
   }
 
-  // Uma chamada por aba com todos os itens reivindicados: menos corridas no Apps Script e uma única passagem
-  // de consolidação antes de gravar (mesmo dia / vários conferentes → mesma coluna no Sheet).
   const byAba = new Map<string, OutboxRow[]>()
   for (const row of claimedRows) {
     const aba = row.aba ?? 'CONTAGEM DE ESTOQUE FISICA'
@@ -232,7 +268,6 @@ Deno.serve(async (req) => {
     })
 
     const firstYmd = normalizeDataContagemToYmd(abaRows[0]?.data_contagem) || records[0]?.data_contagem || ''
-    // Apps Script: grava 0 em célula vazia/soma zero só neste modo (inventário/outros POSTs não mandam o flag).
     const body = {
       aba: abaRows[0]?.aba ?? 'CONTAGEM DE ESTOQUE FISICA',
       data_contagem: firstYmd,
@@ -241,12 +276,17 @@ Deno.serve(async (req) => {
     }
 
     try {
-      const res = await fetch(webhookUrl.trim(), {
+      const res = await fetch(webhookUrlRaw, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify(body),
       })
-      if (!res.ok) throw new Error(`Webhook falhou: ${res.status} ${res.statusText}`)
+      const errText = await res.text()
+      if (!res.ok) {
+        throw new Error(
+          `Webhook falhou: ${res.status} ${res.statusText}. Resposta: ${errText.slice(0, 500)}`,
+        )
+      }
 
       const ids = abaRows.map((r) => r.id)
       okCount += ids.length

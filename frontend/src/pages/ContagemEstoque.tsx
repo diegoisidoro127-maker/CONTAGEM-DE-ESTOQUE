@@ -263,9 +263,22 @@ type SheetOutboxKickResult =
   | { ok: true; claimed: number; processed_ok: number; processed_failed: number; functionName: string }
   | { ok: false; message: string; functionName?: string }
 
+function normalizeFunctionInvokeData(data: unknown): unknown {
+  if (data == null) return null
+  if (typeof data === 'string') {
+    try {
+      return JSON.parse(data) as unknown
+    } catch {
+      return null
+    }
+  }
+  return data
+}
+
 function parseSheetOutboxResponse(data: unknown, fnName: string): SheetOutboxKickResult | null {
-  if (data == null || typeof data !== 'object') return null
-  const d = data as Record<string, unknown>
+  const normalized = normalizeFunctionInvokeData(data)
+  if (normalized == null || typeof normalized !== 'object') return null
+  const d = normalized as Record<string, unknown>
   if (d.ok === false) {
     return {
       ok: false,
@@ -1597,7 +1610,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       for (const fnName of candidates) {
         const res = await (supabase as any).functions.invoke(fnName, { body: {} })
         if (!res?.error) {
-          const parsed = parseSheetOutboxResponse(res.data, fnName)
+          const parsed = parseSheetOutboxResponse(normalizeFunctionInvokeData(res.data), fnName)
           if (parsed?.ok === false) {
             lastErr = new Error(parsed.message)
             continue
