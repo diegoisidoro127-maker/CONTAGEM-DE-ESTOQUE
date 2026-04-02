@@ -1,7 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-
-/** Fila serial: um POST por vez para o webhook do Sheets (evita colunas duplicadas no servidor). */
-let sheetWebhookQueue = Promise.resolve(true as boolean)
 import type React from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { toDatetimeLocalValue, toISOStringFromDatetimeLocal } from '../lib/datetime'
@@ -118,6 +115,16 @@ type ContagemPreviewRow = {
   planilha_rua?: string | null
   planilha_posicao?: number | null
   planilha_nivel?: number | null
+  /**
+   * Contagem diária com linha agrupada (mesmo código/descrição/dia, vários conferentes):
+   * quantidade por conferente e ids para filtrar ações na prévia.
+   */
+  preview_conferentes_detalhe?: Array<{
+    conferente_id: string
+    conferente_nome: string
+    quantidade_up: number
+    source_ids: string[]
+  }>
 }
 
 type ProductOption = {
@@ -261,52 +268,6 @@ function formatDateBRFromYmd(ymd: string) {
   return `${d}/${m}/${y}`
 }
 
-/** Retorno da Edge `sheet-outbox-sync` ao drenar `public.sheet_outbox` → Apps Script. */
-type SheetOutboxKickResult =
-  | { ok: true; claimed: number; processed_ok: number; processed_failed: number; functionName: string }
-  | { ok: false; message: string; functionName?: string }
-
-function normalizeFunctionInvokeData(data: unknown): unknown {
-  if (data == null) return null
-  if (typeof data === 'string') {
-    try {
-      return JSON.parse(data) as unknown
-    } catch {
-      return null
-    }
-  }
-  return data
-}
-
-function parseSheetOutboxResponse(data: unknown, fnName: string): SheetOutboxKickResult | null {
-  const normalized = normalizeFunctionInvokeData(data)
-  if (normalized == null || typeof normalized !== 'object') return null
-  const d = normalized as Record<string, unknown>
-  if (d.ok === false) {
-    return {
-      ok: false,
-      message: typeof d.error === 'string' ? d.error : 'Edge Function retornou ok: false.',
-      functionName: fnName,
-    }
-  }
-  if (d.ok !== true) return null
-  if (Array.isArray(d.items)) {
-    return {
-      ok: false,
-      message:
-        'A função respondeu como checklist (list_items), não como processador da fila. Confira VITE_OUTBOX_FUNCTION_NAME e o deploy de sheet-outbox-sync.',
-      functionName: fnName,
-    }
-  }
-  return {
-    ok: true,
-    claimed: Number(d.claimed ?? 0),
-    processed_ok: Number(d.processed_ok ?? 0),
-    processed_failed: Number(d.processed_failed ?? 0),
-    functionName: fnName,
-  }
-}
-
 function conferenteNomeFromJoin(row: Record<string, unknown>): string {
   const c = row.conferentes as { nome?: string } | Array<{ nome?: string }> | null | undefined
   if (!c) return ''
@@ -327,8 +288,7 @@ function mergeConferenteNomesUnicos(a: string, b: string): string {
 }
 
 /**
- * Dia civil local (navegador) a partir de um ISO — deve ser o MESMO em:
- * salvar, editar prévia, excluir e webhook da planilha (senão o Sheet cria outra coluna).
+ * Dia civil local (navegador) a partir de um ISO — alinhar filtros e prévia ao mesmo dia civil.
  * Não usar slice(0,10) no ISO (isso é data em UTC, não o dia local).
  */
 function dataContagemYmdFromIso(isoLike: string) {
@@ -399,18 +359,6 @@ function newSessionId() {
 
 export default function ContagemEstoque({ inventario = false }: { inventario?: boolean }) {
   const sessionMode: OfflineSessionMode = inventario ? 'inventario' : 'contagem'
-  const sheetWebhookUrl = import.meta.env.VITE_SHEET_WEBHOOK_URL as string | undefined
-  // Modo definitivo: usar SOMENTE outbox (evita escrita paralela e coluna duplicada).
-  // Mantemos o envio direto desativado de forma fixa.
-  const enableDirectSheetsWebhook = false
-  // Kick imediato do processador de outbox (opção 2).
-  // Coloque VITE_OUTBOX_KICK=false para desabilitar.
-  const enableOutboxKick = (import.meta.env.VITE_OUTBOX_KICK as string | undefined) !== 'false'
-  // Slug da edge function pode variar por ambiente (ex.: dynamic-endpoint).
-  // Pode definir VITE_OUTBOX_FUNCTION_NAME no Render.
-  const outboxFunctionName = (import.meta.env.VITE_OUTBOX_FUNCTION_NAME as string | undefined)?.trim()
-  const supabaseUrlEnv = (import.meta.env.VITE_SUPABASE_URL as string | undefined)?.trim()
-  const supabaseAnonKeyEnv = (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined)?.trim()
   const [conferentes, setConferentes] = useState<Conferente[]>([])
   const [conferentesLoading, setConferentesLoading] = useState(true)
   const [showAddConferente, setShowAddConferente] = useState(false)
@@ -474,6 +422,8 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
 
   const [previewLoading, setPreviewLoading] = useState(false)
   const [previewRows, setPreviewRows] = useState<ContagemPreviewRow[]>([])
+  /** Contagem diária (linha agrupada na prévia): `total` ou `conferente_id` — chave = id da linha da prévia. */
+  const [previewConferenteModo, setPreviewConferenteModo] = useState<Record<string, 'total' | string>>({})
   /** Dia consultado em `contagens_estoque.data_contagem` (alinha sessão / planilha; não só “hoje”). */
   const [previewConsultaDiaYmd, setPreviewConsultaDiaYmd] = useState<string>(() => toISODateLocal(new Date()))
 
@@ -508,7 +458,6 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     registros: number
     pendAutoZero?: number
     conferenteNome?: string
-    sheetSync?: SheetOutboxKickResult
   } | null>(null)
   const finalizePendAutoZeroRef = useRef<number | null>(null)
   const [checklistPage, setChecklistPage] = useState(1)
@@ -529,6 +478,44 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       checklistSavedFlashTimerRef.current = null
     }, 1800)
   }
+
+  const previewQuantidadeExibidaPrevia = useCallback(
+    (r: ContagemPreviewRow) => {
+      if (inventario || !r.preview_conferentes_detalhe || r.preview_conferentes_detalhe.length <= 1) {
+        return r.quantidade_up
+      }
+      const modo = previewConferenteModo[r.id] ?? 'total'
+      if (modo === 'total') return r.quantidade_up
+      const part = r.preview_conferentes_detalhe.find((d) => d.conferente_id === modo)
+      return part ? part.quantidade_up : r.quantidade_up
+    },
+    [inventario, previewConferenteModo],
+  )
+
+  const previewSourceIdsParaAcaoPrevia = useCallback(
+    (r: ContagemPreviewRow) => {
+      const ids = r.source_ids?.length ? r.source_ids : [r.id]
+      if (inventario || !r.preview_conferentes_detalhe || r.preview_conferentes_detalhe.length <= 1) {
+        return ids
+      }
+      const modo = previewConferenteModo[r.id] ?? 'total'
+      if (modo === 'total') return ids
+      const part = r.preview_conferentes_detalhe.find((d) => d.conferente_id === modo)
+      return part?.source_ids?.length ? part.source_ids : ids
+    },
+    [inventario, previewConferenteModo],
+  )
+
+  /** Com vários conferentes na mesma linha agrupada, edição de quantidade só faz sentido por conferente (não na soma). */
+  const previewPodeEditarQuantidadePrevia = useCallback(
+    (r: ContagemPreviewRow) => {
+      if (inventario) return true
+      const det = r.preview_conferentes_detalhe
+      if (!det || det.length <= 1) return true
+      return (previewConferenteModo[r.id] ?? 'total') !== 'total'
+    },
+    [inventario, previewConferenteModo],
+  )
 
   const dataHoraContagem = useMemo(() => {
     const elapsed = Date.now() - clockRealStartMs
@@ -1549,12 +1536,38 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
           const key = `${day}|${normalizeCodigoInternoCompareKey(row.codigo_interno).toLowerCase()}|${row.descricao.trim().toLowerCase()}`
           const existing = grouped.get(key)
           if (!existing) {
-            grouped.set(key, { ...row })
+            grouped.set(key, {
+              ...row,
+              preview_conferentes_detalhe: [
+                {
+                  conferente_id: row.conferente_id,
+                  conferente_nome: row.conferente_nome,
+                  quantidade_up: Number(row.quantidade_up ?? 0),
+                  source_ids: [...row.source_ids],
+                },
+              ],
+            })
             continue
           }
           existing.quantidade_up += Number(row.quantidade_up ?? 0)
           existing.source_ids = existing.source_ids.concat(row.source_ids)
           existing.conferente_nome = mergeConferenteNomesUnicos(existing.conferente_nome, row.conferente_nome)
+          const det = existing.preview_conferentes_detalhe
+          if (det) {
+            const idx = det.findIndex((d) => d.conferente_id === row.conferente_id)
+            if (idx >= 0) {
+              det[idx].quantidade_up += Number(row.quantidade_up ?? 0)
+              det[idx].source_ids = det[idx].source_ids.concat(row.source_ids)
+            } else {
+              det.push({
+                conferente_id: row.conferente_id,
+                conferente_nome: row.conferente_nome,
+                quantidade_up: Number(row.quantidade_up ?? 0),
+                source_ids: [...row.source_ids],
+              })
+            }
+            det.sort((a, b) => a.conferente_nome.localeCompare(b.conferente_nome, 'pt-BR'))
+          }
           if (!existing.foto_base64 && row.foto_base64) existing.foto_base64 = row.foto_base64
           if (existing.planilha_grupo_armazem == null && row.planilha_grupo_armazem != null) {
             existing.planilha_grupo_armazem = row.planilha_grupo_armazem
@@ -1580,6 +1593,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
 
       setPreviewQueryDayYmd(dayKey)
       setPreviewRows(previewList)
+      setPreviewConferenteModo({})
       window.setTimeout(() => {
         previewSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
       }, 0)
@@ -1592,125 +1606,6 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     }
   }
 
-
-  async function kickOutboxSync(): Promise<SheetOutboxKickResult> {
-    if (!enableOutboxKick) {
-      return {
-        ok: false,
-        message:
-          'Sincronização com a planilha desativada (VITE_OUTBOX_KICK=false). Ative ou rode a Edge Function sheet-outbox-sync no Supabase.',
-      }
-    }
-    try {
-      if (typeof (supabase as any)?.functions?.invoke !== 'function') {
-        return { ok: false, message: 'SDK sem functions.invoke — atualize @supabase/supabase-js.' }
-      }
-      const candidates = [outboxFunctionName, 'sheet-outbox-sync', 'dynamic-endpoint'].filter(
-        (v, i, arr): v is string => !!v && arr.indexOf(v) === i,
-      )
-
-      let lastErr: unknown = null
-      for (const fnName of candidates) {
-        const res = await (supabase as any).functions.invoke(fnName, { body: {} })
-        if (!res?.error) {
-          const parsed = parseSheetOutboxResponse(normalizeFunctionInvokeData(res.data), fnName)
-          if (parsed?.ok === false) {
-            lastErr = new Error(parsed.message)
-            continue
-          }
-          if (parsed?.ok === true) return parsed
-          lastErr = new Error(`Resposta inesperada da função ${fnName} (esperado JSON da outbox).`)
-          continue
-        }
-        lastErr = res.error
-      }
-
-      if (supabaseUrlEnv && supabaseAnonKeyEnv) {
-        for (const fnName of candidates) {
-          try {
-            const url = `${supabaseUrlEnv.replace(/\/$/, '')}/functions/v1/${fnName}`
-            const res = await fetch(url, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                apikey: supabaseAnonKeyEnv,
-                Authorization: `Bearer ${supabaseAnonKeyEnv}`,
-              },
-              body: '{}',
-            })
-            const text = await res.text()
-            let json: unknown = null
-            try {
-              json = text ? JSON.parse(text) : null
-            } catch {
-              json = null
-            }
-            if (res.ok && json != null) {
-              const parsed = parseSheetOutboxResponse(json, fnName)
-              if (parsed?.ok === false) {
-                lastErr = new Error(parsed.message)
-                continue
-              }
-              if (parsed?.ok === true) return parsed
-            }
-            if (!res.ok) {
-              lastErr = new Error(`HTTP ${res.status} ${fnName}: ${text.slice(0, 200)}`)
-            } else {
-              lastErr = new Error(`Resposta inválida de ${fnName}`)
-            }
-          } catch (e) {
-            lastErr = e
-          }
-        }
-      }
-
-      const msg =
-        lastErr instanceof Error
-          ? lastErr.message
-          : typeof lastErr === 'object' && lastErr && 'message' in lastErr
-            ? String((lastErr as { message: unknown }).message)
-            : String(lastErr ?? 'erro desconhecido')
-      if (import.meta.env.DEV) console.warn('[outbox kick] falhou:', lastErr)
-      return { ok: false, message: msg }
-    } catch (err) {
-      if (import.meta.env.DEV) console.warn('[outbox kick] exceção:', err)
-      return { ok: false, message: err instanceof Error ? err.message : String(err) }
-    }
-  }
-
-  /**
-   * Após gravar no Postgres, chama a Edge em rajada curta até processar a fila (ou erro).
-   * Se a 1ª resposta já tiver processed_ok / processed_failed, não espera de novo.
-   */
-  async function kickOutboxSyncImmediateBurst(): Promise<SheetOutboxKickResult> {
-    let last = await kickOutboxSync()
-    if (!last.ok) return last
-    if (last.processed_ok > 0 || last.processed_failed > 0) return last
-
-    for (let i = 0; i < 6; i++) {
-      await new Promise((r) => setTimeout(r, 40 + i * 45))
-      last = await kickOutboxSync()
-      if (!last.ok) break
-      if (last.processed_ok > 0 || last.processed_failed > 0) break
-    }
-    return last
-  }
-
-  /** Reenvios curtos caso ainda reste algo na fila (rede/Edge). */
-  function scheduleOutboxKickRetries() {
-    if (!enableOutboxKick) return
-    const delays = [200, 450, 900, 1800, 3500]
-    for (const ms of delays) {
-      setTimeout(() => {
-        void kickOutboxSync()
-      }, ms)
-    }
-  }
-
-  function kickOutboxSyncNowWithRetry() {
-    void kickOutboxSync()
-    scheduleOutboxKickRetries()
-  }
 
   async function fetchListaChecklistFromDb(): Promise<Array<{ codigo_interno: string; descricao: string }>> {
     const { data, error } = await supabase.from(TABELA_PRODUTOS).select('*').limit(15000)
@@ -2407,11 +2302,9 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         setSaveSuccess(
           `Inventário do dia ${ymd} finalizado: ${rows.length} novo(s) registro(s) em contagens_estoque (acumula com contagens anteriores do mesmo dia).${
             planilhaGravada ? ` ${rows.length} linha(s) em inventario_planilha_linhas.` : ''
-          }${planilhaAviso ?? ''}${inventarioDbCompatMsg} A planilha Google (aba contagem diária) não recebe inventário — só a contagem diária normal.`,
+          }${planilhaAviso ?? ''}${inventarioDbCompatMsg}`,
         )
       } else {
-        setFinalizeProgress('Sincronizando com a planilha Google (fila Supabase)...')
-        const sheetSync = await kickOutboxSyncImmediateBurst()
         const confRow = conferentes.find((x) => x.id === session.conferente_id)
         const nomeConf =
           confRow?.nome != null && String(confRow.nome).trim() !== '' ? String(confRow.nome).trim() : undefined
@@ -2421,10 +2314,8 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
           pendAutoZero:
             pendAutoZeroSnapshot != null && pendAutoZeroSnapshot > 0 ? pendAutoZeroSnapshot : undefined,
           conferenteNome: nomeConf,
-          sheetSync,
         })
         setSaveSuccess('Contagem salva no Supabase.')
-        scheduleOutboxKickRetries()
       }
       setFinalizeProgress(
         planilhaGravada
@@ -2468,10 +2359,12 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       const descricaoOk =
         !previewFilterDescricao.trim() ||
         r.descricao.toLowerCase().includes(previewFilterDescricao.trim().toLowerCase())
+      const qConf = previewFilterConferente.trim().toLowerCase()
       const confOk =
-        !previewFilterConferente.trim() ||
-        r.conferente_nome.toLowerCase().includes(previewFilterConferente.trim().toLowerCase()) ||
-        r.conferente_id.toLowerCase().includes(previewFilterConferente.trim().toLowerCase())
+        !qConf ||
+        r.conferente_nome.toLowerCase().includes(qConf) ||
+        r.conferente_id.toLowerCase().includes(qConf) ||
+        (r.preview_conferentes_detalhe?.some((d) => d.conferente_nome.toLowerCase().includes(qConf)) ?? false)
       const dataOk =
         !previewFilterData ||
         r.data_contagem === previewFilterData ||
@@ -2613,7 +2506,6 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       setSaveError('')
       setSaveSuccess(`Todos os registros do dia ${dayLabel} (${inventario ? 'inventário' : 'contagem diária'}) foram excluídos do banco.`)
       await loadPreview(dayKey)
-      kickOutboxSyncNowWithRetry()
     } catch (e: any) {
       setPreviewRowError(`Erro ao excluir tudo: ${e?.message ? String(e.message) : 'verifique permissões (RLS).'}`)
     } finally {
@@ -2627,31 +2519,16 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     setPreviewRowActionLoading(true)
     try {
       const row = previewRows.find((r) => r.id === id)
-      const idsToDelete = row?.source_ids?.length ? row.source_ids : [id]
+      const idsToDelete = row ? previewSourceIdsParaAcaoPrevia(row) : [id]
       if (inventario) {
         await deleteInventarioPlanilhaLinhasForContagensIds(supabase, idsToDelete)
       }
       const { error } = await supabase.from('contagens_estoque').delete().in('id', idsToDelete)
       if (error) throw error
 
-      // Planilha: ao excluir, limpar apenas a quantidade (não remover a linha).
-      if (sheetWebhookUrl && enableDirectSheetsWebhook && row) {
-        const dataContagem = dataContagemYmdFromIso(String(row.data_hora_contagem))
-        void sendToSheetInBackground(sheetWebhookUrl, {
-          tipo: 'clear_qty',
-          data_hora_contagem: row.data_hora_contagem,
-          data_contagem: dataContagem,
-          codigo_interno: row.codigo_interno,
-          descricao: row.descricao,
-          aba: 'CONTAGEM DE ESTOQUE FISICA',
-        })
-      }
-
       setEditingPreviewId(null)
       setEditingPreviewQuantidade('')
       await loadPreview()
-      // Opção 2: kick imediato + retries curtos.
-      kickOutboxSyncNowWithRetry()
     } catch (e: any) {
       setPreviewRowError(`Erro ao excluir: ${e?.message ? String(e.message) : 'verifique'}`)
     } finally {
@@ -2666,7 +2543,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     setPreviewRowError('')
     setPreviewRowActionLoading(true)
     try {
-      const idsToUpdate = row.source_ids?.length ? row.source_ids : [id]
+      const idsToUpdate = previewSourceIdsParaAcaoPrevia(row)
       const { error } = await supabase
         .from('contagens_estoque')
         .update({ foto_base64: null })
@@ -2675,7 +2552,6 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       setEditingPreviewId(null)
       setEditingPreviewQuantidade('')
       await loadPreview()
-      kickOutboxSyncNowWithRetry()
     } catch (e: any) {
       setPreviewRowError(`Erro ao remover foto: ${e?.message ? String(e.message) : 'verifique'}`)
     } finally {
@@ -2693,7 +2569,15 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     setPreviewRowActionLoading(true)
     try {
       const row = previewRows.find((r) => r.id === id)
-      const sourceIds = row?.source_ids?.length ? row.source_ids : [id]
+      if (!row) {
+        setPreviewRowError('Linha não encontrada na prévia.')
+        return
+      }
+      if (!previewPodeEditarQuantidadePrevia(row)) {
+        setPreviewRowError('Selecione um conferente (não «Total») para editar a quantidade deste produto.')
+        return
+      }
+      const sourceIds = previewSourceIdsParaAcaoPrevia(row)
       const keepId = sourceIds[0]
       const { error } = await supabase.from('contagens_estoque').update({ quantidade_up: qtd }).eq('id', keepId)
       if (error) throw error
@@ -2705,24 +2589,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       setEditingPreviewId(null)
       setEditingPreviewQuantidade('')
 
-      // Planilha: ao editar, atualizar a quantidade na linha já existente.
-      if (sheetWebhookUrl && enableDirectSheetsWebhook && row) {
-        const dataContagem = dataContagemYmdFromIso(String(row.data_hora_contagem))
-        void sendToSheetInBackground(sheetWebhookUrl, {
-          tipo: 'edit_qty',
-          data_hora_contagem: row.data_hora_contagem,
-          data_contagem: dataContagem,
-          codigo_interno: row.codigo_interno,
-          descricao: row.descricao,
-          quantidade_contada: qtd,
-          quantidade_contada_text: String(qtd),
-          aba: 'CONTAGEM DE ESTOQUE FISICA',
-        })
-      }
-
       await loadPreview()
-      // Opção 2: kick imediato + retries curtos.
-      kickOutboxSyncNowWithRetry()
     } catch (e: any) {
       setPreviewRowError(`Erro ao atualizar quantidade: ${e?.message ? String(e.message) : 'verifique'}`)
     } finally {
@@ -2730,48 +2597,18 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     }
   }
 
-  async function sendToSheetInBackground(webhookUrl: string, body: Record<string, any>): Promise<boolean> {
-    const json = JSON.stringify(body)
-    const plainHeaders = { 'Content-Type': 'text/plain;charset=utf-8' }
-
-    const run = async (): Promise<boolean> => {
-      try {
-        const controller = new AbortController()
-        const timeout = setTimeout(() => controller.abort(), 20000)
-        const res = await fetch(webhookUrl.trim(), {
-          method: 'POST',
-          headers: plainHeaders,
-          body: json,
-          signal: controller.signal,
-          credentials: 'omit',
-        })
-        clearTimeout(timeout)
-        if (import.meta.env.DEV && !res.ok) {
-          console.warn('[Sheets webhook]', res.status, res.statusText)
-        }
-        return !!res.ok
-      } catch (err) {
-        if (import.meta.env.DEV) console.warn('[Sheets webhook] fetch falhou, tentando no-cors:', err)
-        try {
-          await fetch(webhookUrl.trim(), {
-            method: 'POST',
-            mode: 'no-cors',
-            body: json,
-            credentials: 'omit',
-          })
-          return true
-        } catch {
-          return false
-        }
-      }
-    }
-
-    const next = sheetWebhookQueue.then(() => run())
-    sheetWebhookQueue = next.catch(() => false)
-    return next
-  }
-
   function renderPreviewTable() {
+    const previewModoBtnStyle = (active: boolean): React.CSSProperties => ({
+      padding: '4px 8px',
+      fontSize: 11,
+      lineHeight: 1.2,
+      borderRadius: 6,
+      border: `1px solid ${active ? 'var(--accent, #4f8eff)' : 'var(--border, #666)'}`,
+      background: active ? 'rgba(79, 142, 255, 0.22)' : 'var(--surface, #2a2a2a)',
+      color: 'var(--text, #eee)',
+      cursor: 'pointer',
+      fontWeight: active ? 700 : 500,
+    })
     /** Mesma regra da lista principal (Ocultar/mostrar colunas). */
     const prevCol = (id: string) => checklistVisibleCols[id] !== false
     const previewVisColCount =
@@ -2973,7 +2810,31 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                     ) : null}
                     <div style={{ fontSize: 12, color: 'var(--text, #888)', marginTop: 8 }}>Conferente</div>
                     <div style={{ fontSize: 13 }}>
-                      {String(r.conferente_nome ?? '').trim() !== '' ? r.conferente_nome : '—'}
+                      {!inventario && r.preview_conferentes_detalhe && r.preview_conferentes_detalhe.length > 1 ? (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+                          <button
+                            type="button"
+                            style={previewModoBtnStyle((previewConferenteModo[r.id] ?? 'total') === 'total')}
+                            onClick={() => setPreviewConferenteModo((m) => ({ ...m, [r.id]: 'total' }))}
+                          >
+                            Total
+                          </button>
+                          {r.preview_conferentes_detalhe.map((d) => (
+                            <button
+                              key={d.conferente_id}
+                              type="button"
+                              style={previewModoBtnStyle((previewConferenteModo[r.id] ?? 'total') === d.conferente_id)}
+                              onClick={() => setPreviewConferenteModo((m) => ({ ...m, [r.id]: d.conferente_id }))}
+                            >
+                              {d.conferente_nome}
+                            </button>
+                          ))}
+                        </div>
+                      ) : String(r.conferente_nome ?? '').trim() !== '' ? (
+                        r.conferente_nome
+                      ) : (
+                        '—'
+                      )}
                     </div>
                     {prevCol('codigo') ? (
                       <>
@@ -3018,7 +2879,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                             }}
                           />
                         ) : (
-                          <span style={{ marginLeft: 8 }}>{r.quantidade_up}</span>
+                          <span style={{ marginLeft: 8 }}>{previewQuantidadeExibidaPrevia(r)}</span>
                         )}
                       </div>
                     ) : null}
@@ -3093,12 +2954,17 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                         <button
                           type="button"
                           style={buttonStyle}
+                          title={
+                            !previewPodeEditarQuantidadePrevia(r)
+                              ? 'Selecione um conferente (não Total) para editar a quantidade'
+                              : undefined
+                          }
                           onClick={() => {
                             setEditingPreviewId(r.id)
-                            setEditingPreviewQuantidade(String(r.quantidade_up))
+                            setEditingPreviewQuantidade(String(previewQuantidadeExibidaPrevia(r)))
                             setPreviewRowError('')
                           }}
-                          disabled={previewRowActionLoading}
+                          disabled={previewRowActionLoading || !previewPodeEditarQuantidadePrevia(r)}
                         >
                           Editar
                         </button>
@@ -3201,8 +3067,32 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                       <td style={tdStyle}>{formatInventarioRodadaPreviewCell(r.inventario_numero_contagem)}</td>
                     </>
                   ) : null}
-                  <td style={{ ...tdStyle, whiteSpace: 'normal', maxWidth: 200 }}>
-                    {String(r.conferente_nome ?? '').trim() !== '' ? r.conferente_nome : '—'}
+                  <td style={{ ...tdStyle, whiteSpace: 'normal', maxWidth: 240 }}>
+                    {!inventario && r.preview_conferentes_detalhe && r.preview_conferentes_detalhe.length > 1 ? (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+                        <button
+                          type="button"
+                          style={previewModoBtnStyle((previewConferenteModo[r.id] ?? 'total') === 'total')}
+                          onClick={() => setPreviewConferenteModo((m) => ({ ...m, [r.id]: 'total' }))}
+                        >
+                          Total
+                        </button>
+                        {r.preview_conferentes_detalhe.map((d) => (
+                          <button
+                            key={d.conferente_id}
+                            type="button"
+                            style={previewModoBtnStyle((previewConferenteModo[r.id] ?? 'total') === d.conferente_id)}
+                            onClick={() => setPreviewConferenteModo((m) => ({ ...m, [r.id]: d.conferente_id }))}
+                          >
+                            {d.conferente_nome}
+                          </button>
+                        ))}
+                      </div>
+                    ) : String(r.conferente_nome ?? '').trim() !== '' ? (
+                      r.conferente_nome
+                    ) : (
+                      '—'
+                    )}
                   </td>
                   {prevCol('codigo') ? <td style={tdStyle}>{r.codigo_interno}</td> : null}
                   {prevCol('descricao') ? (
@@ -3221,7 +3111,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                           style={{ padding: '6px 8px', border: '1px solid #ccc', borderRadius: 8, width: 104 }}
                         />
                       ) : (
-                        r.quantidade_up
+                        previewQuantidadeExibidaPrevia(r)
                       )}
                     </td>
                   ) : null}
@@ -3280,12 +3170,17 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                             <button
                               type="button"
                               style={buttonStyle}
+                              title={
+                                !previewPodeEditarQuantidadePrevia(r)
+                                  ? 'Selecione um conferente (não Total) para editar a quantidade'
+                                  : undefined
+                              }
                               onClick={() => {
                                 setEditingPreviewId(r.id)
-                                setEditingPreviewQuantidade(String(r.quantidade_up))
+                                setEditingPreviewQuantidade(String(previewQuantidadeExibidaPrevia(r)))
                                 setPreviewRowError('')
                               }}
-                              disabled={previewRowActionLoading}
+                              disabled={previewRowActionLoading || !previewPodeEditarQuantidadePrevia(r)}
                             >
                               Editar
                             </button>
@@ -5124,59 +5019,13 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                 {savedCountModal.pendAutoZero != null && savedCountModal.pendAutoZero > 0 ? (
                   <div style={{ marginTop: 8, fontSize: 13, color: 'var(--text-muted, #aaa)' }}>
                     {savedCountModal.pendAutoZero} item(ns) sem quantidade foram preenchidos com <strong>0</strong> para
-                    permitir o envio.
+                    permitir a gravação.
                   </div>
                 ) : null}
               </div>
-              <div style={{ margin: '0 0 16px', fontSize: 13, lineHeight: 1.5 }}>
-                {savedCountModal.sheetSync == null ? (
-                  <p style={{ margin: 0, color: 'var(--text-muted, #999)' }}>
-                    Sincronização com a planilha não foi confirmada neste diálogo. Use <strong>Atualizar prévia</strong> e
-                    confira a fila no Supabase se necessário.
-                  </p>
-                ) : savedCountModal.sheetSync.ok ? (
-                  <>
-                    {savedCountModal.sheetSync.processed_failed > 0 ? (
-                      <p style={{ margin: '0 0 8px', color: '#f88' }}>
-                        <strong>Planilha:</strong> a Edge Function reportou{' '}
-                        {savedCountModal.sheetSync.processed_failed} falha(s). Confira em Dashboard → Edge Functions →
-                        logs, e se o secret <code style={{ fontSize: 11 }}>SHEET_WEBHOOK_URL</code> aponta para o Web App
-                        do Apps Script (<code style={{ fontSize: 11 }}>/exec</code>).
-                      </p>
-                    ) : savedCountModal.sheetSync.claimed === 0 && savedCountModal.sheetSync.processed_ok === 0 ? (
-                      <p style={{ margin: '0 0 8px', color: '#ffb74d' }}>
-                        <strong>Planilha:</strong> a fila <code style={{ fontSize: 11 }}>sheet_outbox</code> estava vazia
-                        neste envio (nada a processar). Se você esperava atualizar o Google Sheets, verifique no Supabase
-                        (SQL) se existem linhas <code style={{ fontSize: 11 }}>pending</code> em{' '}
-                        <code style={{ fontSize: 11 }}>sheet_outbox</code> e se o trigger{' '}
-                        <code style={{ fontSize: 11 }}>trg_sheet_outbox_contagens_insert</code> está criado em{' '}
-                        <code style={{ fontSize: 11 }}>contagens_estoque</code>.
-                      </p>
-                    ) : (
-                      <p style={{ margin: '0 0 8px', color: '#8d8' }}>
-                        <strong>Planilha Google:</strong> fila processada pela função{' '}
-                        <code style={{ fontSize: 11 }}>{savedCountModal.sheetSync.functionName}</code> —{' '}
-                        {savedCountModal.sheetSync.processed_ok} registro(s) enviado(s) ao Apps Script nesta rodada.
-                        Aguarde alguns segundos e confira a coluna do dia na aba.
-                      </p>
-                    )}
-                    <p style={{ margin: 0, color: 'var(--text-muted, #888)', fontSize: 12 }}>
-                      Reenvios automáticos continuam em segundo plano por alguns segundos (caso a fila ainda estivesse
-                      gravando).
-                    </p>
-                  </>
-                ) : (
-                  <p style={{ margin: 0, color: '#f88' }}>
-                    <strong>Planilha:</strong> {savedCountModal.sheetSync.message}
-                    {savedCountModal.sheetSync.functionName ? (
-                      <>
-                        {' '}
-                        (<code style={{ fontSize: 11 }}>{savedCountModal.sheetSync.functionName}</code>)
-                      </>
-                    ) : null}
-                  </p>
-                )}
-              </div>
+              <p style={{ margin: '0 0 16px', fontSize: 13, color: 'var(--text-muted, #999)', lineHeight: 1.5 }}>
+                Os dados ficam apenas no Supabase. Use <strong>Atualizar prévia</strong> para conferir no painel.
+              </p>
               <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
                 <button
                   type="button"

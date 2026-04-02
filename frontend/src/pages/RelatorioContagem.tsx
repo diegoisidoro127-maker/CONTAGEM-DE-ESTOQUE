@@ -71,6 +71,36 @@ function formatDateBRFromYmd(ymd: string | null | undefined): string {
   return formatDateBR(String(ymd).slice(0, 10))
 }
 
+/** Nome de aba Excel (máx. 31 caracteres; caracteres inválidos removidos). */
+function excelSheetNameUnica(base: string, used: Set<string>): string {
+  const invalid = /[:\\/?*[\]]/g
+  const tidy = (s: string) =>
+    s
+      .replace(invalid, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 31)
+  let name = tidy(base) || 'Conferente'
+  if (!used.has(name)) {
+    used.add(name)
+    return name
+  }
+  let n = 2
+  while (n < 500) {
+    const suffix = ` (${n})`
+    const head = tidy(base).slice(0, Math.max(1, 31 - suffix.length))
+    const cand = (head + suffix).slice(0, 31)
+    if (!used.has(cand)) {
+      used.add(cand)
+      return cand
+    }
+    n += 1
+  }
+  const fallback = `Aba_${used.size}`.slice(0, 31)
+  used.add(fallback)
+  return fallback
+}
+
 function isColumnMissingErrorRel(e: unknown): boolean {
   const o = e && typeof e === 'object' ? (e as Record<string, unknown>) : null
   const code = o && 'code' in o ? String(o.code) : ''
@@ -215,6 +245,12 @@ export default function RelatorioContagem({
     if (useSingleDay) return `Dia: ${formatDateBR(singleDay)}`
     return `${formatDateBR(startDate)} a ${formatDateBR(endDate)}`
   }, [allTime, useSingleDay, singleDay, startDate, endDate])
+
+  /** Um único dia civil no filtro (inclui início = fim sem “Filtrar por dia”). */
+  const isExportUmDiaCivil = useMemo(
+    () => !allTime && (useSingleDay || startDate === endDate),
+    [allTime, useSingleDay, startDate, endDate],
+  )
 
   const relatorioTotalPages = Math.max(1, Math.ceil(rows.length / RELATORIO_PAGE_SIZE))
   const relatorioPageSafe = Math.min(relatorioPage, relatorioTotalPages)
@@ -603,11 +639,7 @@ export default function RelatorioContagem({
     }
   }
 
-  /** Mesma regra da prévia em ContagemEstoque: filtro origem/planilha + ordem (inventário) ou agrupamento (contagem diária). */
-  async function aplicarMesmaRegraDaPreviaAsync(
-    data: ContagemRow[],
-    origemAusenteNoResultado: boolean,
-  ): Promise<ContagemRow[]> {
+  function planilhaIntervalYmdForPrevia(data: ContagemRow[]): { minY: string; maxY: string } {
     let minY = startDate
     let maxY = endDate
     if (useSingleDay) {
@@ -627,11 +659,34 @@ export default function RelatorioContagem({
         maxY = '2100-12-31'
       }
     }
+    return { minY, maxY }
+  }
+
+  /** Filtro origem/planilha igual à prévia, antes de ordenar (inventário) ou agrupar (contagem diária). */
+  async function filtrarLinhasParaPrevia(
+    data: ContagemRow[],
+    origemAusenteNoResultado: boolean,
+  ): Promise<{ modo: 'inventario' | 'contagem_diaria'; filtered: ContagemRow[] }> {
+    const { minY, maxY } = planilhaIntervalYmdForPrevia(data)
     const planilhaIds = await fetchPlanilhaContagemIdsParaIntervalo(supabase, minY, maxY)
     const modo = useInventarioCols ? 'inventario' : 'contagem_diaria'
     const asRec = data.map((r) => ({ ...r }) as Record<string, unknown>)
-    const filtered = filterContagensPorModoListagem(asRec, modo, planilhaIds, origemAusenteNoResultado)
-    if (useInventarioCols) {
+    const filtered = filterContagensPorModoListagem(
+      asRec,
+      modo,
+      planilhaIds,
+      origemAusenteNoResultado,
+    ) as ContagemRow[]
+    return { modo, filtered }
+  }
+
+  /** Mesma regra da prévia em ContagemEstoque: filtro origem/planilha + ordem (inventário) ou agrupamento (contagem diária). */
+  async function aplicarMesmaRegraDaPreviaAsync(
+    data: ContagemRow[],
+    origemAusenteNoResultado: boolean,
+  ): Promise<ContagemRow[]> {
+    const { modo, filtered } = await filtrarLinhasParaPrevia(data, origemAusenteNoResultado)
+    if (modo === 'inventario') {
       let inv = ordenarLinhasInventarioComoPrevia(filtered) as ContagemRow[]
       if (numeroContagemFilter !== 'todas') {
         const n = Number(numeroContagemFilter)
@@ -639,7 +694,7 @@ export default function RelatorioContagem({
       }
       return inv
     }
-    return agruparContagemDiariaComoPrevia(filtered as ContagemRow[]) as ContagemRow[]
+    return agruparContagemDiariaComoPrevia(filtered) as ContagemRow[]
   }
 
   async function load() {
@@ -787,6 +842,41 @@ export default function RelatorioContagem({
     setError('')
     try {
       const { rows: data, origemAusenteNoResultado } = await fetchRelatorioContagemRows()
+
+      if (!useInventarioCols && isExportUmDiaCivil) {
+        const { filtered } = await filtrarLinhasParaPrevia(data, origemAusenteNoResultado)
+        if (!filtered.length) {
+          setError('Nenhum registro no dia para exportar.')
+          return
+        }
+        const byConf = new Map<string, ContagemRow[]>()
+        for (const r of filtered) {
+          const k = String(r.conferente_id ?? '').trim() || '__sem_id__'
+          const arr = byConf.get(k)
+          if (arr) arr.push(r)
+          else byConf.set(k, [r])
+        }
+        const sorted = [...byConf.entries()].sort((a, b) => {
+          const na = conferenteNomeRelatorio(a[1][0]!)
+          const nb = conferenteNomeRelatorio(b[1][0]!)
+          return na.localeCompare(nb, 'pt-BR')
+        })
+        const wb = XLSX.utils.book_new()
+        const usedSheetNames = new Set<string>()
+        for (const [, list] of sorted) {
+          const grouped = agruparContagemDiariaComoPrevia(list)
+          const ws = XLSX.utils.aoa_to_sheet(buildRelatorioExcelAoa(grouped))
+          const first = list[0]!
+          const nome = conferenteNomeRelatorio(first)
+          const label = nome !== '—' ? nome : String(first.conferente_id ?? '').trim() || 'Sem_conferente'
+          const sheetTitle = excelSheetNameUnica(label, usedSheetNames)
+          XLSX.utils.book_append_sheet(wb, ws, sheetTitle)
+        }
+        const safeFile = dateRangeText.replace(/[/\\?*[\]:]/g, '-').replace(/\s+/g, '_')
+        XLSX.writeFile(wb, `relatorio-contagem_${safeFile}.xlsx`)
+        return
+      }
+
       const exportRows = await aplicarMesmaRegraDaPreviaAsync(data, origemAusenteNoResultado)
       if (!exportRows.length) {
         setError('Nenhum registro no período para exportar.')
@@ -1094,7 +1184,11 @@ export default function RelatorioContagem({
                   height: 40,
                   opacity: loading || exportExcelLoading ? 0.5 : 1,
                 }}
-                title="Busca de novo no banco todos os registros do filtro (data, nº contagem, etc.) e gera o .xlsx completo — não só a página visível na tela."
+                title={
+                  !useInventarioCols && isExportUmDiaCivil
+                    ? 'Exporta o dia com uma aba por conferente (contagem diária). Períodos com vários dias ou modo Inventário: uma aba «Contagens».'
+                    : 'Busca de novo no banco todos os registros do filtro (data, nº contagem, etc.) e gera o .xlsx completo — não só a página visível na tela.'
+                }
               >
                 {exportExcelLoading ? 'Exportando…' : 'Exportar Excel'}
               </button>
