@@ -74,6 +74,25 @@ function formatDateBRFromYmd(ymd: string | null | undefined): string {
   return formatDateBR(String(ymd).slice(0, 10))
 }
 
+/** Timestamp válido de `data_hora_contagem` ou null. */
+function tsFromDataHoraContagem(iso: string | null | undefined): number | null {
+  if (!iso || !String(iso).trim()) return null
+  const t = new Date(iso).getTime()
+  return Number.isFinite(t) ? t : null
+}
+
+/** Primeiro/último horário de lançamento no dia (mesmo grupo); um único horário se coincidir. */
+function formatHistoricoHorarioInput(minTs: number | null, maxTs: number | null): string {
+  if (minTs == null && maxTs == null) return '—'
+  const fmt = (t: number) =>
+    new Date(t).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+  const a = minTs ?? maxTs
+  const b = maxTs ?? minTs
+  if (a != null && b != null && a !== b) return `${fmt(a)} – ${fmt(b)}`
+  const t = a ?? b
+  return t != null ? fmt(t) : '—'
+}
+
 /** Nome de aba Excel (máx. 31 caracteres; caracteres inválidos removidos). */
 function excelSheetNameUnica(base: string, used: Set<string>): string {
   const invalid = /[:\\/?*[\]]/g
@@ -185,6 +204,8 @@ type HistoricoContagemItem = {
   conferenteId: string | null
   conferenteNome: string
   dataYmd: string
+  /** Horário(ões) de registro (`data_hora_contagem`) no grupo: primeiro–último ou único. */
+  horaInputLabel: string
   totalItens: number
 }
 
@@ -833,16 +854,33 @@ export default function RelatorioContagem({
       origemAusenteNoResultado,
     ) as ContagemRow[]
 
-    const bucket = new Map<string, { dataYmd: string; conferenteId: string | null; total: number }>()
+    const bucket = new Map<
+      string,
+      { dataYmd: string; conferenteId: string | null; total: number; minTs: number | null; maxTs: number | null }
+    >()
     for (const r of filtered) {
       const dataYmd = civilDayYmdFromRow(r)
       if (!dataYmd) continue
       const cidRaw = String(r.conferente_id ?? '').trim()
       const conferenteId = cidRaw === '' ? null : cidRaw
       const key = `${dataYmd}|${conferenteId ?? '__sem__'}`
+      const ts = tsFromDataHoraContagem(r.data_hora_contagem)
       const prev = bucket.get(key)
-      if (prev) prev.total += 1
-      else bucket.set(key, { dataYmd, conferenteId, total: 1 })
+      if (prev) {
+        prev.total += 1
+        if (ts != null) {
+          if (prev.minTs == null || ts < prev.minTs) prev.minTs = ts
+          if (prev.maxTs == null || ts > prev.maxTs) prev.maxTs = ts
+        }
+      } else {
+        bucket.set(key, {
+          dataYmd,
+          conferenteId,
+          total: 1,
+          minTs: ts,
+          maxTs: ts,
+        })
+      }
     }
 
     const ids = [...new Set([...bucket.values()].map((b) => b.conferenteId).filter(Boolean))] as string[]
@@ -855,6 +893,7 @@ export default function RelatorioContagem({
         conferenteId: v.conferenteId,
         conferenteNome: nome,
         dataYmd: v.dataYmd,
+        horaInputLabel: formatHistoricoHorarioInput(v.minTs, v.maxTs),
         totalItens: v.total,
       })
     }
@@ -1394,8 +1433,9 @@ export default function RelatorioContagem({
             </button>
           </div>
           <p style={{ margin: '0 0 12px', fontSize: 12, color: 'var(--text-muted, #888)', lineHeight: 1.45 }}>
-            Contagens diárias agrupadas por conferente e dia civil (mesma regra da lista abaixo). Use «Ver contagem» para
-            abrir o detalhe filtrado.
+            Contagens diárias agrupadas por conferente e dia civil (mesma regra da lista abaixo). A coluna «Hora do
+            registro» usa o horário gravado em cada lançamento (primeiro ao último do dia, se houver vários). Use «Ver
+            contagem» para abrir o detalhe filtrado.
           </p>
           {historicoError ? <div style={{ color: '#b00020', marginBottom: 8 }}>{historicoError}</div> : null}
           {historicoLoading && historicoItems.length === 0 ? (
@@ -1406,11 +1446,12 @@ export default function RelatorioContagem({
           ) : null}
           {historicoItems.length > 0 ? (
             <div style={{ overflowX: 'auto' }}>
-              <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 480 }}>
+              <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 620 }}>
                 <thead>
                   <tr>
                     <th style={thStyle}>Conferente</th>
                     <th style={thStyle}>Data da contagem</th>
+                    <th style={thStyle}>Hora do registro</th>
                     <th style={thStyle}>Itens contados</th>
                     <th style={thStyle}> </th>
                   </tr>
@@ -1420,6 +1461,7 @@ export default function RelatorioContagem({
                     <tr key={`${item.dataYmd}|${item.conferenteId ?? '__sem__'}`}>
                       <td style={tdStyle}>{item.conferenteNome}</td>
                       <td style={tdStyle}>{formatDateBR(item.dataYmd)}</td>
+                      <td style={tdStyle}>{item.horaInputLabel}</td>
                       <td style={tdStyle}>{item.totalItens}</td>
                       <td style={tdStyle}>
                         <button
