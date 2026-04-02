@@ -369,7 +369,8 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
   const [clockBaseMs, setClockBaseMs] = useState(() => Date.now())
   const [clockRealStartMs, setClockRealStartMs] = useState(() => Date.now())
   const [clockTick, setClockTick] = useState(0)
-  const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 768)
+  /** Largura típica de celular/tablet estreito; evita tabela larga com scroll horizontal. */
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 900)
   const [conferenteId, setConferenteId] = useState<string>('')
 
   const conferenteNomeSelecionado = useMemo(() => {
@@ -614,7 +615,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
   }, [conferenteId, offlineSession?.status, offlineSession?.conferente_id])
 
   useEffect(() => {
-    const onResize = () => setIsMobile(window.innerWidth <= 768)
+    const onResize = () => setIsMobile(window.innerWidth <= 900)
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
   }, [])
@@ -3987,7 +3988,9 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                           style={{
                             border: datasOrdemInvalida ? '1px solid #c62828' : '1px solid var(--border, #ccc)',
                             borderRadius: 8,
-                            padding: 6,
+                            padding: 10,
+                            minWidth: 0,
+                            maxWidth: '100%',
                             background: datasOrdemInvalida ? 'rgba(198, 40, 40, 0.12)' : undefined,
                           }}
                         >
@@ -4079,7 +4082,17 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                   </span>
                                 ) : null}
                               </div>
-                              <div style={{ fontSize: 11, lineHeight: 1.15, whiteSpace: 'normal', color: 'var(--text, #111)', marginTop: 0 }}>
+                              <div
+                                style={{
+                                  fontSize: 13,
+                                  lineHeight: 1.4,
+                                  whiteSpace: 'normal',
+                                  color: 'var(--text, #111)',
+                                  marginTop: 0,
+                                  wordBreak: 'break-word',
+                                  overflowWrap: 'anywhere',
+                                }}
+                              >
                                 {String(it.descricao || '').trim() || 'Descrição não informada'}
                               </div>
                               {inventario || showChecklistColumn('ean') || showChecklistColumn('dun') ? (
@@ -5097,7 +5110,8 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
             </button>
             <button
               type="button"
-              style={{ ...buttonStyle, background: '#444', fontSize: 13, whiteSpace: 'nowrap', touchAction: 'manipulation' }}
+              className="contagem-barcode-icon-btn"
+              style={{ ...buttonStyle, background: 'linear-gradient(145deg, #334155 0%, #1e293b 100%)', fontSize: 13, whiteSpace: 'nowrap', touchAction: 'manipulation', boxShadow: '0 2px 8px rgba(56, 189, 248, 0.15)' }}
               onClick={() => {
                 setBarcodeFotoHint('')
                 setBarcodeCameraOpen(true)
@@ -5106,30 +5120,63 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
               title="Ler código de barras pela câmera (quando suportado)"
               aria-label="Ler código de barras (câmera/scan)"
             >
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                  <path d="M4 6H6" stroke="white" strokeWidth="2" strokeLinecap="round"/>
-                  <path d="M4 10H6" stroke="white" strokeWidth="2" strokeLinecap="round"/>
-                  <path d="M4 14H6" stroke="white" strokeWidth="2" strokeLinecap="round"/>
-                  <path d="M4 18H6" stroke="white" strokeWidth="2" strokeLinecap="round"/>
-                  <path d="M8 6H10" stroke="white" strokeWidth="2" strokeLinecap="round"/>
-                  <path d="M8 10H10" stroke="white" strokeWidth="2" strokeLinecap="round"/>
-                  <path d="M8 14H10" stroke="white" strokeWidth="2" strokeLinecap="round"/>
-                  <path d="M8 18H10" stroke="white" strokeWidth="2" strokeLinecap="round"/>
-                  <path d="M14 6H16" stroke="white" strokeWidth="2" strokeLinecap="round"/>
-                  <path d="M14 10H16" stroke="white" strokeWidth="2" strokeLinecap="round"/>
-                  <path d="M14 14H16" stroke="white" strokeWidth="2" strokeLinecap="round"/>
-                  <path d="M14 18H16" stroke="white" strokeWidth="2" strokeLinecap="round"/>
-                  <path d="M18 6H20" stroke="white" strokeWidth="2" strokeLinecap="round"/>
-                  <path d="M18 10H20" stroke="white" strokeWidth="2" strokeLinecap="round"/>
-                  <path d="M18 14H20" stroke="white" strokeWidth="2" strokeLinecap="round"/>
-                  <path d="M18 18H20" stroke="white" strokeWidth="2" strokeLinecap="round"/>
+              <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                <svg
+                  width="22"
+                  height="22"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  xmlns="http://www.w3.org/2000/svg"
+                  aria-hidden="true"
+                  className="contagem-icon-scan"
+                >
+                  <defs>
+                    <linearGradient id="contagemScanStroke" x1="4" y1="4" x2="20" y2="20" gradientUnits="userSpaceOnUse">
+                      <stop stopColor="#38bdf8" />
+                      <stop offset="1" stopColor="#818cf8" />
+                    </linearGradient>
+                    <linearGradient id="contagemLaser" x1="6" y1="10" x2="18" y2="10" gradientUnits="userSpaceOnUse">
+                      <stop stopColor="#22d3ee" stopOpacity="0.25" />
+                      <stop offset="0.5" stopColor="#a5f3fc" />
+                      <stop offset="1" stopColor="#22d3ee" stopOpacity="0.25" />
+                    </linearGradient>
+                  </defs>
+                  <rect
+                    className="contagem-icon-scan__frame"
+                    x="3.5"
+                    y="4"
+                    width="17"
+                    height="16"
+                    rx="2.5"
+                    stroke="url(#contagemScanStroke)"
+                    strokeWidth="1.6"
+                    fill="rgba(15, 23, 42, 0.35)"
+                  />
+                  <g opacity="0.55">
+                    <rect x="7" y="14" width="1.2" height="4" rx="0.4" fill="#94a3b8" />
+                    <rect x="9" y="13" width="1.2" height="5" rx="0.4" fill="#94a3b8" />
+                    <rect x="11" y="14" width="1.2" height="4" rx="0.4" fill="#94a3b8" />
+                    <rect x="13" y="12.5" width="1.2" height="5.5" rx="0.4" fill="#94a3b8" />
+                    <rect x="15" y="14" width="1.2" height="4" rx="0.4" fill="#94a3b8" />
+                  </g>
+                  <g className="contagem-icon-scan__laser">
+                    <rect x="6" y="9.25" width="12" height="2" rx="1" fill="url(#contagemLaser)" />
+                  </g>
+                  <circle className="contagem-icon-scan__sparkle" cx="19" cy="6" r="1.2" fill="#fbbf24" />
                 </svg>
               </span>
             </button>
             <button
               type="button"
-              style={{ ...buttonStyle, background: '#444', fontSize: 13, whiteSpace: 'nowrap', touchAction: 'manipulation' }}
+              className="contagem-barcode-icon-btn"
+              style={{
+                ...buttonStyle,
+                background: 'linear-gradient(145deg, #4c1d95 0%, #312e81 50%, #1e1b4b 100%)',
+                fontSize: 13,
+                whiteSpace: 'nowrap',
+                touchAction: 'manipulation',
+                boxShadow: '0 2px 10px rgba(167, 139, 250, 0.25)',
+              }}
               onClick={() => {
                 if (productOptionsLoading) return
                 if (!codigoInterno.trim()) {
@@ -5143,11 +5190,50 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
               title="Registrar foto do produto"
               aria-label="Registrar foto (câmera)"
             >
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                  <path d="M9 7H7.5C6.12 7 5 8.12 5 9.5V16.5C5 17.88 6.12 19 7.5 19H16.5C17.88 19 19 17.88 19 16.5V9.5C19 8.12 17.88 7 16.5 7H15" stroke="white" strokeWidth="2" strokeLinecap="round"/>
-                  <path d="M9 7L10.2 5.8C10.6 5.4 11.13 5.2 11.67 5.2H12.33C12.87 5.2 13.4 5.4 13.8 5.8L15 7" stroke="white" strokeWidth="2" strokeLinecap="round"/>
-                  <path d="M12 17C14.2091 17 16 15.2091 16 13C16 10.7909 14.2091 9 12 9C9.79086 9 8 10.7909 8 13C8 15.2091 9.79086 17 12 17Z" stroke="white" strokeWidth="2" strokeLinecap="round"/>
+              <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                <svg
+                  width="22"
+                  height="22"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  xmlns="http://www.w3.org/2000/svg"
+                  aria-hidden="true"
+                  className="contagem-icon-camera"
+                >
+                  <defs>
+                    <linearGradient id="contagemCamBody" x1="5" y1="6" x2="19" y2="18" gradientUnits="userSpaceOnUse">
+                      <stop stopColor="#e879f9" />
+                      <stop offset="0.5" stopColor="#a78bfa" />
+                      <stop offset="1" stopColor="#6366f1" />
+                    </linearGradient>
+                    <linearGradient id="contagemCamLens" x1="9" y1="9" x2="15" y2="15" gradientUnits="userSpaceOnUse">
+                      <stop stopColor="#1e1b4b" />
+                      <stop offset="1" stopColor="#312e81" />
+                    </linearGradient>
+                  </defs>
+                  <path
+                    className="contagem-icon-camera__body"
+                    d="M9 7.5h-.75C7.5 7.5 6.5 8.5 6.5 9.75v6.5c0 1.25 1 2.25 2.25 2.25h7.5c1.25 0 2.25-1 2.25-2.25v-6.5c0-1.25-1-2.25-2.25-2.25H15l-1.1-1.65c-.2-.3-.55-.5-.9-.5h-1.95c-.35 0-.7.2-.9.5L9 7.5z"
+                    fill="url(#contagemCamBody)"
+                    stroke="rgba(255,255,255,0.35)"
+                    strokeWidth="0.6"
+                  />
+                  <circle cx="12" cy="12.5" r="3.2" fill="url(#contagemCamLens)" stroke="rgba(255,255,255,0.5)" strokeWidth="0.8" />
+                  <circle
+                    className="contagem-icon-camera__lens-ring"
+                    cx="12"
+                    cy="12.5"
+                    r="4.8"
+                    stroke="#fbbf24"
+                    strokeWidth="0.9"
+                    fill="none"
+                    opacity="0.9"
+                  />
+                  <path
+                    className="contagem-icon-camera__flash"
+                    d="M17.5 6.5l.6 1.2 1.3.2-1 .9.25 1.35-1.15-.65-1.15.65.25-1.35-1-.9 1.3-.2.6-1.2z"
+                    fill="#fef08a"
+                  />
                 </svg>
               </span>
             </button>

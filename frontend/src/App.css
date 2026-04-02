@@ -341,6 +341,110 @@
   }
 }
 
+/* Ícones dos botões de leitor / foto na contagem (gradiente + animação) */
+.contagem-barcode-icon-btn svg {
+  transition: transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.contagem-barcode-icon-btn:hover:not(:disabled) svg {
+  transform: scale(1.1);
+}
+.contagem-barcode-icon-btn:active:not(:disabled) svg {
+  transform: scale(0.94);
+}
+
+.contagem-icon-scan__frame {
+  animation: contagem-scan-frame-glow 2.2s ease-in-out infinite;
+}
+.contagem-icon-scan__laser {
+  animation: contagem-scan-laser-move 1.7s ease-in-out infinite;
+}
+.contagem-icon-scan__sparkle {
+  animation: contagem-scan-sparkle 2.5s ease-in-out infinite;
+}
+
+@keyframes contagem-scan-frame-glow {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 1px rgba(56, 189, 248, 0.4));
+  }
+  50% {
+    filter: drop-shadow(0 0 5px rgba(56, 189, 248, 0.85));
+  }
+}
+
+@keyframes contagem-scan-laser-move {
+  0%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.75;
+  }
+  50% {
+    transform: translateY(7px);
+    opacity: 1;
+  }
+}
+
+@keyframes contagem-scan-sparkle {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.contagem-icon-camera__body {
+  animation: contagem-camera-float 3s ease-in-out infinite;
+}
+.contagem-icon-camera__lens-ring {
+  animation: contagem-camera-lens-pulse 2s ease-in-out infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.contagem-icon-camera__flash {
+  animation: contagem-camera-flash 2.4s ease-in-out infinite;
+}
+
+@keyframes contagem-camera-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-0.5px);
+  }
+}
+
+@keyframes contagem-camera-lens-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.75;
+  }
+  50% {
+    transform: scale(1.12);
+    opacity: 1;
+  }
+}
+
+@keyframes contagem-camera-flash {
+  0%,
+  85%,
+  100% {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  90% {
+    opacity: 0.95;
+    transform: scale(1);
+  }
+  95% {
+    opacity: 0;
+    transform: scale(1.1);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .home-animated-wrap,
   .home-animated-logo,
@@ -349,7 +453,16 @@
   .app-nav-icon--bounce,
   .app-nav-icon--float,
   .app-nav-icon--glow,
-  .app-nav-icon--tilt {
+  .app-nav-icon--tilt,
+  .contagem-icon-scan__frame,
+  .contagem-icon-scan__laser,
+  .contagem-icon-scan__sparkle,
+  .contagem-icon-camera__body,
+  .contagem-icon-camera__lens-ring,
+  .contagem-icon-camera__flash,
+  .contagem-barcode-icon-btn svg {
     animation: none;
+    transition: none;
+    transform: none;
   }
 }

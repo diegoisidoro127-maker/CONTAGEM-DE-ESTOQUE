@@ -180,6 +180,34 @@ const RELATORIO_PAGE_SIZE = 15
 /** PostgREST costuma limitar ~1000 linhas por requisição; buscamos em fatias para trazer o relatório inteiro. */
 const RELATORIO_FETCH_CHUNK = 2000
 
+/** Uma linha no histórico: conferente × dia civil × quantidade de lançamentos (itens contados). */
+type HistoricoContagemItem = {
+  conferenteId: string | null
+  conferenteNome: string
+  dataYmd: string
+  totalItens: number
+}
+
+function civilDayYmdFromRow(r: Pick<ContagemRow, 'data_contagem' | 'data_hora_contagem'>): string {
+  const d = r.data_contagem != null ? String(r.data_contagem).slice(0, 10) : ''
+  if (/^\d{4}-\d{2}-\d{2}$/.test(d)) return d
+  const h = r.data_hora_contagem ? String(r.data_hora_contagem).slice(0, 10) : ''
+  return /^\d{4}-\d{2}-\d{2}$/.test(h) ? h : ''
+}
+
+function computeMinMaxYmdFromRows(rows: ContagemRow[]): { minY: string; maxY: string } {
+  let minY = '9999-12-31'
+  let maxY = '1970-01-01'
+  for (const r of rows) {
+    const day = civilDayYmdFromRow(r)
+    if (!day) continue
+    if (day < minY) minY = day
+    if (day > maxY) maxY = day
+  }
+  if (minY === '9999-12-31') return { minY: '1970-01-01', maxY: '2100-12-31' }
+  return { minY, maxY }
+}
+
 type RelatorioContagemProps = {
   mode?: 'periodo' | 'dia'
   /** Valor inicial: última tela Contagem vs Inventário (sessionStorage no App). */
@@ -244,6 +272,17 @@ export default function RelatorioContagem({
   const [exportExcelLoading, setExportExcelLoading] = useState(false)
   /** Contagem diária: `total` ou `conferente_id` por linha agrupada. */
   const [relatorioConferenteModo, setRelatorioConferenteModo] = useState<Record<string, 'total' | string>>({})
+
+  /** Só em “Todas as contagens”: histórico agregado + filtro vindo de “Ver contagem”. */
+  const [historicoItems, setHistoricoItems] = useState<HistoricoContagemItem[]>([])
+  const [historicoLoading, setHistoricoLoading] = useState(false)
+  const [historicoError, setHistoricoError] = useState('')
+  /**
+   * Quando definido, o Carregar aplica só linhas deste conferente (contagem diária).
+   * `'__sem__'` = sem conferente no registro.
+   */
+  const [conferenteFiltroHistorico, setConferenteFiltroHistorico] = useState<string | null>(null)
+  const listaRelatorioRef = useRef<HTMLDivElement | null>(null)
 
   const dateRangeText = useMemo(() => {
     if (allTime) return 'Todas as datas'
@@ -310,12 +349,20 @@ export default function RelatorioContagem({
     prevLoadingRef.current = loading
   }, [loading])
 
-  async function fetchRelatorioContagemRows(): Promise<{
+  async function fetchRelatorioContagemRows(opts?: {
+    /** Força busca só neste dia civil (ex.: “Ver contagem” no histórico). */
+    singleDayYmd?: string
+    allTimeOverride?: boolean
+  }): Promise<{
     rows: ContagemRow[]
     successMessage?: string
     /** Igual à prévia quando `origem` não existe no banco (fallback SQL). */
     origemAusenteNoResultado: boolean
   }> {
+    const allT = opts?.allTimeOverride ?? allTime
+    const useSd = opts?.singleDayYmd != null ? true : useSingleDay
+    const singleDayVal = opts?.singleDayYmd ?? singleDay
+
     const selectCompleto = `
       id,
       data_contagem,
@@ -522,15 +569,15 @@ export default function RelatorioContagem({
           withNumeroFilter,
         )
 
-      if (allTime) {
+      if (allT) {
         return fetchAllPaged(() => base())
       }
 
-      if (useSingleDay) {
-        const startIso = `${singleDay}T00:00:00`
-        const endIso = `${singleDay}T23:59:59`
+      if (useSd) {
+        const startIso = `${singleDayVal}T00:00:00`
+        const endIso = `${singleDayVal}T23:59:59`
         const [a, b] = await Promise.all([
-          fetchAllPaged(() => base().eq('data_contagem', singleDay)),
+          fetchAllPaged(() => base().eq('data_contagem', singleDayVal)),
           fetchAllPaged(() =>
             base()
               .is('data_contagem', null)
@@ -739,6 +786,146 @@ export default function RelatorioContagem({
     return agruparContagemDiariaComoPrevia(filtered) as ContagemRow[]
   }
 
+  async function fetchHistoricoRawRows(): Promise<{ rows: ContagemRow[]; origemAusenteNoResultado: boolean }> {
+    const cand1 =
+      'id,data_contagem,data_hora_contagem,conferente_id,origem,inventario_repeticao,inventario_numero_contagem'.replace(
+        /\s/g,
+        '',
+      )
+    const cand2 = 'id,data_contagem,data_hora_contagem,conferente_id'.replace(/\s/g, '')
+    async function pull(sel: string): Promise<ContagemRow[]> {
+      const acc: ContagemRow[] = []
+      let from = 0
+      while (true) {
+        const { data, error } = await supabase
+          .from('contagens_estoque')
+          .select(sel)
+          .order('data_hora_contagem', { ascending: false })
+          .range(from, from + RELATORIO_FETCH_CHUNK - 1)
+        if (error) throw error
+        const batch = (data ?? []) as ContagemRow[]
+        acc.push(...batch)
+        if (batch.length < RELATORIO_FETCH_CHUNK) break
+        from += RELATORIO_FETCH_CHUNK
+        if (from > 100000) break
+      }
+      return acc
+    }
+    try {
+      return { rows: await pull(cand1), origemAusenteNoResultado: false }
+    } catch {
+      return { rows: await pull(cand2), origemAusenteNoResultado: true }
+    }
+  }
+
+  async function buildHistoricoLista(
+    raw: ContagemRow[],
+    origemAusenteNoResultado: boolean,
+  ): Promise<HistoricoContagemItem[]> {
+    if (!raw.length) return []
+    const { minY, maxY } = computeMinMaxYmdFromRows(raw)
+    const planilhaIds = await fetchPlanilhaContagemIdsParaIntervalo(supabase, minY, maxY)
+    const asRec = raw.map((r) => ({ ...r }) as Record<string, unknown>)
+    const filtered = filterContagensPorModoListagem(
+      asRec,
+      'contagem_diaria',
+      planilhaIds,
+      origemAusenteNoResultado,
+    ) as ContagemRow[]
+
+    const bucket = new Map<string, { dataYmd: string; conferenteId: string | null; total: number }>()
+    for (const r of filtered) {
+      const dataYmd = civilDayYmdFromRow(r)
+      if (!dataYmd) continue
+      const cidRaw = String(r.conferente_id ?? '').trim()
+      const conferenteId = cidRaw === '' ? null : cidRaw
+      const key = `${dataYmd}|${conferenteId ?? '__sem__'}`
+      const prev = bucket.get(key)
+      if (prev) prev.total += 1
+      else bucket.set(key, { dataYmd, conferenteId, total: 1 })
+    }
+
+    const ids = [...new Set([...bucket.values()].map((b) => b.conferenteId).filter(Boolean))] as string[]
+    const nomes = await fetchConferentesNomesPorIds(ids)
+    const out: HistoricoContagemItem[] = []
+    for (const v of bucket.values()) {
+      const nome =
+        v.conferenteId == null ? 'Sem conferente' : nomes.get(v.conferenteId)?.trim() || v.conferenteId
+      out.push({
+        conferenteId: v.conferenteId,
+        conferenteNome: nome,
+        dataYmd: v.dataYmd,
+        totalItens: v.total,
+      })
+    }
+    out.sort((a, b) =>
+      a.dataYmd !== b.dataYmd
+        ? b.dataYmd.localeCompare(a.dataYmd)
+        : a.conferenteNome.localeCompare(b.conferenteNome, 'pt-BR'),
+    )
+    return out
+  }
+
+  async function loadHistoricoContagens() {
+    if (!isDiaMode) return
+    setHistoricoLoading(true)
+    setHistoricoError('')
+    try {
+      const { rows: raw, origemAusenteNoResultado } = await fetchHistoricoRawRows()
+      const items = await buildHistoricoLista(raw, origemAusenteNoResultado)
+      setHistoricoItems(items)
+    } catch (e: unknown) {
+      setHistoricoError(e instanceof Error ? e.message : 'Erro ao carregar histórico.')
+    } finally {
+      setHistoricoLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!isDiaMode) return
+    void loadHistoricoContagens()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- recarrega histórico só ao entrar na aba
+  }, [isDiaMode])
+
+  async function loadFromHistoricoItem(item: HistoricoContagemItem) {
+    setAllTime(false)
+    setUseSingleDay(true)
+    setSingleDay(item.dataYmd)
+    setUseInventarioCols(false)
+    setConferenteFiltroHistorico(item.conferenteId == null ? '__sem__' : item.conferenteId)
+    setRelatorioConferenteModo({})
+    setLoading(true)
+    setError('')
+    setSuccess('')
+    setRows([])
+    try {
+      const { rows: data, successMessage, origemAusenteNoResultado } = await fetchRelatorioContagemRows({
+        singleDayYmd: item.dataYmd,
+        allTimeOverride: false,
+      })
+      const fh = item.conferenteId == null ? '__sem__' : item.conferenteId
+      let dataForPrevia = data
+      if (fh === '__sem__') dataForPrevia = data.filter((r) => !String(r.conferente_id ?? '').trim())
+      else dataForPrevia = data.filter((r) => String(r.conferente_id ?? '').trim() === fh)
+      const finalRows = await aplicarMesmaRegraDaPreviaAsync(dataForPrevia, origemAusenteNoResultado)
+      setRows(finalRows)
+      const baseMsg = successMessage ? `${successMessage} ` : ''
+      setSuccess(
+        `${baseMsg}Exibindo contagem de «${item.conferenteNome}» em ${formatDateBR(item.dataYmd)} (${item.totalItens} lançamento(s) neste dia).`,
+      )
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Erro ao carregar relatório.')
+    } finally {
+      setLoading(false)
+    }
+    window.setTimeout(() => listaRelatorioRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 120)
+  }
+
+  async function limparFiltroHistorico() {
+    setConferenteFiltroHistorico(null)
+    await load()
+  }
+
   async function load() {
     setLoading(true)
     setError('')
@@ -747,7 +934,15 @@ export default function RelatorioContagem({
     setRelatorioConferenteModo({})
     try {
       const { rows: data, successMessage, origemAusenteNoResultado } = await fetchRelatorioContagemRows()
-      const finalRows = await aplicarMesmaRegraDaPreviaAsync(data, origemAusenteNoResultado)
+      let dataForPrevia = data
+      if (conferenteFiltroHistorico) {
+        if (conferenteFiltroHistorico === '__sem__') {
+          dataForPrevia = data.filter((r) => !String(r.conferente_id ?? '').trim())
+        } else {
+          dataForPrevia = data.filter((r) => String(r.conferente_id ?? '').trim() === conferenteFiltroHistorico)
+        }
+      }
+      const finalRows = await aplicarMesmaRegraDaPreviaAsync(dataForPrevia, origemAusenteNoResultado)
       setRows(finalRows)
       if (successMessage) setSuccess(successMessage)
     } catch (e: unknown) {
@@ -788,6 +983,7 @@ export default function RelatorioContagem({
     }
     setRows((prev) => prev.filter((r) => r.id !== id))
     setSuccess(idsToDelete.length > 1 ? `${idsToDelete.length} registros excluídos.` : 'Contagem excluída com sucesso.')
+    if (isDiaMode) void loadHistoricoContagens()
     setRowActionLoading(false)
   }
 
@@ -830,6 +1026,7 @@ export default function RelatorioContagem({
         )
         setEditingId(null)
         setEditingQuantidade('')
+        if (isDiaMode) void loadHistoricoContagens()
       } else {
         const sourceIds = relatorioSourceIdsParaAcao(row)
         const keepId = sourceIds[0]
@@ -848,6 +1045,7 @@ export default function RelatorioContagem({
         }
         setSuccess('Quantidade atualizada com sucesso.')
         await load()
+        if (isDiaMode) void loadHistoricoContagens()
         setEditingId(null)
         setEditingQuantidade('')
       }
@@ -1158,7 +1356,91 @@ export default function RelatorioContagem({
         prévia. IDs em <code style={{ fontSize: 12 }}>inventario_planilha_linhas</code> entram no filtro como na prévia.
       </p>
 
-      <div style={{ display: 'grid', gap: 12, marginTop: 12 }}>
+      {isDiaMode ? (
+        <section
+          style={{
+            marginTop: 16,
+            padding: 14,
+            borderRadius: 10,
+            border: '1px solid var(--border, #ddd)',
+            background: 'var(--surface, #f9f9f9)',
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 10,
+              marginBottom: 10,
+            }}
+          >
+            <h3 style={{ margin: 0, fontSize: 16 }}>Histórico de contagens</h3>
+            <button
+              type="button"
+              onClick={() => void loadHistoricoContagens()}
+              disabled={historicoLoading}
+              style={{
+                padding: '6px 12px',
+                borderRadius: 8,
+                border: '1px solid #ccc',
+                background: '#fff',
+                cursor: historicoLoading ? 'wait' : 'pointer',
+                fontSize: 12,
+              }}
+            >
+              {historicoLoading ? 'Atualizando…' : 'Atualizar histórico'}
+            </button>
+          </div>
+          <p style={{ margin: '0 0 12px', fontSize: 12, color: 'var(--text-muted, #888)', lineHeight: 1.45 }}>
+            Contagens diárias agrupadas por conferente e dia civil (mesma regra da lista abaixo). Use «Ver contagem» para
+            abrir o detalhe filtrado.
+          </p>
+          {historicoError ? <div style={{ color: '#b00020', marginBottom: 8 }}>{historicoError}</div> : null}
+          {historicoLoading && historicoItems.length === 0 ? (
+            <div style={{ fontSize: 13, color: '#666' }}>Carregando histórico…</div>
+          ) : null}
+          {!historicoLoading && !historicoError && historicoItems.length === 0 ? (
+            <div style={{ fontSize: 13, color: '#666' }}>Nenhuma contagem diária encontrada.</div>
+          ) : null}
+          {historicoItems.length > 0 ? (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 480 }}>
+                <thead>
+                  <tr>
+                    <th style={thStyle}>Conferente</th>
+                    <th style={thStyle}>Data da contagem</th>
+                    <th style={thStyle}>Itens contados</th>
+                    <th style={thStyle}> </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {historicoItems.map((item) => (
+                    <tr key={`${item.dataYmd}|${item.conferenteId ?? '__sem__'}`}>
+                      <td style={tdStyle}>{item.conferenteNome}</td>
+                      <td style={tdStyle}>{formatDateBR(item.dataYmd)}</td>
+                      <td style={tdStyle}>{item.totalItens}</td>
+                      <td style={tdStyle}>
+                        <button
+                          type="button"
+                          onClick={() => void loadFromHistoricoItem(item)}
+                          disabled={loading}
+                          style={miniBtnStyle}
+                        >
+                          Ver contagem
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
+        </section>
+      ) : null}
+
+      <div ref={listaRelatorioRef} style={{ display: 'grid', gap: 12, marginTop: 12 }}>
         <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'flex-end' }}>
           <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13 }}>
             Início
@@ -1310,6 +1592,44 @@ export default function RelatorioContagem({
 
         {error ? <div style={{ color: '#b00020' }}>{error}</div> : null}
         {success ? <div style={{ color: '#0f7a0f' }}>{success}</div> : null}
+        {conferenteFiltroHistorico ? (
+          <div
+            style={{
+              padding: '10px 12px',
+              borderRadius: 8,
+              background: 'rgba(25, 118, 210, 0.08)',
+              border: '1px solid rgba(25, 118, 210, 0.35)',
+              fontSize: 13,
+              display: 'flex',
+              flexWrap: 'wrap',
+              alignItems: 'center',
+              gap: 10,
+              justifyContent: 'space-between',
+            }}
+          >
+            <span>
+              Filtro do histórico ativo: a lista mostra só o conferente escolhido. «Limpar» volta ao carregamento normal do
+              período (sem esse filtro).
+            </span>
+            <button
+              type="button"
+              onClick={() => void limparFiltroHistorico()}
+              disabled={loading}
+              style={{
+                padding: '6px 12px',
+                borderRadius: 8,
+                border: '1px solid #1976d2',
+                background: '#fff',
+                color: '#1565c0',
+                cursor: loading ? 'wait' : 'pointer',
+                fontSize: 12,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              Limpar filtro do histórico
+            </button>
+          </div>
+        ) : null}
 
         <label
           style={{

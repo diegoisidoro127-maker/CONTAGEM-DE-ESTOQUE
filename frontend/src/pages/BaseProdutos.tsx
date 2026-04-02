@@ -99,7 +99,16 @@ export default function BaseProdutos() {
   /** Quando definido, a tabela mostra só esta linha (produto encontrado pelo bip). */
   const [bipSoloKey, setBipSoloKey] = useState<string | null>(null)
   const bipInputRef = useRef<HTMLInputElement | null>(null)
-  const rowRefs = useRef<Map<string, HTMLTableRowElement | null>>(new Map())
+  const rowRefs = useRef<Map<string, HTMLElement | null>>(new Map())
+
+  const [isMobile, setIsMobile] = useState(
+    () => typeof window !== 'undefined' && window.innerWidth <= 900,
+  )
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth <= 900)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -759,37 +768,229 @@ export default function BaseProdutos() {
               ? `Exibindo todos os ${filtered.length} produto(s) filtrado(s) (total no cadastro: ${rows.length})`
               : `Mostrando ${rangeFrom}–${rangeTo} de ${filtered.length} · Página ${pageSafe} de ${totalPages} · ${PAGE_SIZE} por página (total no cadastro: ${rows.length})`}
           </div>
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 1400 }}>
-              <thead>
-                <tr>
-                  <th style={thStyle}>Código do produto</th>
-                  <th style={thStyle}>Descrição</th>
-                  <th style={thStyle} title="Quem contou vem do relatório de contagens, não deste cadastro">
-                    Conferente
-                  </th>
-                  <th style={thStyle}>Unidade de medida</th>
-                  <th style={thStyle}>EAN</th>
-                  <th style={thStyle}>DUN</th>
-                  <th style={{ ...thStyle, minWidth: 110 }}>Alteração EAN</th>
-                  <th style={{ ...thStyle, minWidth: 110 }}>Alteração DUN</th>
-                  <th style={thStyle}>Ações</th>
-                </tr>
-              </thead>
-              <tbody>
-                {slice.map((r) => {
-                  const k = rowKey(r)
-                  const saving = savingKey === k
-                  const deleting = deletingKey === k
-                  const edit = canEditRow(k)
-                  return (
-                    <tr
-                      key={k}
-                      ref={(el) => {
-                        if (el) rowRefs.current.set(k, el)
-                        else rowRefs.current.delete(k)
+          {isMobile ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {slice.map((r) => {
+                const k = rowKey(r)
+                const saving = savingKey === k
+                const deleting = deletingKey === k
+                const edit = canEditRow(k)
+                return (
+                  <div
+                    key={k}
+                    ref={(el) => {
+                      if (el) rowRefs.current.set(k, el)
+                      else rowRefs.current.delete(k)
+                    }}
+                    style={{
+                      border: '1px solid var(--border, #444)',
+                      borderRadius: 12,
+                      padding: 12,
+                      background: 'var(--panel-bg, rgba(255,255,255,.04))',
+                      boxSizing: 'border-box',
+                      width: '100%',
+                      maxWidth: '100%',
+                      minWidth: 0,
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontFamily: 'monospace',
+                        fontWeight: 800,
+                        fontSize: 15,
+                        color: 'var(--text, #eee)',
+                        wordBreak: 'break-all',
                       }}
                     >
+                      {r.codigo_interno}
+                    </div>
+                    <div style={{ marginTop: 10 }}>
+                      <div style={{ fontSize: 11, color: 'var(--text, #888)', marginBottom: 4 }}>Descrição</div>
+                      {edit ? (
+                        <textarea
+                          value={r.descricao}
+                          onChange={(e) => patchRow(k, { descricao: e.target.value })}
+                          style={{
+                            ...inputStyle,
+                            width: '100%',
+                            minHeight: 64,
+                            resize: 'vertical',
+                            boxSizing: 'border-box',
+                          }}
+                          rows={3}
+                        />
+                      ) : (
+                        <div
+                          style={{
+                            fontSize: 14,
+                            lineHeight: 1.45,
+                            color: 'var(--text, #eee)',
+                            wordBreak: 'break-word',
+                            overflowWrap: 'anywhere',
+                          }}
+                        >
+                          {r.descricao}
+                        </div>
+                      )}
+                    </div>
+                    <div
+                      style={{ marginTop: 8, fontSize: 12, color: 'var(--text-muted, #888)' }}
+                      title="Não armazenado no cadastro; use Relatório completo ou Todas as contagens para ver o conferente por lançamento."
+                    >
+                      Conferente: —
+                    </div>
+                    <div style={{ marginTop: 10 }}>
+                      <div style={{ fontSize: 11, color: 'var(--text, #888)', marginBottom: 4 }}>Unidade de medida</div>
+                      {edit ? (
+                        <input
+                          value={r.unidade ?? ''}
+                          onChange={(e) =>
+                            patchRow(k, {
+                              unidade: e.target.value.trim() === '' ? null : e.target.value,
+                            })
+                          }
+                          style={{ ...inputStyle, width: '100%', maxWidth: 320, boxSizing: 'border-box' }}
+                        />
+                      ) : (
+                        <span style={{ fontSize: 14, color: 'var(--text, #eee)' }}>{r.unidade ?? '—'}</span>
+                      )}
+                    </div>
+                    <div style={{ marginTop: 10 }}>
+                      <div style={{ fontSize: 11, color: 'var(--text, #888)', marginBottom: 4 }}>EAN</div>
+                      <input
+                        value={r.ean ?? ''}
+                        onChange={(e) => patchRow(k, { ean: e.target.value === '' ? null : e.target.value })}
+                        style={{
+                          ...inputStyle,
+                          width: '100%',
+                          boxSizing: 'border-box',
+                          opacity: edit ? 1 : 0.65,
+                        }}
+                        placeholder="EAN"
+                        disabled={!edit || saving || deleting}
+                        readOnly={!edit}
+                        autoComplete="off"
+                      />
+                    </div>
+                    <div style={{ marginTop: 8 }}>
+                      <div style={{ fontSize: 11, color: 'var(--text, #888)', marginBottom: 4 }}>DUN</div>
+                      <input
+                        value={r.dun ?? ''}
+                        onChange={(e) => patchRow(k, { dun: e.target.value === '' ? null : e.target.value })}
+                        style={{
+                          ...inputStyle,
+                          width: '100%',
+                          boxSizing: 'border-box',
+                          opacity: edit ? 1 : 0.65,
+                        }}
+                        placeholder="DUN"
+                        disabled={!edit || saving || deleting}
+                        readOnly={!edit}
+                        autoComplete="off"
+                      />
+                    </div>
+                    <div
+                      style={{
+                        marginTop: 10,
+                        display: 'flex',
+                        flexWrap: 'wrap',
+                        gap: 12,
+                        fontSize: 12,
+                        fontWeight: 600,
+                        color: 'var(--text, #bbb)',
+                      }}
+                    >
+                      <span title="Última alteração do EAN no cadastro">
+                        Alt. EAN: {formatDateBRFromYmd(r.ean_alterado_em)}
+                      </span>
+                      <span title="Última alteração do DUN no cadastro">
+                        Alt. DUN: {formatDateBRFromYmd(r.dun_alterado_em)}
+                      </span>
+                    </div>
+                    {saving ? (
+                      <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text, #888)' }}>Salvando…</div>
+                    ) : null}
+                    <div style={{ marginTop: 12, display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+                      {!edit ? (
+                        <>
+                          <button
+                            type="button"
+                            disabled={saving || deleting || !!editingKey}
+                            onClick={() => startEdit(r)}
+                            style={btnPrimary}
+                            title={editingKey ? 'Termine ou cancele a outra edição' : undefined}
+                          >
+                            Editar
+                          </button>
+                          <button
+                            type="button"
+                            disabled={saving || deleting || !!editingKey}
+                            onClick={() => void deleteRow(r)}
+                            style={btnDanger}
+                          >
+                            {deleting ? 'Excluindo…' : 'Excluir'}
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            disabled={saving || deleting}
+                            onClick={() => void saveRow(r)}
+                            style={btnPrimary}
+                          >
+                            {saving ? 'Salvando…' : 'Salvar'}
+                          </button>
+                          <button type="button" disabled={saving || deleting} onClick={() => cancelEdit()} style={btnMuted}>
+                            Cancelar
+                          </button>
+                          <button
+                            type="button"
+                            disabled={saving || deleting}
+                            onClick={() => void deleteRow(r)}
+                            style={btnDanger}
+                          >
+                            Excluir
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 1400 }}>
+                <thead>
+                  <tr>
+                    <th style={thStyle}>Código do produto</th>
+                    <th style={thStyle}>Descrição</th>
+                    <th style={thStyle} title="Quem contou vem do relatório de contagens, não deste cadastro">
+                      Conferente
+                    </th>
+                    <th style={thStyle}>Unidade de medida</th>
+                    <th style={thStyle}>EAN</th>
+                    <th style={thStyle}>DUN</th>
+                    <th style={{ ...thStyle, minWidth: 110 }}>Alteração EAN</th>
+                    <th style={{ ...thStyle, minWidth: 110 }}>Alteração DUN</th>
+                    <th style={thStyle}>Ações</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {slice.map((r) => {
+                    const k = rowKey(r)
+                    const saving = savingKey === k
+                    const deleting = deletingKey === k
+                    const edit = canEditRow(k)
+                    return (
+                      <tr
+                        key={k}
+                        ref={(el) => {
+                          if (el) rowRefs.current.set(k, el)
+                          else rowRefs.current.delete(k)
+                        }}
+                      >
                       <td style={tdStyle}>
                         <span style={{ fontFamily: 'monospace', fontSize: 13 }}>{r.codigo_interno}</span>
                       </td>
@@ -942,6 +1143,7 @@ export default function BaseProdutos() {
               </tbody>
             </table>
           </div>
+          )}
           {filtered.length > PAGE_SIZE || (filtered.length > 0 && showAll) ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 14, flexWrap: 'wrap' }}>
               <button
