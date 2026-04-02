@@ -92,7 +92,7 @@ function isColumnMissingErrorRel(e: unknown): boolean {
 
 const TABELA_PRODUTOS_REL = 'Todos os Produtos'
 
-/** Colunas fixas antes da checklist: Câmara, Rua, POS, Nível, Contagem (rodada), Conferente. */
+/** Com modo Inventário: Câmara, Rua, POS, Nível, Contagem (rodada), Conferente (6). Contagem diária: só Conferente (1). */
 const RELATORIO_COLS_PLANILHA_LOCAL = 6
 
 function conferenteNomeRelatorio(r: ContagemRow): string {
@@ -175,7 +175,7 @@ export default function RelatorioContagem({
   const prevCol = (id: string) => listColPrefs[id] !== false
   const relatorioListaColCount = useMemo(
     () =>
-      RELATORIO_COLS_PLANILHA_LOCAL +
+      (useInventarioCols ? RELATORIO_COLS_PLANILHA_LOCAL : 1) +
       [
         'codigo',
         'descricao',
@@ -191,7 +191,7 @@ export default function RelatorioContagem({
         'foto',
         'acoes',
       ].filter((id) => listColPrefs[id] !== false).length,
-    [listColPrefs],
+    [listColPrefs, useInventarioCols],
   )
 
   const [startDate, setStartDate] = useState(() =>
@@ -728,7 +728,11 @@ export default function RelatorioContagem({
   }
 
   function buildRelatorioExcelAoa(rowsToExport: ContagemRow[]): (string | number)[][] {
-    const header: (string | number)[] = ['Câmara', 'Rua', 'POS', 'Nível', 'Contagem', 'Conferente']
+    const header: (string | number)[] = []
+    if (useInventarioCols) {
+      header.push('Câmara', 'Rua', 'POS', 'Nível', 'Contagem')
+    }
+    header.push('Conferente')
     if (prevCol('codigo')) header.push('Código do produto')
     if (prevCol('descricao')) header.push('Descrição')
     if (prevCol('unidade')) header.push('Unidade de medida')
@@ -745,14 +749,16 @@ export default function RelatorioContagem({
     const aoa: (string | number)[][] = [header]
     for (const r of rowsToExport) {
       const row: (string | number)[] = []
-      const cam = inventarioCamaraLabelFromGrupo(r.planilha_grupo_armazem)
-      row.push(cam === '—' ? '' : cam)
-      row.push(r.planilha_rua != null && String(r.planilha_rua).trim() !== '' ? String(r.planilha_rua) : '')
-      row.push(
-        r.planilha_posicao != null && Number.isFinite(Number(r.planilha_posicao)) ? Number(r.planilha_posicao) : '',
-      )
-      row.push(r.planilha_nivel != null && Number.isFinite(Number(r.planilha_nivel)) ? Number(r.planilha_nivel) : '')
-      row.push(formatRodadaRelatorioCell(r.inventario_numero_contagem))
+      if (useInventarioCols) {
+        const cam = inventarioCamaraLabelFromGrupo(r.planilha_grupo_armazem)
+        row.push(cam === '—' ? '' : cam)
+        row.push(r.planilha_rua != null && String(r.planilha_rua).trim() !== '' ? String(r.planilha_rua) : '')
+        row.push(
+          r.planilha_posicao != null && Number.isFinite(Number(r.planilha_posicao)) ? Number(r.planilha_posicao) : '',
+        )
+        row.push(r.planilha_nivel != null && Number.isFinite(Number(r.planilha_nivel)) ? Number(r.planilha_nivel) : '')
+        row.push(formatRodadaRelatorioCell(r.inventario_numero_contagem))
+      }
       {
         const nome = conferenteNomeRelatorio(r)
         row.push(nome === '—' ? '' : nome)
@@ -1156,11 +1162,15 @@ export default function RelatorioContagem({
             >
               <thead>
                 <tr>
-                  <th style={thStyle}>Câmara</th>
-                  <th style={thStyle}>Rua</th>
-                  <th style={thStyle}>POS</th>
-                  <th style={thStyle}>Nível</th>
-                  <th style={thStyle}>Contagem</th>
+                  {useInventarioCols ? (
+                    <>
+                      <th style={thStyle}>Câmara</th>
+                      <th style={thStyle}>Rua</th>
+                      <th style={thStyle}>POS</th>
+                      <th style={thStyle}>Nível</th>
+                      <th style={thStyle}>Contagem</th>
+                    </>
+                  ) : null}
                   <th style={thStyle}>Conferente</th>
                   {prevCol('codigo') ? <th style={thStyle}>Código do produto</th> : null}
                   {prevCol('descricao') ? <th style={thStyle}>Descrição</th> : null}
@@ -1193,23 +1203,27 @@ export default function RelatorioContagem({
                         : undefined
                     }
                   >
-                    <td style={tdStyle}>{inventarioCamaraLabelFromGrupo(r.planilha_grupo_armazem)}</td>
-                    <td style={tdStyle}>
-                      {r.planilha_rua != null && String(r.planilha_rua).trim() !== '' ? r.planilha_rua : '—'}
-                    </td>
-                    <td style={tdStyle}>
-                      {r.planilha_posicao != null && Number.isFinite(Number(r.planilha_posicao))
-                        ? r.planilha_posicao
-                        : '—'}
-                    </td>
-                    <td style={tdStyle}>
-                      {r.planilha_nivel != null && Number.isFinite(Number(r.planilha_nivel)) ? r.planilha_nivel : '—'}
-                    </td>
-                    <td style={tdStyle}>
-                      {r.inventario_numero_contagem != null && Number.isFinite(Number(r.inventario_numero_contagem))
-                        ? formatContagemLabel(Number(r.inventario_numero_contagem))
-                        : '—'}
-                    </td>
+                    {useInventarioCols ? (
+                      <>
+                        <td style={tdStyle}>{inventarioCamaraLabelFromGrupo(r.planilha_grupo_armazem)}</td>
+                        <td style={tdStyle}>
+                          {r.planilha_rua != null && String(r.planilha_rua).trim() !== '' ? r.planilha_rua : '—'}
+                        </td>
+                        <td style={tdStyle}>
+                          {r.planilha_posicao != null && Number.isFinite(Number(r.planilha_posicao))
+                            ? r.planilha_posicao
+                            : '—'}
+                        </td>
+                        <td style={tdStyle}>
+                          {r.planilha_nivel != null && Number.isFinite(Number(r.planilha_nivel)) ? r.planilha_nivel : '—'}
+                        </td>
+                        <td style={tdStyle}>
+                          {r.inventario_numero_contagem != null && Number.isFinite(Number(r.inventario_numero_contagem))
+                            ? formatContagemLabel(Number(r.inventario_numero_contagem))
+                            : '—'}
+                        </td>
+                      </>
+                    ) : null}
                     <td style={{ ...tdStyle, whiteSpace: 'normal', maxWidth: 200 }}>
                       {conferenteNomeRelatorio(r)}
                     </td>
