@@ -56,18 +56,14 @@ begin
      and c.inventario_repeticao is null
      and c.inventario_numero_contagem is null;
 
-  -- Soma 0: limpar célula no Sheet (evita coluna cheia de "0" onde o esperado é vazio).
-  v_event := case
-    when v_sum is null then 'clear_qty'
-    when v_sum = 0 then 'clear_qty'
-    else 'upsert'
-  end;
+  -- Planilha (só este fluxo = contagem diária; inventário não enfileira): soma zero → grava 0 na célula.
+  v_event := 'upsert';
 
   v_payload := jsonb_build_object(
     'codigo_interno', v_codigo,
     'descricao', v_desc,
     'data_contagem', v_data_contagem,
-    'quantidade_contada', case when v_event = 'upsert' then v_sum else null end
+    'quantidade_contada', coalesce(v_sum, 0)
   );
 
   insert into public.sheet_outbox (
@@ -86,7 +82,7 @@ begin
     v_desc,
     v_data_contagem,
     v_event,
-    case when v_event = 'upsert' then v_sum else null end,
+    coalesce(v_sum, 0),
     v_payload,
     'pending'
   )

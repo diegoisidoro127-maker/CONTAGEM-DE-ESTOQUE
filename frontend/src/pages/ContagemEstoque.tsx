@@ -258,6 +258,39 @@ function formatDateBRFromYmd(ymd: string) {
   return `${d}/${m}/${y}`
 }
 
+/** Retorno da Edge `sheet-outbox-sync` ao drenar `public.sheet_outbox` → Apps Script. */
+type SheetOutboxKickResult =
+  | { ok: true; claimed: number; processed_ok: number; processed_failed: number; functionName: string }
+  | { ok: false; message: string; functionName?: string }
+
+function parseSheetOutboxResponse(data: unknown, fnName: string): SheetOutboxKickResult | null {
+  if (data == null || typeof data !== 'object') return null
+  const d = data as Record<string, unknown>
+  if (d.ok === false) {
+    return {
+      ok: false,
+      message: typeof d.error === 'string' ? d.error : 'Edge Function retornou ok: false.',
+      functionName: fnName,
+    }
+  }
+  if (d.ok !== true) return null
+  if (Array.isArray(d.items)) {
+    return {
+      ok: false,
+      message:
+        'A função respondeu como checklist (list_items), não como processador da fila. Confira VITE_OUTBOX_FUNCTION_NAME e o deploy de sheet-outbox-sync.',
+      functionName: fnName,
+    }
+  }
+  return {
+    ok: true,
+    claimed: Number(d.claimed ?? 0),
+    processed_ok: Number(d.processed_ok ?? 0),
+    processed_failed: Number(d.processed_failed ?? 0),
+    functionName: fnName,
+  }
+}
+
 function conferenteNomeFromJoin(row: Record<string, unknown>): string {
   const c = row.conferentes as { nome?: string } | Array<{ nome?: string }> | null | undefined
   if (!c) return ''
@@ -453,6 +486,15 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
   const [armazemMissingCodes, setArmazemMissingCodes] = useState<string[]>([])
   const [confirmFinalizeMissingOpen, setConfirmFinalizeMissingOpen] = useState(false)
   const [missingItemsForFinalize, setMissingItemsForFinalize] = useState<OfflineChecklistItem[]>([])
+  /** Contagem diária: ao finalizar com sucesso, abre modal com resumo (ref: itens preenchidos com 0 antes do envio). */
+  const [savedCountModal, setSavedCountModal] = useState<{
+    ymd: string
+    registros: number
+    pendAutoZero?: number
+    conferenteNome?: string
+    sheetSync?: SheetOutboxKickResult
+  } | null>(null)
+  const finalizePendAutoZeroRef = useRef<number | null>(null)
   const [checklistPage, setChecklistPage] = useState(1)
   /** Página dentro da tabela planilha da aba atual (independe das abas CAMARA/RUA). */
   const [planilhaTabelaPage, setPlanilhaTabelaPage] = useState(1)
@@ -501,6 +543,15 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       /* ignore */
     }
   }, [inventario, checklistVisibleCols])
+
+  useEffect(() => {
+    if (!savedCountModal) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setSavedCountModal(null)
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [savedCountModal])
 
   useEffect(() => {
     if (codigoInterno.trim()) setBarcodeFotoHint('')
@@ -1526,25 +1577,38 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
   }
 
 
-  async function kickOutboxSync() {
-    if (!enableOutboxKick) return
+  async function kickOutboxSync(): Promise<SheetOutboxKickResult> {
+    if (!enableOutboxKick) {
+      return {
+        ok: false,
+        message:
+          'Sincronização com a planilha desativada (VITE_OUTBOX_KICK=false). Ative ou rode a Edge Function sheet-outbox-sync no Supabase.',
+      }
+    }
     try {
-      // Edge Function: processa `public.sheet_outbox` e grava no Google Sheets.
-      // Usa a URL da função via supabase-js (não precisa Function URL no .env).
-      if (typeof (supabase as any)?.functions?.invoke !== 'function') return
+      if (typeof (supabase as any)?.functions?.invoke !== 'function') {
+        return { ok: false, message: 'SDK sem functions.invoke — atualize @supabase/supabase-js.' }
+      }
       const candidates = [outboxFunctionName, 'sheet-outbox-sync', 'dynamic-endpoint'].filter(
         (v, i, arr): v is string => !!v && arr.indexOf(v) === i,
       )
 
-      let lastErr: any = null
+      let lastErr: unknown = null
       for (const fnName of candidates) {
         const res = await (supabase as any).functions.invoke(fnName, { body: {} })
-        if (!res?.error) return
+        if (!res?.error) {
+          const parsed = parseSheetOutboxResponse(res.data, fnName)
+          if (parsed?.ok === false) {
+            lastErr = new Error(parsed.message)
+            continue
+          }
+          if (parsed?.ok === true) return parsed
+          lastErr = new Error(`Resposta inesperada da função ${fnName} (esperado JSON da outbox).`)
+          continue
+        }
         lastErr = res.error
       }
 
-      // Fallback extra para produção: chamada HTTP direta da function.
-      // Ajuda quando `functions.invoke()` não dispara por configuração de SDK/ambiente.
       if (supabaseUrlEnv && supabaseAnonKeyEnv) {
         for (const fnName of candidates) {
           try {
@@ -1558,26 +1622,49 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
               },
               body: '{}',
             })
-            if (res.ok) return
-            lastErr = new Error(`fallback ${fnName}: ${res.status} ${res.statusText}`)
+            const text = await res.text()
+            let json: unknown = null
+            try {
+              json = text ? JSON.parse(text) : null
+            } catch {
+              json = null
+            }
+            if (res.ok && json != null) {
+              const parsed = parseSheetOutboxResponse(json, fnName)
+              if (parsed?.ok === false) {
+                lastErr = new Error(parsed.message)
+                continue
+              }
+              if (parsed?.ok === true) return parsed
+            }
+            if (!res.ok) {
+              lastErr = new Error(`HTTP ${res.status} ${fnName}: ${text.slice(0, 200)}`)
+            } else {
+              lastErr = new Error(`Resposta inválida de ${fnName}`)
+            }
           } catch (e) {
             lastErr = e
           }
         }
       }
 
-      if (lastErr && import.meta.env.DEV) console.warn('[outbox kick] todas tentativas falharam:', lastErr)
+      const msg =
+        lastErr instanceof Error
+          ? lastErr.message
+          : typeof lastErr === 'object' && lastErr && 'message' in lastErr
+            ? String((lastErr as { message: unknown }).message)
+            : String(lastErr ?? 'erro desconhecido')
+      if (import.meta.env.DEV) console.warn('[outbox kick] falhou:', lastErr)
+      return { ok: false, message: msg }
     } catch (err) {
-      // Não bloqueia o fluxo de salvamento.
-      if (import.meta.env.DEV) console.warn('[outbox kick] falhou:', err)
+      if (import.meta.env.DEV) console.warn('[outbox kick] exceção:', err)
+      return { ok: false, message: err instanceof Error ? err.message : String(err) }
     }
   }
 
-  // Dispara o processador da outbox de forma agressiva:
-  // imediato + retries curtos para reduzir atraso percebido.
-  function kickOutboxSyncNowWithRetry() {
+  /** Reenvios após o primeiro await (fila/trigger podem atrasar milissegundos). */
+  function scheduleOutboxKickRetries() {
     if (!enableOutboxKick) return
-    void kickOutboxSync()
     setTimeout(() => {
       void kickOutboxSync()
     }, 1500)
@@ -1590,6 +1677,11 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     setTimeout(() => {
       void kickOutboxSync()
     }, 30000)
+  }
+
+  function kickOutboxSyncNowWithRetry() {
+    void kickOutboxSync()
+    scheduleOutboxKickRetries()
   }
 
   async function fetchListaChecklistFromDb(): Promise<Array<{ codigo_interno: string; descricao: string }>> {
@@ -2000,9 +2092,11 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
   async function handleFinalizarContagemDiaria() {
     setSaveError('')
     setSaveSuccess('')
+    setSavedCountModal(null)
     setChecklistError('')
     setFinalizeProgress('')
     setConfirmFinalizeMissingOpen(false)
+    finalizePendAutoZeroRef.current = null
     if (!offlineSession || offlineSession.status !== 'aberta') {
       setChecklistError('Não há sessão aberta. Carregue a lista de produtos primeiro.')
       return
@@ -2029,9 +2123,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         }
         setOfflineSession(nextSession)
         saveOfflineSession(nextSession, sessionMode)
-        setSaveSuccess(
-          `Contagem diária: ${pend} item(ns) pendente(s) foram preenchidos automaticamente com 0 para finalização.`,
-        )
+        finalizePendAutoZeroRef.current = pend
         await finalizeInternal(nextSession)
         return
       }
@@ -2055,16 +2147,21 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
   async function finalizeInternal(sessionOverride?: OfflineSession) {
     const session = sessionOverride ?? offlineSession
     if (!session || session.status !== 'aberta') {
+      finalizePendAutoZeroRef.current = null
       setChecklistError('Sessão inválida ou já finalizada. Carregue a lista de produtos de novo.')
       return
     }
     if (!conferenteId || session.conferente_id !== conferenteId) {
+      finalizePendAutoZeroRef.current = null
       setChecklistError('Selecione o mesmo conferente da sessão (ou recarregue a lista).')
       return
     }
 
     setFinalizing(true)
     try {
+      const pendAutoZeroSnapshot = finalizePendAutoZeroRef.current
+      finalizePendAutoZeroRef.current = null
+
       const ymd = session.data_contagem_ymd
       let itemsSnapshot = session.items.map((i) => ({ ...i }))
 
@@ -2275,22 +2372,37 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         inventario && insertWithoutInventarioColumns
           ? ' Recomendado: execute no Supabase os scripts `alter_contagens_estoque_origem_inventario.sql` e `alter_contagens_estoque_inventario_numero_contagem.sql` para gravar origem e metadados de inventário.'
           : ''
-      setSaveSuccess(
-        inventario
-          ? `Inventário do dia ${ymd} finalizado: ${rows.length} novo(s) registro(s) em contagens_estoque (acumula com contagens anteriores do mesmo dia).${
-              planilhaGravada ? ` ${rows.length} linha(s) em inventario_planilha_linhas.` : ''
-            }${planilhaAviso ?? ''}${inventarioDbCompatMsg}`
-          : `Contagem do dia ${ymd} finalizada: ${rows.length} novo(s) registro(s) no banco (acumula com finalizações anteriores do mesmo dia). A sincronização com a planilha Google foi pedida em seguida — aguarde alguns segundos e confira a aba.`,
-      )
+      setPreviewConsultaDiaYmd(ymd)
+      await loadPreview(ymd)
+
+      if (inventario) {
+        setSaveSuccess(
+          `Inventário do dia ${ymd} finalizado: ${rows.length} novo(s) registro(s) em contagens_estoque (acumula com contagens anteriores do mesmo dia).${
+            planilhaGravada ? ` ${rows.length} linha(s) em inventario_planilha_linhas.` : ''
+          }${planilhaAviso ?? ''}${inventarioDbCompatMsg}`,
+        )
+      } else {
+        setFinalizeProgress('Sincronizando com a planilha Google (fila Supabase)...')
+        const sheetSync = await kickOutboxSync()
+        const confRow = conferentes.find((x) => x.id === session.conferente_id)
+        const nomeConf =
+          confRow?.nome != null && String(confRow.nome).trim() !== '' ? String(confRow.nome).trim() : undefined
+        setSavedCountModal({
+          ymd,
+          registros: rows.length,
+          pendAutoZero:
+            pendAutoZeroSnapshot != null && pendAutoZeroSnapshot > 0 ? pendAutoZeroSnapshot : undefined,
+          conferenteNome: nomeConf,
+          sheetSync,
+        })
+        setSaveSuccess('Contagem salva no Supabase.')
+        scheduleOutboxKickRetries()
+      }
       setFinalizeProgress(
         planilhaGravada
           ? 'Concluído: contagens e planilha de inventário gravadas.'
           : 'Concluído: registros salvos com sucesso.',
       )
-      setPreviewConsultaDiaYmd(ymd)
-      await loadPreview(ymd)
-      // Dispara a Edge Function que drena `sheet_outbox` → Google Sheets (o trigger só enfileira).
-      kickOutboxSyncNowWithRetry()
     } catch (e: any) {
       setSaveError(`Erro ao finalizar: ${e?.message ? String(e.message) : 'verifique permissões (RLS) e tabelas.'}`)
     } finally {
@@ -4888,6 +5000,159 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                   disabled={finalizing}
                 >
                   Finalizar e gravar só os preenchidos
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {savedCountModal ? (
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="saved-count-modal-title"
+            style={{
+              position: 'fixed',
+              inset: 0,
+              background: 'rgba(0,0,0,.6)',
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+              padding: 16,
+              zIndex: 10000,
+            }}
+            onClick={() => setSavedCountModal(null)}
+          >
+            <div
+              style={{
+                width: 'min(440px, 100%)',
+                background: 'var(--panel-bg, #1e1e1e)',
+                color: 'var(--text, #eee)',
+                border: '1px solid var(--border, #444)',
+                borderRadius: 14,
+                padding: 22,
+                boxShadow: '0 12px 40px rgba(0,0,0,.45)',
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div
+                style={{
+                  width: 48,
+                  height: 48,
+                  borderRadius: '50%',
+                  background: 'rgba(46, 160, 67, 0.2)',
+                  color: '#6f6',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: 26,
+                  marginBottom: 12,
+                }}
+                aria-hidden
+              >
+                ✓
+              </div>
+              <h3 id="saved-count-modal-title" style={{ margin: '0 0 6px', fontSize: 20, fontWeight: 700 }}>
+                Contagem salva
+              </h3>
+              <p style={{ margin: '0 0 14px', fontSize: 15, color: 'var(--text-muted, #bbb)', lineHeight: 1.5 }}>
+                O dia <strong style={{ color: 'var(--text, #fff)' }}>{formatDateBRFromYmd(savedCountModal.ymd)}</strong>{' '}
+                ({savedCountModal.ymd}) foi gravado em <code style={{ fontSize: 12 }}>contagens_estoque</code>.
+              </p>
+              <div
+                style={{
+                  background: 'var(--panel-elevated, rgba(255,255,255,.06))',
+                  borderRadius: 10,
+                  padding: '12px 14px',
+                  marginBottom: 14,
+                  fontSize: 14,
+                  lineHeight: 1.55,
+                }}
+              >
+                <div>
+                  <strong style={{ color: '#9f9' }}>{savedCountModal.registros}</strong> novo(s) registro(s) nesta
+                  finalização (somam com outras finalizações do mesmo dia).
+                </div>
+                {savedCountModal.conferenteNome ? (
+                  <div style={{ marginTop: 8 }}>
+                    Conferente: <strong>{savedCountModal.conferenteNome}</strong>
+                  </div>
+                ) : null}
+                {savedCountModal.pendAutoZero != null && savedCountModal.pendAutoZero > 0 ? (
+                  <div style={{ marginTop: 8, fontSize: 13, color: 'var(--text-muted, #aaa)' }}>
+                    {savedCountModal.pendAutoZero} item(ns) sem quantidade foram preenchidos com <strong>0</strong> para
+                    permitir o envio.
+                  </div>
+                ) : null}
+              </div>
+              <div style={{ margin: '0 0 16px', fontSize: 13, lineHeight: 1.5 }}>
+                {savedCountModal.sheetSync == null ? (
+                  <p style={{ margin: 0, color: 'var(--text-muted, #999)' }}>
+                    Sincronização com a planilha não foi confirmada neste diálogo. Use <strong>Atualizar prévia</strong> e
+                    confira a fila no Supabase se necessário.
+                  </p>
+                ) : savedCountModal.sheetSync.ok ? (
+                  <>
+                    {savedCountModal.sheetSync.processed_failed > 0 ? (
+                      <p style={{ margin: '0 0 8px', color: '#f88' }}>
+                        <strong>Planilha:</strong> a Edge Function reportou{' '}
+                        {savedCountModal.sheetSync.processed_failed} falha(s). Confira em Dashboard → Edge Functions →
+                        logs, e se o secret <code style={{ fontSize: 11 }}>SHEET_WEBHOOK_URL</code> aponta para o Web App
+                        do Apps Script (<code style={{ fontSize: 11 }}>/exec</code>).
+                      </p>
+                    ) : savedCountModal.sheetSync.claimed === 0 && savedCountModal.sheetSync.processed_ok === 0 ? (
+                      <p style={{ margin: '0 0 8px', color: '#ffb74d' }}>
+                        <strong>Planilha:</strong> a fila <code style={{ fontSize: 11 }}>sheet_outbox</code> estava vazia
+                        neste envio (nada a processar). Se você esperava atualizar o Google Sheets, verifique no Supabase
+                        (SQL) se existem linhas <code style={{ fontSize: 11 }}>pending</code> em{' '}
+                        <code style={{ fontSize: 11 }}>sheet_outbox</code> e se o trigger{' '}
+                        <code style={{ fontSize: 11 }}>trg_sheet_outbox_contagens_insert</code> está criado em{' '}
+                        <code style={{ fontSize: 11 }}>contagens_estoque</code>.
+                      </p>
+                    ) : (
+                      <p style={{ margin: '0 0 8px', color: '#8d8' }}>
+                        <strong>Planilha Google:</strong> fila processada pela função{' '}
+                        <code style={{ fontSize: 11 }}>{savedCountModal.sheetSync.functionName}</code> —{' '}
+                        {savedCountModal.sheetSync.processed_ok} registro(s) enviado(s) ao Apps Script nesta rodada.
+                        Aguarde alguns segundos e confira a coluna do dia na aba.
+                      </p>
+                    )}
+                    <p style={{ margin: 0, color: 'var(--text-muted, #888)', fontSize: 12 }}>
+                      Reenvios automáticos continuam em segundo plano por alguns segundos (caso a fila ainda estivesse
+                      gravando).
+                    </p>
+                  </>
+                ) : (
+                  <p style={{ margin: 0, color: '#f88' }}>
+                    <strong>Planilha:</strong> {savedCountModal.sheetSync.message}
+                    {savedCountModal.sheetSync.functionName ? (
+                      <>
+                        {' '}
+                        (<code style={{ fontSize: 11 }}>{savedCountModal.sheetSync.functionName}</code>)
+                      </>
+                    ) : null}
+                  </p>
+                )}
+              </div>
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  style={{ ...buttonStyle, background: '#444', color: '#fff' }}
+                  onClick={() => {
+                    setSavedCountModal(null)
+                    window.setTimeout(() => {
+                      previewSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                    }, 0)
+                  }}
+                >
+                  Ver prévia no banco
+                </button>
+                <button
+                  type="button"
+                  style={{ ...buttonStyle, background: '#2a7', color: '#fff' }}
+                  onClick={() => setSavedCountModal(null)}
+                >
+                  Entendi
                 </button>
               </div>
             </div>

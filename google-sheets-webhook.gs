@@ -1,4 +1,4 @@
-var WEBHOOK_VERSION = 'no-auto-create-v3-clear-empty-batch-fast'
+var WEBHOOK_VERSION = 'no-auto-create-v3-zero-only-contagem-diaria-batch-fast'
 
 function onOpen() {
   try {
@@ -168,8 +168,10 @@ function spreadsheetHasDateColumn_(ymd) {
  * Executar MANUALMENTE 1x no Apps Script para consolidar colunas de data duplicadas.
  * Mantém a coluna mais à esquerda de cada dia e remove as demais.
  * Se houver valores em duplicadas, soma na coluna "keeper".
+ * @param {boolean} [useZeroWhenEmptySum] - true só no POST da fila contagem diária (modo_planilha); senão célula vazia quando soma 0 e ambas vazias.
  */
-function consolidarColunasDuplicadas() {
+function consolidarColunasDuplicadas(useZeroWhenEmptySum) {
+  if (useZeroWhenEmptySum === undefined || useZeroWhenEmptySum === null) useZeroWhenEmptySum = false
   var ss = SpreadsheetApp.openById('1EoT2x4MHtAu7bVkuwqxl2swdwqUI7n1Hg2EL9WBNeTk')
   var sheet = ss.getSheetByName('CONTAGEM DE ESTOQUE FISICA')
   if (!sheet) throw new Error('Aba CONTAGEM DE ESTOQUE FISICA não encontrada.')
@@ -246,7 +248,7 @@ function consolidarColunasDuplicadas() {
       var a = Number(aRaw || 0)
       var b = Number(bRaw || 0)
       var sum = a + b
-      keeperVals[r][0] = sum === 0 ? (aHas || bHas ? 0 : '') : sum
+      keeperVals[r][0] = sum === 0 ? (useZeroWhenEmptySum ? 0 : (aHas || bHas ? 0 : '')) : sum
     }
     keeperRange.setValues(keeperVals)
     sheet.deleteColumn(d.dupCol)
@@ -266,11 +268,14 @@ function instantIsoToYmdInTz(isoLike, timeZone) {
 }
 
 function doPostLocked(data) {
+  // Só a fila Supabase (contagem diária) envia modo_planilha=contagem_diaria — aí zeros explícitos na coluna do dia.
+  var modoContagemDiaria = String(data.modo_planilha || '') === 'contagem_diaria'
+
   // Modo "corrige na hora do input":
   // antes de gravar, consolida colunas duplicadas existentes.
   // Isso garante que cada dia fique em UMA coluna no momento do envio.
   try {
-    consolidarColunasDuplicadas()
+    consolidarColunasDuplicadas(modoContagemDiaria)
   } catch (e0) {
     // Não bloqueia a gravação principal se a consolidação falhar pontualmente.
   }
@@ -759,7 +764,7 @@ function doPostLocked(data) {
         var a = Number(aRaw || 0)
         var b = Number(bRaw || 0)
         var sum = a + b
-        keeperVals[r][0] = sum === 0 ? (aHas || bHas ? 0 : '') : sum
+        keeperVals[r][0] = sum === 0 ? (modoContagemDiaria ? 0 : (aHas || bHas ? 0 : '')) : sum
       }
 
       sheet.deleteColumn(dupCol)
@@ -858,7 +863,7 @@ function doPostLocked(data) {
         var a = Number(aRaw || 0)
         var b = Number(bRaw || 0)
         var sum = a + b
-        keeperVals[r][0] = sum === 0 ? (aHas || bHas ? 0 : '') : sum
+        keeperVals[r][0] = sum === 0 ? (modoContagemDiaria ? 0 : (aHas || bHas ? 0 : '')) : sum
       }
       keeperRange.setValues(keeperVals)
       sheet.deleteColumn(d.dupCol)
@@ -896,7 +901,10 @@ function doPostLocked(data) {
           dv === dispUnpadded ||
           dv === dispPadded ||
           dv.indexOf(ymd) >= 0
-        if (isDay) sheet.getRange(productRow, c).setValue(0)
+        if (isDay) {
+          if (modoContagemDiaria) sheet.getRange(productRow, c).setValue(0)
+          else sheet.getRange(productRow, c).clearContent()
+        }
       } catch (e) {
         // ignora erro pontual e segue as demais colunas
       }
@@ -911,6 +919,13 @@ function doPostLocked(data) {
       if (ca === incomingCodigo && cb === incomingDescricao) return r
     }
     return null
+  }
+
+  /** Quantidade zero: só grava 0 explícito em modo contagem diária (modo_planilha no POST). */
+  function writeQtdCell(row, col, q) {
+    var rng = sheet.getRange(row, col)
+    if (!modoContagemDiaria && q === 0) rng.clearContent()
+    else rng.setValue(q)
   }
 
   function processOne(rec) {
@@ -949,12 +964,16 @@ function doPostLocked(data) {
     var productRow = findProductRow()
 
     if (thisTipo === 'clear_qty') {
-      // Em exclusão: remove duplicadas do dia SEM somar e limpa a célula (alinhado ao Postgres).
+      // Legado: só contagem diária grava 0; outros POSTs limpam a célula.
       var clearCol = consolidateColumnsForDayNoSum(thisYmd)
       if (!clearCol) clearCol = findDateColumn(thisYmd)
       if (clearCol) {
         writeMappedCol(thisYmd, clearCol)
-        if (productRow) sheet.getRange(productRow, clearCol).clearContent()
+        if (productRow) {
+          var rngClear = sheet.getRange(productRow, clearCol)
+          if (modoContagemDiaria) rngClear.setValue(0)
+          else rngClear.clearContent()
+        }
       }
       return
     }
@@ -968,7 +987,7 @@ function doPostLocked(data) {
     writeMappedCol(thisYmd, dateCol)
 
     if (thisTipo === 'edit_qty') {
-      if (productRow) sheet.getRange(productRow, dateCol).setValue(thisQtd)
+      if (productRow) writeQtdCell(productRow, dateCol, thisQtd)
       return
     }
 
@@ -976,9 +995,9 @@ function doPostLocked(data) {
       var newRow = Math.max(sheet.getLastRow(), HEADER_ROW) + 1
       sheet.getRange(newRow, COL_CODIGO).setValue(rec.codigo_interno || thisCodigo)
       sheet.getRange(newRow, COL_DESC).setValue(rec.descricao || thisDescricao)
-      sheet.getRange(newRow, dateCol).setValue(thisQtd)
+      writeQtdCell(newRow, dateCol, thisQtd)
     } else {
-      sheet.getRange(productRow, dateCol).setValue(thisQtd)
+      writeQtdCell(productRow, dateCol, thisQtd)
     }
   }
 

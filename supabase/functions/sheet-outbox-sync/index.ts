@@ -232,9 +232,11 @@ Deno.serve(async (req) => {
     })
 
     const firstYmd = normalizeDataContagemToYmd(abaRows[0]?.data_contagem) || records[0]?.data_contagem || ''
+    // Apps Script: grava 0 em célula vazia/soma zero só neste modo (inventário/outros POSTs não mandam o flag).
     const body = {
       aba: abaRows[0]?.aba ?? 'CONTAGEM DE ESTOQUE FISICA',
       data_contagem: firstYmd,
+      modo_planilha: 'contagem_diaria',
       records,
     }
 
