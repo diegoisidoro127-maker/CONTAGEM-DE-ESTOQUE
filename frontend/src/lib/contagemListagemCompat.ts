@@ -77,14 +77,24 @@ export function ordenarLinhasInventarioComoPrevia<T extends Record<string, unkno
   })
 }
 
+/** Detalhe por conferente em linha agrupada (contagem diária: dia+código+descrição). */
+export type ConferenteDetalheGrupo = {
+  conferente_id: string
+  conferente_nome: string
+  quantidade_up: number
+  source_ids: string[]
+}
+
 type RowMergeContagemDiaria = Record<string, unknown> & {
   id: string
   codigo_interno?: string
   descricao?: string
   data_contagem?: string | null
+  conferente_id?: string
   quantidade_up?: number
   up_adicional?: number | null
   source_ids?: string[]
+  preview_conferentes_detalhe?: ConferenteDetalheGrupo[]
 }
 
 function nomeConferenteJoinRow(r: Record<string, unknown>): string {
@@ -106,8 +116,16 @@ function mergeConferenteNomesUnicos(a: string, b: string): string {
   return Array.from(parts).sort((x, y) => x.localeCompare(y, 'pt-BR')).join(', ')
 }
 
+function conferenteNomeParaDetalhe(r: Record<string, unknown>): string {
+  const n = nomeConferenteJoinRow(r)
+  if (n) return n
+  const id = String(r.conferente_id ?? '').trim()
+  return id || '—'
+}
+
 /**
  * Agrupa como a prévia da contagem diária: mesmo dia civil + código + descrição, somando quantidades.
+ * Preenche `preview_conferentes_detalhe` para permitir ver total vs quantidade por conferente.
  */
 export function agruparContagemDiariaComoPrevia<T extends RowMergeContagemDiaria>(rows: T[]): T[] {
   const grouped = new Map<string, T>()
@@ -115,10 +133,22 @@ export function agruparContagemDiariaComoPrevia<T extends RowMergeContagemDiaria
     const day = row.data_contagem != null ? String(row.data_contagem).slice(0, 10) : ''
     const key = `${day}|${normalizeCodigoInternoCompareKey(String(row.codigo_interno ?? '')).toLowerCase()}|${String(row.descricao ?? '').trim().toLowerCase()}`
     const existing = grouped.get(key)
+    const rowRec = row as Record<string, unknown>
+    const cid = String(row.conferente_id ?? '').trim() || '__sem__'
+    const nomeLinha = conferenteNomeParaDetalhe(rowRec)
+
     if (!existing) {
       grouped.set(key, {
         ...row,
         source_ids: [String(row.id)],
+        preview_conferentes_detalhe: [
+          {
+            conferente_id: cid,
+            conferente_nome: nomeLinha,
+            quantidade_up: Number(row.quantidade_up ?? 0),
+            source_ids: [String(row.id)],
+          },
+        ],
       } as T)
       continue
     }
@@ -126,6 +156,22 @@ export function agruparContagemDiariaComoPrevia<T extends RowMergeContagemDiaria
     const sid = existing.source_ids ?? []
     sid.push(String(row.id))
     existing.source_ids = sid
+    const det = existing.preview_conferentes_detalhe
+    if (det) {
+      const idx = det.findIndex((d) => d.conferente_id === cid)
+      if (idx >= 0) {
+        det[idx].quantidade_up += Number(row.quantidade_up ?? 0)
+        det[idx].source_ids.push(String(row.id))
+      } else {
+        det.push({
+          conferente_id: cid,
+          conferente_nome: nomeLinha,
+          quantidade_up: Number(row.quantidade_up ?? 0),
+          source_ids: [String(row.id)],
+        })
+      }
+      det.sort((a, b) => a.conferente_nome.localeCompare(b.conferente_nome, 'pt-BR'))
+    }
     const av = row.up_adicional
     if (av != null && av !== '' && Number.isFinite(Number(av))) {
       const ev = existing.up_adicional

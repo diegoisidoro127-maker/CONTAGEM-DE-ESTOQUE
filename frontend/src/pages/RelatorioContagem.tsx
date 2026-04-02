@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type React from 'react'
 import * as XLSX from 'xlsx'
 import { supabase } from '../lib/supabaseClient'
@@ -11,6 +11,7 @@ import {
   fetchPlanilhaContagemIdsParaIntervalo,
   filterContagensPorModoListagem,
   ordenarLinhasInventarioComoPrevia,
+  type ConferenteDetalheGrupo,
 } from '../lib/contagemListagemCompat'
 import { formatContagemLabel, inventarioCamaraLabelFromGrupo } from '../components/inventario/inventarioPlanilhaModel'
 import { deleteInventarioPlanilhaLinhasForContagensIds } from '../lib/inventarioPlanilhaLinhasDelete'
@@ -52,6 +53,8 @@ type ContagemRow = {
   planilha_rua?: string | null
   planilha_posicao?: number | null
   planilha_nivel?: number | null
+  /** Contagem diária agrupada: quantidade por conferente (mesma regra da prévia). */
+  preview_conferentes_detalhe?: ConferenteDetalheGrupo[]
 }
 
 function toISODateLocal(d: Date) {
@@ -239,6 +242,8 @@ export default function RelatorioContagem({
   const prevLoadingRef = useRef(false)
   const [baseExportLoading, setBaseExportLoading] = useState(false)
   const [exportExcelLoading, setExportExcelLoading] = useState(false)
+  /** Contagem diária: `total` ou `conferente_id` por linha agrupada. */
+  const [relatorioConferenteModo, setRelatorioConferenteModo] = useState<Record<string, 'total' | string>>({})
 
   const dateRangeText = useMemo(() => {
     if (allTime) return 'Todas as datas'
@@ -250,6 +255,43 @@ export default function RelatorioContagem({
   const isExportUmDiaCivil = useMemo(
     () => !allTime && (useSingleDay || startDate === endDate),
     [allTime, useSingleDay, startDate, endDate],
+  )
+
+  const relatorioQuantidadeExibida = useCallback(
+    (r: ContagemRow) => {
+      if (useInventarioCols || !r.preview_conferentes_detalhe || r.preview_conferentes_detalhe.length <= 1) {
+        return r.quantidade_up
+      }
+      const modo = relatorioConferenteModo[r.id] ?? 'total'
+      if (modo === 'total') return r.quantidade_up
+      const part = r.preview_conferentes_detalhe.find((d) => d.conferente_id === modo)
+      return part ? part.quantidade_up : r.quantidade_up
+    },
+    [useInventarioCols, relatorioConferenteModo],
+  )
+
+  const relatorioSourceIdsParaAcao = useCallback(
+    (r: ContagemRow) => {
+      const ids = r.source_ids?.length ? r.source_ids : [r.id]
+      if (useInventarioCols || !r.preview_conferentes_detalhe || r.preview_conferentes_detalhe.length <= 1) {
+        return ids
+      }
+      const modo = relatorioConferenteModo[r.id] ?? 'total'
+      if (modo === 'total') return ids
+      const part = r.preview_conferentes_detalhe.find((d) => d.conferente_id === modo)
+      return part?.source_ids?.length ? part.source_ids : ids
+    },
+    [useInventarioCols, relatorioConferenteModo],
+  )
+
+  const relatorioPodeEditarQuantidade = useCallback(
+    (r: ContagemRow) => {
+      if (useInventarioCols) return true
+      const det = r.preview_conferentes_detalhe
+      if (!det || det.length <= 1) return true
+      return (relatorioConferenteModo[r.id] ?? 'total') !== 'total'
+    },
+    [useInventarioCols, relatorioConferenteModo],
   )
 
   const relatorioTotalPages = Math.max(1, Math.ceil(rows.length / RELATORIO_PAGE_SIZE))
@@ -702,6 +744,7 @@ export default function RelatorioContagem({
     setError('')
     setSuccess('')
     setRows([])
+    setRelatorioConferenteModo({})
     try {
       const { rows: data, successMessage, origemAusenteNoResultado } = await fetchRelatorioContagemRows()
       const finalRows = await aplicarMesmaRegraDaPreviaAsync(data, origemAusenteNoResultado)
@@ -716,9 +759,15 @@ export default function RelatorioContagem({
 
   async function handleDeleteRow(id: string) {
     const row = rows.find((r) => r.id === id)
-    const idsToDelete = row?.source_ids?.length ? row.source_ids : [id]
-    const msg =
-      idsToDelete.length > 1
+    const idsToDelete = row ? relatorioSourceIdsParaAcao(row) : [id]
+    const excluiSoUmConferente =
+      row &&
+      row.preview_conferentes_detalhe &&
+      row.preview_conferentes_detalhe.length > 1 &&
+      (relatorioConferenteModo[row.id] ?? 'total') !== 'total'
+    const msg = excluiSoUmConferente
+      ? `Excluir ${idsToDelete.length} registro(s) deste conferente no banco?`
+      : idsToDelete.length > 1
         ? `Excluir ${idsToDelete.length} registros no banco (agrupados como na prévia)?`
         : 'Deseja realmente excluir esta contagem?'
     if (!confirm(msg)) return
@@ -749,31 +798,62 @@ export default function RelatorioContagem({
       return
     }
 
+    const row = rows.find((r) => r.id === id)
+    if (!row) {
+      setError('Linha não encontrada.')
+      return
+    }
+    if (!relatorioPodeEditarQuantidade(row)) {
+      setError('Selecione um conferente (não «Total») para editar a quantidade deste produto.')
+      return
+    }
+
     setRowActionLoading(true)
     setError('')
     setSuccess('')
 
-    const row = rows.find((r) => r.id === id)
-    const idsToUpdate = row?.source_ids?.length ? row.source_ids : [id]
-
-    for (const uid of idsToUpdate) {
-      const { error: updError } = await supabase.from('contagens_estoque').update({ quantidade_up: qtd }).eq('id', uid)
-      if (updError) {
-        setError(`Erro ao atualizar quantidade: ${updError.message}`)
-        setRowActionLoading(false)
-        return
+    try {
+      if (useInventarioCols) {
+        const idsToUpdate = row.source_ids?.length ? row.source_ids : [id]
+        for (const uid of idsToUpdate) {
+          const { error: updError } = await supabase.from('contagens_estoque').update({ quantidade_up: qtd }).eq('id', uid)
+          if (updError) {
+            setError(`Erro ao atualizar quantidade: ${updError.message}`)
+            return
+          }
+        }
+        setRows((prev) => prev.map((r) => (r.id === id ? { ...r, quantidade_up: qtd } : r)))
+        setSuccess(
+          idsToUpdate.length > 1
+            ? `Quantidade ${qtd} aplicada a ${idsToUpdate.length} registros agrupados.`
+            : 'Quantidade atualizada com sucesso.',
+        )
+        setEditingId(null)
+        setEditingQuantidade('')
+      } else {
+        const sourceIds = relatorioSourceIdsParaAcao(row)
+        const keepId = sourceIds[0]
+        const { error: updError } = await supabase.from('contagens_estoque').update({ quantidade_up: qtd }).eq('id', keepId)
+        if (updError) {
+          setError(`Erro ao atualizar quantidade: ${updError.message}`)
+          return
+        }
+        const otherIds = sourceIds.slice(1)
+        if (otherIds.length) {
+          const { error: delError } = await supabase.from('contagens_estoque').delete().in('id', otherIds)
+          if (delError) {
+            setError(`Erro ao consolidar registros: ${delError.message}`)
+            return
+          }
+        }
+        setSuccess('Quantidade atualizada com sucesso.')
+        await load()
+        setEditingId(null)
+        setEditingQuantidade('')
       }
+    } finally {
+      setRowActionLoading(false)
     }
-
-    setRows((prev) => prev.map((r) => (r.id === id ? { ...r, quantidade_up: qtd } : r)))
-    setEditingId(null)
-    setEditingQuantidade('')
-    setSuccess(
-      idsToUpdate.length > 1
-        ? `Quantidade ${qtd} aplicada a ${idsToUpdate.length} registros agrupados.`
-        : 'Quantidade atualizada com sucesso.',
-    )
-    setRowActionLoading(false)
   }
 
   /** Planilha com a mesma ordem de colunas da tela; `aoa_to_sheet` garante todas as linhas (sem depender só da página visível). */
@@ -1049,6 +1129,20 @@ export default function RelatorioContagem({
     </div>
   )
 
+  function relatorioModoBtnStyle(active: boolean): React.CSSProperties {
+    return {
+      padding: '4px 8px',
+      fontSize: 11,
+      lineHeight: 1.2,
+      borderRadius: 6,
+      border: `1px solid ${active ? 'var(--accent, #1976d2)' : 'var(--border, #ccc)'}`,
+      background: active ? 'rgba(25, 118, 210, 0.15)' : 'var(--surface, #fff)',
+      color: 'var(--text, #111)',
+      cursor: 'pointer',
+      fontWeight: active ? 700 : 500,
+    }
+  }
+
   return (
     <div style={{ padding: 16, maxWidth: 1400, margin: '0 auto' }}>
       <h2>{isDiaMode ? 'Todas as contagens' : 'Relatório completo por data de contagem'}</h2>
@@ -1318,8 +1412,30 @@ export default function RelatorioContagem({
                         </td>
                       </>
                     ) : null}
-                    <td style={{ ...tdStyle, whiteSpace: 'normal', maxWidth: 200 }}>
-                      {conferenteNomeRelatorio(r)}
+                    <td style={{ ...tdStyle, whiteSpace: 'normal', maxWidth: 260 }}>
+                      {!useInventarioCols && r.preview_conferentes_detalhe && r.preview_conferentes_detalhe.length > 1 ? (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+                          <button
+                            type="button"
+                            style={relatorioModoBtnStyle((relatorioConferenteModo[r.id] ?? 'total') === 'total')}
+                            onClick={() => setRelatorioConferenteModo((m) => ({ ...m, [r.id]: 'total' }))}
+                          >
+                            Total
+                          </button>
+                          {r.preview_conferentes_detalhe.map((d) => (
+                            <button
+                              key={d.conferente_id}
+                              type="button"
+                              style={relatorioModoBtnStyle((relatorioConferenteModo[r.id] ?? 'total') === d.conferente_id)}
+                              onClick={() => setRelatorioConferenteModo((m) => ({ ...m, [r.id]: d.conferente_id }))}
+                            >
+                              {d.conferente_nome}
+                            </button>
+                          ))}
+                        </div>
+                      ) : (
+                        conferenteNomeRelatorio(r)
+                      )}
                     </td>
                     {prevCol('codigo') ? <td style={tdStyle}>{r.codigo_interno}</td> : null}
                     {prevCol('descricao') ? (
@@ -1337,7 +1453,7 @@ export default function RelatorioContagem({
                             style={{ ...inputInlineStyle }}
                           />
                         ) : (
-                          r.quantidade_up
+                          relatorioQuantidadeExibida(r)
                         )}
                       </td>
                     ) : null}
@@ -1391,11 +1507,16 @@ export default function RelatorioContagem({
                           <div style={{ display: 'flex', gap: 6 }}>
                             <button
                               type="button"
+                              title={
+                                !relatorioPodeEditarQuantidade(r)
+                                  ? 'Selecione um conferente (não Total) para editar a quantidade'
+                                  : undefined
+                              }
                               onClick={() => {
                                 setEditingId(r.id)
-                                setEditingQuantidade(String(r.quantidade_up))
+                                setEditingQuantidade(String(relatorioQuantidadeExibida(r)))
                               }}
-                              disabled={rowActionLoading}
+                              disabled={rowActionLoading || !relatorioPodeEditarQuantidade(r)}
                               style={miniBtnStyle}
                             >
                               Editar
