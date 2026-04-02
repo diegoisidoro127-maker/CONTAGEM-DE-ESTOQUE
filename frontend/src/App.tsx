@@ -29,12 +29,12 @@ export default function App() {
     }
   }, [view])
 
-  // Na Base de dados, mostra só um atalho (último modo usado: contagem ou inventário).
+  /** Último modo de lista (contagem diária vs inventário): em todas as abas do painel só aparece o atalho desse modo. */
   const preferredChecklistView: 'contagem' | 'inventario' = readLastListWasInventario()
     ? 'inventario'
     : 'contagem'
-  const showContagemBtn = view === 'baseDados' ? preferredChecklistView === 'contagem' : view !== 'inventario'
-  const showInventarioBtn = view === 'baseDados' ? preferredChecklistView === 'inventario' : view !== 'contagem'
+  const showContagemBtn = preferredChecklistView === 'contagem'
+  const showInventarioBtn = preferredChecklistView === 'inventario'
 
   return (
     <div>
