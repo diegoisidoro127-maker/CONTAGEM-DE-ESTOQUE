@@ -216,11 +216,33 @@ function civilDayYmdFromRow(r: Pick<ContagemRow, 'data_contagem' | 'data_hora_co
   return /^\d{4}-\d{2}-\d{2}$/.test(h) ? h : ''
 }
 
+/**
+ * Só `data_contagem` (YMD) — mesmo critério da prévia em ContagemEstoque (`.eq('data_contagem', dia)`).
+ * Evita que o histórico / lista de um dia mostrem registros só com `data_hora` que a exclusão por dia não apaga.
+ */
+function diaYmdSoDataContagemRow(r: Pick<ContagemRow, 'data_contagem'>): string | null {
+  const d = r.data_contagem != null ? String(r.data_contagem).slice(0, 10) : ''
+  return /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null
+}
+
 function computeMinMaxYmdFromRows(rows: ContagemRow[]): { minY: string; maxY: string } {
   let minY = '9999-12-31'
   let maxY = '1970-01-01'
   for (const r of rows) {
     const day = civilDayYmdFromRow(r)
+    if (!day) continue
+    if (day < minY) minY = day
+    if (day > maxY) maxY = day
+  }
+  if (minY === '9999-12-31') return { minY: '1970-01-01', maxY: '2100-12-31' }
+  return { minY, maxY }
+}
+
+function computeMinMaxYmdDataContagemOnly(rows: ContagemRow[]): { minY: string; maxY: string } {
+  let minY = '9999-12-31'
+  let maxY = '1970-01-01'
+  for (const r of rows) {
+    const day = diaYmdSoDataContagemRow(r)
     if (!day) continue
     if (day < minY) minY = day
     if (day > maxY) maxY = day
@@ -595,18 +617,8 @@ export default function RelatorioContagem({
       }
 
       if (useSd) {
-        const startIso = `${singleDayVal}T00:00:00`
-        const endIso = `${singleDayVal}T23:59:59`
-        const [a, b] = await Promise.all([
-          fetchAllPaged(() => base().eq('data_contagem', singleDayVal)),
-          fetchAllPaged(() =>
-            base()
-              .is('data_contagem', null)
-              .gte('data_hora_contagem', startIso)
-              .lte('data_hora_contagem', endIso),
-          ),
-        ])
-        return mergeContagemRowsById(a, b)
+        /** Igual à prévia: só linhas com `data_contagem` = dia (sem legado só com `data_hora`). */
+        return fetchAllPaged(() => base().eq('data_contagem', singleDayVal))
       }
 
       const startIso = `${startDate}T00:00:00`
@@ -844,7 +856,7 @@ export default function RelatorioContagem({
     origemAusenteNoResultado: boolean,
   ): Promise<HistoricoContagemItem[]> {
     if (!raw.length) return []
-    const { minY, maxY } = computeMinMaxYmdFromRows(raw)
+    const { minY, maxY } = computeMinMaxYmdDataContagemOnly(raw)
     const planilhaIds = await fetchPlanilhaContagemIdsParaIntervalo(supabase, minY, maxY)
     const asRec = raw.map((r) => ({ ...r }) as Record<string, unknown>)
     const filtered = filterContagensPorModoListagem(
@@ -859,7 +871,7 @@ export default function RelatorioContagem({
       { dataYmd: string; conferenteId: string | null; total: number; minTs: number | null; maxTs: number | null }
     >()
     for (const r of filtered) {
-      const dataYmd = civilDayYmdFromRow(r)
+      const dataYmd = diaYmdSoDataContagemRow(r)
       if (!dataYmd) continue
       const cidRaw = String(r.conferente_id ?? '').trim()
       const conferenteId = cidRaw === '' ? null : cidRaw
@@ -1385,9 +1397,10 @@ export default function RelatorioContagem({
       <h2>{isDiaMode ? 'Todas as contagens' : 'Relatório completo por data de contagem'}</h2>
 
       <p style={{ margin: '8px 0 0', fontSize: 13, color: 'var(--text-muted, #888)', lineHeight: 1.45 }}>
-        O período e o &quot;filtrar por dia&quot; usam o <strong>dia civil da contagem</strong> (campo gravado na
-        sessão), alinhado ao que você vê na tela de contagem — não só o relógio do momento em que salvou. Registros
-        muito antigos sem esse campo usam a data/hora do registro.
+        Com <strong>filtrar por um dia</strong>, a lista e o <strong>histórico</strong> consideram só linhas com{' '}
+        <strong>data da contagem</strong> naquele dia — o mesmo critério da prévia e da exclusão por dia. Em um{' '}
+        <strong>intervalo de datas</strong> (relatório por período), registros antigos sem &quot;data da contagem&quot;
+        podem aparecer pela data/hora do registro.
       </p>
       <p style={{ margin: '8px 0 0', fontSize: 13, color: 'var(--text-muted, #888)', lineHeight: 1.45 }}>
         A lista abaixo usa a <strong>mesma regra da prévia</strong> em Contagem/Inventário: colunas &quot;Inventário
