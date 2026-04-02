@@ -287,6 +287,27 @@ Deno.serve(async (req) => {
           `Webhook falhou: ${res.status} ${res.statusText}. Resposta: ${errText.slice(0, 500)}`,
         )
       }
+      const trimmed = errText.trim()
+      if (trimmed.startsWith('<') || /<!doctype/i.test(trimmed.slice(0, 40))) {
+        throw new Error(
+          `Webhook retornou HTML (confira SHEET_WEBHOOK_URL = Web App /exec e execução como "Eu"). Trecho: ${trimmed.slice(0, 220)}`,
+        )
+      }
+      // Web App do Apps Script costuma responder HTTP 200 mesmo com JSON { ok: false } — não tratar como sucesso.
+      if (trimmed.startsWith('{')) {
+        try {
+          const parsedBody = JSON.parse(trimmed) as { ok?: unknown; error?: unknown }
+          if (parsedBody && parsedBody.ok === false) {
+            const errMsg =
+              typeof parsedBody.error === 'string' && parsedBody.error.trim() !== ''
+                ? parsedBody.error.trim()
+                : trimmed.slice(0, 500)
+            throw new Error(`Webhook retornou ok: false: ${errMsg}`)
+          }
+        } catch (e) {
+          if (e instanceof Error && e.message.startsWith('Webhook retornou ok: false')) throw e
+        }
+      }
 
       const ids = abaRows.map((r) => r.id)
       okCount += ids.length

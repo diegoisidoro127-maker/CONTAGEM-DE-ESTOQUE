@@ -2407,7 +2407,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         setSaveSuccess(
           `Inventário do dia ${ymd} finalizado: ${rows.length} novo(s) registro(s) em contagens_estoque (acumula com contagens anteriores do mesmo dia).${
             planilhaGravada ? ` ${rows.length} linha(s) em inventario_planilha_linhas.` : ''
-          }${planilhaAviso ?? ''}${inventarioDbCompatMsg}`,
+          }${planilhaAviso ?? ''}${inventarioDbCompatMsg} A planilha Google (aba contagem diária) não recebe inventário — só a contagem diária normal.`,
         )
       } else {
         setFinalizeProgress('Sincronizando com a planilha Google (fila Supabase)...')
