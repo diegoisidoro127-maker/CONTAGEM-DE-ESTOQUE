@@ -61,8 +61,8 @@ import {
 import { fetchConferentesNomesPorIds } from '../lib/conferentesNomesBatch'
 
 const PREVIEW_PAGE_SIZE = 15
-/** Colunas fixas na prévia (Câmara / Rua / POS / Nível / Conferente), alinhadas ao relatório completo. */
-/** Câmara, Rua, POS, Nível [, Contagem rodada], Conferente — Contagem só no inventário. */
+/** Colunas fixas na prévia com dados de planilha (Câmara / Rua / POS / Nível + Conferente). Só no inventário. */
+/** Na contagem diária a prévia não mostra Câmara–Nível; só 1 coluna fixa (Conferente) + opcionais. */
 const PREVIEW_COLS_PLANILHA_BASE = 5
 const CHECKLIST_PAGE_SIZE = 15
 /** Linhas por página na tabela “Inventário — formato planilha” (cada aba pode ter centenas de linhas). */
@@ -2775,8 +2775,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     /** Mesma regra da lista principal (Ocultar/mostrar colunas). */
     const prevCol = (id: string) => checklistVisibleCols[id] !== false
     const previewVisColCount =
-      PREVIEW_COLS_PLANILHA_BASE +
-      (inventario ? 1 : 0) +
+      (inventario ? PREVIEW_COLS_PLANILHA_BASE + 1 : 1) +
       [
         'codigo',
         'descricao',
@@ -2946,22 +2945,26 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                   }}
                 >
                   <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: 12, color: 'var(--text, #888)' }}>Câmara</div>
-                    <div style={{ fontSize: 13 }}>{inventarioCamaraLabelFromGrupo(r.planilha_grupo_armazem)}</div>
-                    <div style={{ fontSize: 12, color: 'var(--text, #888)', marginTop: 8 }}>Rua</div>
-                    <div style={{ fontSize: 13 }}>
-                      {r.planilha_rua != null && String(r.planilha_rua).trim() !== '' ? r.planilha_rua : '—'}
-                    </div>
-                    <div style={{ fontSize: 12, color: 'var(--text, #888)', marginTop: 8 }}>POS</div>
-                    <div style={{ fontSize: 13 }}>
-                      {r.planilha_posicao != null && Number.isFinite(Number(r.planilha_posicao))
-                        ? r.planilha_posicao
-                        : '—'}
-                    </div>
-                    <div style={{ fontSize: 12, color: 'var(--text, #888)', marginTop: 8 }}>Nível</div>
-                    <div style={{ fontSize: 13 }}>
-                      {r.planilha_nivel != null && Number.isFinite(Number(r.planilha_nivel)) ? r.planilha_nivel : '—'}
-                    </div>
+                    {inventario ? (
+                      <>
+                        <div style={{ fontSize: 12, color: 'var(--text, #888)' }}>Câmara</div>
+                        <div style={{ fontSize: 13 }}>{inventarioCamaraLabelFromGrupo(r.planilha_grupo_armazem)}</div>
+                        <div style={{ fontSize: 12, color: 'var(--text, #888)', marginTop: 8 }}>Rua</div>
+                        <div style={{ fontSize: 13 }}>
+                          {r.planilha_rua != null && String(r.planilha_rua).trim() !== '' ? r.planilha_rua : '—'}
+                        </div>
+                        <div style={{ fontSize: 12, color: 'var(--text, #888)', marginTop: 8 }}>POS</div>
+                        <div style={{ fontSize: 13 }}>
+                          {r.planilha_posicao != null && Number.isFinite(Number(r.planilha_posicao))
+                            ? r.planilha_posicao
+                            : '—'}
+                        </div>
+                        <div style={{ fontSize: 12, color: 'var(--text, #888)', marginTop: 8 }}>Nível</div>
+                        <div style={{ fontSize: 13 }}>
+                          {r.planilha_nivel != null && Number.isFinite(Number(r.planilha_nivel)) ? r.planilha_nivel : '—'}
+                        </div>
+                      </>
+                    ) : null}
                     {inventario ? (
                       <>
                         <div style={{ fontSize: 12, color: 'var(--text, #888)', marginTop: 8 }}>Contagem</div>
@@ -3143,11 +3146,15 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         >
           <thead>
             <tr>
-              <th style={thStyle}>Câmara</th>
-              <th style={thStyle}>Rua</th>
-              <th style={thStyle}>POS</th>
-              <th style={thStyle}>Nível</th>
-              {inventario ? <th style={thStyle}>Contagem</th> : null}
+              {inventario ? (
+                <>
+                  <th style={thStyle}>Câmara</th>
+                  <th style={thStyle}>Rua</th>
+                  <th style={thStyle}>POS</th>
+                  <th style={thStyle}>Nível</th>
+                  <th style={thStyle}>Contagem</th>
+                </>
+              ) : null}
               <th style={thStyle}>Conferente</th>
               {prevCol('codigo') ? <th style={thStyle}>Código do produto</th> : null}
               {prevCol('descricao') ? <th style={thStyle}>Descrição</th> : null}
@@ -3177,20 +3184,22 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                       : undefined
                   }
                 >
-                  <td style={tdStyle}>{inventarioCamaraLabelFromGrupo(r.planilha_grupo_armazem)}</td>
-                  <td style={tdStyle}>
-                    {r.planilha_rua != null && String(r.planilha_rua).trim() !== '' ? r.planilha_rua : '—'}
-                  </td>
-                  <td style={tdStyle}>
-                    {r.planilha_posicao != null && Number.isFinite(Number(r.planilha_posicao))
-                      ? r.planilha_posicao
-                      : '—'}
-                  </td>
-                  <td style={tdStyle}>
-                    {r.planilha_nivel != null && Number.isFinite(Number(r.planilha_nivel)) ? r.planilha_nivel : '—'}
-                  </td>
                   {inventario ? (
-                    <td style={tdStyle}>{formatInventarioRodadaPreviewCell(r.inventario_numero_contagem)}</td>
+                    <>
+                      <td style={tdStyle}>{inventarioCamaraLabelFromGrupo(r.planilha_grupo_armazem)}</td>
+                      <td style={tdStyle}>
+                        {r.planilha_rua != null && String(r.planilha_rua).trim() !== '' ? r.planilha_rua : '—'}
+                      </td>
+                      <td style={tdStyle}>
+                        {r.planilha_posicao != null && Number.isFinite(Number(r.planilha_posicao))
+                          ? r.planilha_posicao
+                          : '—'}
+                      </td>
+                      <td style={tdStyle}>
+                        {r.planilha_nivel != null && Number.isFinite(Number(r.planilha_nivel)) ? r.planilha_nivel : '—'}
+                      </td>
+                      <td style={tdStyle}>{formatInventarioRodadaPreviewCell(r.inventario_numero_contagem)}</td>
+                    </>
                   ) : null}
                   <td style={{ ...tdStyle, whiteSpace: 'normal', maxWidth: 200 }}>
                     {String(r.conferente_nome ?? '').trim() !== '' ? r.conferente_nome : '—'}
