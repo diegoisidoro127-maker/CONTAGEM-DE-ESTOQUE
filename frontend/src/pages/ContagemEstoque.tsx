@@ -565,12 +565,13 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
   useEffect(() => {
     const s = loadOfflineSession(sessionMode)
     if (s && s.status === 'aberta') {
-      // Painel começa "livre": descartamos a sessão em andamento e voltamos ao início.
-      clearOfflineSession(sessionMode)
-      setOfflineSession(null)
-      setContagemDiaYmd(toISODateLocal(new Date()))
-      setChecklistListMode('todos')
-      setStartFreshNotice('Sessão anterior limpa ao abrir a tela. Comece do zero.')
+      setOfflineSession(s)
+      if (s.conferente_id) setConferenteId(s.conferente_id)
+      if (s.data_contagem_ymd && /^\d{4}-\d{2}-\d{2}$/.test(s.data_contagem_ymd)) {
+        setContagemDiaYmd(s.data_contagem_ymd)
+      }
+      if (s.listMode) setChecklistListMode(s.listMode)
+      setStartFreshNotice('')
     }
   }, [sessionMode])
 
