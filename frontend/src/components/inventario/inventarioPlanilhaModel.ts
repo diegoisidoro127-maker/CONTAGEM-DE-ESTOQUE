@@ -16,8 +16,8 @@ function formatArmazemGroupLabel(contagem: number | null) {
   return formatContagemLabel(contagem)
 }
 
-/** Quantidade de abas (grupos) no inventário armazém / planilha — igual ao Excel (2 ruas por câmara). */
-export const INVENTARIO_ARMAZEM_NUM_GRUPOS = 8
+/** Quantidade de abas (grupos) no inventário armazém / planilha. */
+export const INVENTARIO_ARMAZEM_NUM_GRUPOS = 4
 
 /** IDs dos grupos 1..N (abas CAMARA/RUA). */
 export const INVENTARIO_ARMAZEM_GRUPO_IDS: readonly number[] = Array.from(
@@ -120,7 +120,7 @@ export function filtrarItensPlanilhaInventario(
 
 /** Metadados alinhados à planilha / tabela `inventario_planilha_linhas`. */
 export type PlanilhaLayoutMeta = {
-  /** Aba física (CAMARA + RUA), 1–8. */
+  /** Aba física (CAMARA + RUA), 1–4. */
   grupo_armazem: number
   /** Rodada da contagem escolhida pelo usuário (1–4), mesma em todas as abas. */
   numero_contagem: number

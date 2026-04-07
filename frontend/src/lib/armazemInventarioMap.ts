@@ -1,8 +1,8 @@
 import { normalizeCodigoInternoCompareKey } from './codigoInternoCompare'
 import type { OfflineChecklistItem } from './offlineContagemSession'
 
-/** Grupos 1–8 no inventário; alinhado a `INVENTARIO_ARMAZEM_NUM_GRUPOS` em inventarioPlanilhaModel. */
-const INVENTARIO_ARMAZEM_NUM_GRUPOS = 8
+/** Grupos 1–4 no inventário; alinhado a `INVENTARIO_ARMAZEM_NUM_GRUPOS` em inventarioPlanilhaModel. */
+const INVENTARIO_ARMAZEM_NUM_GRUPOS = 4
 
 /**
  * Ordem do armazém dividida em rotas/contagens.

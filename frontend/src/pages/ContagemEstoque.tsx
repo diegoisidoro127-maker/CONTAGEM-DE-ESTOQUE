@@ -3878,7 +3878,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
               >
                 <option value="todos">Todos os Produtos (cadastro)</option>
                 {!inventario ? (
-                  <option value="armazem">Armazém (dividida por grupo 1–{INVENTARIO_ARMAZEM_NUM_GRUPOS})</option>
+                  <option value="armazem">Armazém (dividida em grupos 1ª–4ª contagem)</option>
                 ) : null}
                 {inventario ? (
                   <option value="planilha">Inventário — formato planilha (CAMARA/RUA, abas)</option>
