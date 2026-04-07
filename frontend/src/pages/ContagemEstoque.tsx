@@ -638,7 +638,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     setChecklistPage(1)
     setChecklistShowAll(false)
     setPlanilhaTabelaPage(1)
-  }, [checklistListMode, checklistFilterCodigo, checklistFilterDescricao, checklistFilterPendentes, offlineSession?.status])
+  }, [checklistListMode, checklistFilterCodigo, checklistFilterDescricao, offlineSession?.status])
 
   useEffect(() => {
     setPlanilhaTabelaPage(1)
