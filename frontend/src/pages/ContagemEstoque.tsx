@@ -69,6 +69,11 @@ const INVENTARIO_EXCLUIR_DA_3A_CONTAGEM = new Set([
   normalizeCodigoInternoCompareKey('01.04.0028'),
   normalizeCodigoInternoCompareKey('02.02.0031'),
 ])
+/** Código(s) removidos da lista de contagem diária. */
+const CONTAGEM_DIARIA_EXCLUIR_DA_LISTA = new Set([
+  normalizeCodigoInternoCompareKey('01.04.0028'),
+  normalizeCodigoInternoCompareKey('02.02.0031'),
+])
 
 /** Senha exigida em "Excluir dia no banco" na prévia (proteção contra exclusão acidental). */
 const SENHA_EXCLUIR_TUDO_BANCO = 'AdminUltrapao'
@@ -1731,6 +1736,12 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         })
       } else {
         setArmazemMissingCodes([])
+      }
+
+      if (!inventario) {
+        itemsRaw = itemsRaw.filter(
+          (row) => !CONTAGEM_DIARIA_EXCLUIR_DA_LISTA.has(normalizeCodigoInternoCompareKey(row.codigo_interno)),
+        )
       }
 
       const items: OfflineChecklistItem[] = []
