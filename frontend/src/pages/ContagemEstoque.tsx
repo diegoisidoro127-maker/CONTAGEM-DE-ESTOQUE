@@ -65,7 +65,10 @@ const CHECKLIST_PAGE_SIZE = 15
 /** Linhas por página na tabela “Inventário — formato planilha” (cada aba pode ter centenas de linhas). */
 const PLANILHA_TABELA_PAGE_SIZE = 30
 /** Código(s) removidos apenas da 3ª repetição da lista de inventário. */
-const INVENTARIO_EXCLUIR_DA_3A_CONTAGEM = new Set([normalizeCodigoInternoCompareKey('01.04.0028')])
+const INVENTARIO_EXCLUIR_DA_3A_CONTAGEM = new Set([
+  normalizeCodigoInternoCompareKey('01.04.0028'),
+  normalizeCodigoInternoCompareKey('02.02.0031'),
+])
 
 /** Senha exigida em "Excluir dia no banco" na prévia (proteção contra exclusão acidental). */
 const SENHA_EXCLUIR_TUDO_BANCO = 'AdminUltrapao'
