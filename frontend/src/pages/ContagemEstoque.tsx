@@ -476,6 +476,11 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
   useEffect(() => {
     offlineSessionRef.current = offlineSession
   }, [offlineSession])
+  /** Linhas editadas localmente: não sobrescrever no refresh do banco até a quantidade ser limpa. */
+  const checklistContagemBancoDirtyKeysRef = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    checklistContagemBancoDirtyKeysRef.current.clear()
+  }, [offlineSession?.sessionId])
   const [checklistLoading, setChecklistLoading] = useState(false)
   const [checklistError, setChecklistError] = useState('')
   const [finalizing, setFinalizing] = useState(false)
@@ -748,6 +753,39 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       window.clearInterval(id)
     }
   }, [inventario, contagemDiaYmd, offlineSession?.status, offlineSession?.data_contagem_ymd])
+
+  /** Contagem diária: atualiza quantidades/nomes a partir do banco (todos os conferentes), sem sobrescrever linhas já editadas. */
+  useEffect(() => {
+    if (inventario) return
+    if (!offlineSession || offlineSession.status !== 'aberta') return
+    const ymd = offlineSession.data_contagem_ymd
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return
+
+    let cancelled = false
+    const tick = async () => {
+      const s = offlineSessionRef.current
+      if (!s || s.status !== 'aberta' || cancelled) return
+      if (s.items.length === 0) return
+      const skip = checklistContagemBancoDirtyKeysRef.current
+      try {
+        const { items: merged } = await mergeContagensDiariasDoDiaParaItems(ymd, s.items, { skipKeys: skip })
+        if (cancelled) return
+        setOfflineSession((prev) => {
+          if (!prev || prev.status !== 'aberta') return prev
+          if (prev.sessionId !== s.sessionId) return prev
+          return { ...prev, items: merged, updatedAt: new Date().toISOString() }
+        })
+      } catch {
+        /* rede / RLS */
+      }
+    }
+    void tick()
+    const id = window.setInterval(() => void tick(), PRESENCA_POLL_INTERVAL_MS)
+    return () => {
+      cancelled = true
+      window.clearInterval(id)
+    }
+  }, [inventario, offlineSession?.status, offlineSession?.sessionId, offlineSession?.data_contagem_ymd])
 
   /** Enquanto a checklist estiver aberta, renova presença para o dia da sessão. */
   useEffect(() => {
@@ -1963,8 +2001,8 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         })
       })
       let preenchidosDoBanco = 0
-      if (!inventario && conferenteId) {
-        const merged = await mergeContagensDiariasDoDiaParaItems(conferenteId, contagemDiaYmd, items)
+      if (!inventario) {
+        const merged = await mergeContagensDiariasDoDiaParaItems(contagemDiaYmd, items)
         items = merged.items
         preenchidosDoBanco = merged.preenchidos
       }
@@ -1992,7 +2030,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
             }. Preencha as quantidades e finalize.`
           : `Lista carregada: ${items.length} itens.${
               preenchidosDoBanco > 0
-                ? ` ${preenchidosDoBanco} linha(s) já preenchida(s) com o que foi gravado hoje para este conferente.`
+                ? ` ${preenchidosDoBanco} linha(s) já preenchida(s) com o que está no banco hoje (última gravação por código, todos os conferentes).`
                 : ''
             } Preencha as quantidades e finalize quando terminar.`,
       )
@@ -2019,6 +2057,11 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
   }
 
   function updateOfflineItemQty(key: string, quantidade: string) {
+    if (!inventario) {
+      const trimmed = String(quantidade ?? '').trim()
+      if (trimmed === '') checklistContagemBancoDirtyKeysRef.current.delete(key)
+      else checklistContagemBancoDirtyKeysRef.current.add(key)
+    }
     setOfflineSession((prev) => {
       if (!prev || prev.status !== 'aberta') return prev
       const next = {
@@ -2055,6 +2098,11 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       >
     >,
   ) {
+    if (!inventario && 'quantidade_contada' in patch) {
+      const trimmed = String(patch.quantidade_contada ?? '').trim()
+      if (trimmed === '') checklistContagemBancoDirtyKeysRef.current.delete(key)
+      else checklistContagemBancoDirtyKeysRef.current.add(key)
+    }
     setOfflineSession((prev) => {
       if (!prev || prev.status !== 'aberta') return prev
       const next = {
@@ -4458,10 +4506,27 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                           ) : (
                             <>
                               <div style={{ fontSize: 10, lineHeight: 1.15, color: 'var(--text, #666)', marginBottom: 2 }}>
-                                Conferente:{' '}
-                                <strong style={{ fontWeight: 600 }}>
-                                  {String(conferenteNomeSelecionado || '').trim() || '—'}
-                                </strong>
+                                {!inventario &&
+                                String(it.contagem_banco_ultimo_conferente_nome ?? '').trim() !== '' ? (
+                                  <>
+                                    <div>
+                                      Última gravação (hoje):{' '}
+                                      <strong style={{ fontWeight: 600 }}>
+                                        {String(it.contagem_banco_ultimo_conferente_nome ?? '').trim()}
+                                      </strong>
+                                    </div>
+                                    <div style={{ fontSize: 9, marginTop: 2, opacity: 0.9 }}>
+                                      Sua sessão: {String(conferenteNomeSelecionado || '').trim() || '—'}
+                                    </div>
+                                  </>
+                                ) : (
+                                  <>
+                                    Conferente:{' '}
+                                    <strong style={{ fontWeight: 600 }}>
+                                      {String(conferenteNomeSelecionado || '').trim() || '—'}
+                                    </strong>
+                                  </>
+                                )}
                               </div>
                               <div style={{ fontSize: 10, lineHeight: 1.15, color: 'var(--text, #666)', marginBottom: 1 }}>
                                 Status: <strong style={{ color: pend ? '#a60' : '#0a0' }}>{pend ? 'Pendente' : 'Contado'}</strong>
@@ -4851,10 +4916,20 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                 <>
                                   {showChecklistColumn('conferente') ? (
                                     <td
-                                      style={{ ...tdStyle, color: 'var(--text-muted, #888)', maxWidth: 160 }}
-                                      title="Conferente selecionado acima (sessão)"
+                                      style={{ ...tdStyle, color: 'var(--text-muted, #888)', maxWidth: 180 }}
+                                      title="Última gravação no banco hoje (contagem diária) ou conferente da sessão"
                                     >
-                                      {conferenteNomeSelecionado}
+                                      {!inventario &&
+                                      String(it.contagem_banco_ultimo_conferente_nome ?? '').trim() !== '' ? (
+                                        <div>
+                                          <div>{String(it.contagem_banco_ultimo_conferente_nome ?? '').trim()}</div>
+                                          <div style={{ fontSize: 10, opacity: 0.85 }}>
+                                            sessão: {conferenteNomeSelecionado || '—'}
+                                          </div>
+                                        </div>
+                                      ) : (
+                                        conferenteNomeSelecionado
+                                      )}
                                     </td>
                                   ) : null}
                                   {showChecklistColumn('codigo') ? (
@@ -5013,10 +5088,20 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                 <>
                                   {showChecklistColumn('conferente') ? (
                                     <td
-                                      style={{ ...tdStyle, color: 'var(--text-muted, #888)', maxWidth: 160 }}
-                                      title="Conferente selecionado acima (sessão)"
+                                      style={{ ...tdStyle, color: 'var(--text-muted, #888)', maxWidth: 180 }}
+                                      title="Última gravação no banco hoje (contagem diária) ou conferente da sessão"
                                     >
-                                      {conferenteNomeSelecionado}
+                                      {!inventario &&
+                                      String(it.contagem_banco_ultimo_conferente_nome ?? '').trim() !== '' ? (
+                                        <div>
+                                          <div>{String(it.contagem_banco_ultimo_conferente_nome ?? '').trim()}</div>
+                                          <div style={{ fontSize: 10, opacity: 0.85 }}>
+                                            sessão: {conferenteNomeSelecionado || '—'}
+                                          </div>
+                                        </div>
+                                      ) : (
+                                        conferenteNomeSelecionado
+                                      )}
                                     </td>
                                   ) : null}
                                   {showChecklistColumn('codigo') ? (

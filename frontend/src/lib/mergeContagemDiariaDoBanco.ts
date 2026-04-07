@@ -1,6 +1,7 @@
 import { supabase } from './supabaseClient'
 import { normalizeCodigoInternoCompareKey } from './codigoInternoCompare'
 import { isContagemDiariaRowResumo } from './contagemDiariaPresenca'
+import { fetchConferentesNomesPorIds } from './conferentesNomesBatch'
 import type { OfflineChecklistItem } from './offlineContagemSession'
 
 const FETCH_CHUNK = 2000
@@ -19,6 +20,7 @@ function formatQtyFromNumber(n: number): string {
 }
 
 type RowSnapshot = {
+  conferente_id: string
   quantidade_up: number
   up_adicional: number | null
   lote: string | null
@@ -36,20 +38,16 @@ function parseDataHoraMs(dh: string): number {
 }
 
 /**
- * Busca registros em `contagens_estoque` do dia + conferente, só contagem diária,
+ * Busca registros em `contagens_estoque` do dia civil (todos os conferentes), só contagem diária,
  * e devolve a linha mais recente por código (`data_hora_contagem`).
  */
-async function fetchUltimasPorCodigo(
-  conferenteId: string,
-  dataContagemYmd: string,
-): Promise<Map<string, RowSnapshot>> {
+async function fetchUltimasPorCodigo(dataContagemYmd: string): Promise<Map<string, RowSnapshot>> {
   const map = new Map<string, RowSnapshot>()
-  const cid = String(conferenteId ?? '').trim()
   const ymd = String(dataContagemYmd ?? '').trim()
-  if (!cid || !/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return map
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return map
 
   const sel =
-    'codigo_interno,quantidade_up,up_adicional,lote,observacao,data_fabricacao,data_validade,ean,dun,data_hora_contagem,origem,inventario_repeticao,inventario_numero_contagem'
+    'conferente_id,codigo_interno,quantidade_up,up_adicional,lote,observacao,data_fabricacao,data_validade,ean,dun,data_hora_contagem,origem,inventario_repeticao,inventario_numero_contagem'
 
   const acc: Record<string, unknown>[] = []
   let from = 0
@@ -58,7 +56,6 @@ async function fetchUltimasPorCodigo(
       .from('contagens_estoque')
       .select(sel)
       .eq('data_contagem', ymd)
-      .eq('conferente_id', cid)
       .order('id', { ascending: true })
       .range(from, from + FETCH_CHUNK - 1)
     if (error) {
@@ -74,6 +71,8 @@ async function fetchUltimasPorCodigo(
 
   for (const r of acc) {
     if (!isContagemDiariaRowResumo(r)) continue
+    const cidRow = r.conferente_id != null ? String(r.conferente_id).trim() : ''
+    if (!cidRow) continue
     const codRaw = r.codigo_interno != null ? String(r.codigo_interno) : ''
     const key = normalizeCodigoInternoCompareKey(codRaw)
     if (!key) continue
@@ -90,6 +89,7 @@ async function fetchUltimasPorCodigo(
     }
 
     const snap: RowSnapshot = {
+      conferente_id: cidRow,
       quantidade_up: q,
       up_adicional,
       lote: r.lote != null && String(r.lote).trim() !== '' ? String(r.lote) : null,
@@ -110,26 +110,42 @@ async function fetchUltimasPorCodigo(
   return map
 }
 
+export type MergeContagemDiariaOptions = {
+  /** Itens que o usuário alterou localmente — não sobrescreve com o banco até limpar a quantidade. */
+  skipKeys?: Set<string>
+}
+
 /**
- * Preenche itens da checklist com a última contagem diária já gravada no banco (mesmo dia + conferente).
+ * Preenche itens da checklist com a última contagem diária já gravada no banco (mesmo dia, todos os conferentes).
  */
 export async function mergeContagensDiariasDoDiaParaItems(
-  conferenteId: string,
   dataContagemYmd: string,
   items: OfflineChecklistItem[],
+  options?: MergeContagemDiariaOptions,
 ): Promise<{ items: OfflineChecklistItem[]; preenchidos: number }> {
-  const porCodigo = await fetchUltimasPorCodigo(conferenteId, dataContagemYmd)
+  const skipKeys = options?.skipKeys
+  const porCodigo = await fetchUltimasPorCodigo(dataContagemYmd)
   if (porCodigo.size === 0) {
     return { items: items.map((i) => ({ ...i })), preenchidos: 0 }
   }
 
+  const ids = [...new Set([...porCodigo.values()].map((s) => s.conferente_id).filter(Boolean))]
+  const nomesPorId = await fetchConferentesNomesPorIds(ids)
+
   let preenchidos = 0
   const next = items.map((it) => {
+    if (skipKeys?.has(it.key)) {
+      return { ...it }
+    }
     const k = normalizeCodigoInternoCompareKey(it.codigo_interno)
     const snap = k ? porCodigo.get(k) : undefined
-    if (!snap) return { ...it }
+    if (!snap) {
+      return { ...it, contagem_banco_ultimo_conferente_nome: undefined }
+    }
 
     preenchidos += 1
+    const nomeConf =
+      nomesPorId.get(snap.conferente_id)?.trim() || snap.conferente_id
     return {
       ...it,
       quantidade_contada: formatQtyFromNumber(snap.quantidade_up),
@@ -140,6 +156,7 @@ export async function mergeContagensDiariasDoDiaParaItems(
       data_validade: snap.data_validade != null ? toDateInputValue(snap.data_validade) : it.data_validade ?? '',
       ean: snap.ean != null ? snap.ean : it.ean ?? null,
       dun: snap.dun != null ? snap.dun : it.dun ?? null,
+      contagem_banco_ultimo_conferente_nome: nomeConf,
     }
   })
 

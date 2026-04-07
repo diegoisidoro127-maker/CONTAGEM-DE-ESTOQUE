@@ -28,6 +28,11 @@ export type OfflineChecklistItem = {
    * Modo planilha em branco: grupo da aba (1–4) sem depender do mapa de códigos do armazém.
    * Quando preenchido, o item entra na aba correspondente mesmo com código vazio.
    */
+  /**
+   * Contagem diária: nome do conferente da última linha em `contagens_estoque` para este código no dia
+   * (entre todos os conferentes; preenchido ao carregar/atualizar do banco).
+   */
+  contagem_banco_ultimo_conferente_nome?: string
   /** 1–4: aba (CAMARA 11/12 × RUA — ver INVENTARIO_ARMAZEM_ABA_TITULOS no frontend). */
   armazem_grupo?: number
   /**
