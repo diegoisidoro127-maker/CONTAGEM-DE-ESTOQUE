@@ -440,6 +440,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
   const [checklistFilterDescricao, setChecklistFilterDescricao] = useState('')
   const [checklistFilterPendentes, setChecklistFilterPendentes] = useState(false)
   const [checklistListCollapsed, setChecklistListCollapsed] = useState(false)
+  const [checklistColsPanelOpen, setChecklistColsPanelOpen] = useState(true)
   const [checklistListMode, setChecklistListMode] = useState<ChecklistListMode>('todos')
   const [checklistVisibleCols, setChecklistVisibleCols] = useState<Record<string, boolean>>(() =>
     loadChecklistVisibleColsFromStorage(inventario),
@@ -3876,24 +3877,35 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                   }}
                 >
                   <strong style={{ fontSize: 12 }}>Ocultar/mostrar colunas:</strong>
-                  {checklistColumns.map((c) => (
-                    <label key={c.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                      <input
-                        type="checkbox"
-                        checked={showChecklistColumn(c.id)}
-                        onChange={(e) =>
-                          setChecklistVisibleCols((prev) => ({
-                            ...prev,
-                            [c.id]: e.target.checked,
-                          }))
-                        }
-                      />
-                      {c.label}
-                    </label>
-                  ))}
-                  <span style={{ width: '100%', fontSize: 11, color: 'var(--text, #888)', marginTop: 2 }}>
-                    Suas escolhas ficam salvas neste navegador (contagem e inventário têm preferências separadas).
-                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setChecklistColsPanelOpen((v) => !v)}
+                    style={{ ...buttonStyle, background: '#444', fontSize: 12, padding: '4px 10px' }}
+                  >
+                    {checklistColsPanelOpen ? 'Ocultar opções' : 'Mostrar opções'}
+                  </button>
+                  {checklistColsPanelOpen ? (
+                    <>
+                      {checklistColumns.map((c) => (
+                        <label key={c.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                          <input
+                            type="checkbox"
+                            checked={showChecklistColumn(c.id)}
+                            onChange={(e) =>
+                              setChecklistVisibleCols((prev) => ({
+                                ...prev,
+                                [c.id]: e.target.checked,
+                              }))
+                            }
+                          />
+                          {c.label}
+                        </label>
+                      ))}
+                      <span style={{ width: '100%', fontSize: 11, color: 'var(--text, #888)', marginTop: 2 }}>
+                        Suas escolhas ficam salvas neste navegador (contagem e inventário têm preferências separadas).
+                      </span>
+                    </>
+                  ) : null}
                 </div>
                 {inventario && isArmazemPaginado && !checklistShowAll && armazemGrupos.length > 0 ? (
                   <>
@@ -4878,7 +4890,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
             style={{
               position: 'fixed',
               inset: 0,
-              background: 'rgba(0,0,0,.55)',
+              background: 'rgba(0,0,0,.28)',
               display: 'flex',
               justifyContent: 'center',
               alignItems: 'center',
@@ -4889,11 +4901,12 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
             <div
               style={{
                 width: 'min(920px, 100%)',
-                background: 'var(--panel-bg, #fff)',
-                color: 'var(--text, #111)',
-                border: '1px solid var(--border, #ccc)',
+                background: '#fff',
+                color: '#111',
+                border: '1px solid #d0d0d0',
                 borderRadius: 12,
                 padding: 16,
+                boxShadow: '0 12px 36px rgba(0,0,0,.24)',
               }}
             >
               <h3 style={{ margin: '0 0 8px' }}>Aviso — produtos sem preencher (quantidade)</h3>
@@ -4974,7 +4987,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
             style={{
               position: 'fixed',
               inset: 0,
-              background: 'rgba(0,0,0,.6)',
+              background: 'rgba(0,0,0,.28)',
               display: 'flex',
               justifyContent: 'center',
               alignItems: 'center',
@@ -4986,12 +4999,12 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
             <div
               style={{
                 width: 'min(440px, 100%)',
-                background: 'var(--panel-bg, #1e1e1e)',
-                color: 'var(--text, #eee)',
-                border: '1px solid var(--border, #444)',
+                background: '#fff',
+                color: '#111',
+                border: '1px solid #d0d0d0',
                 borderRadius: 14,
                 padding: 22,
-                boxShadow: '0 12px 40px rgba(0,0,0,.45)',
+                boxShadow: '0 12px 40px rgba(0,0,0,.26)',
               }}
               onClick={(e) => e.stopPropagation()}
             >
@@ -5015,13 +5028,13 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
               <h3 id="saved-count-modal-title" style={{ margin: '0 0 6px', fontSize: 20, fontWeight: 700 }}>
                 Contagem salva
               </h3>
-              <p style={{ margin: '0 0 14px', fontSize: 15, color: 'var(--text-muted, #bbb)', lineHeight: 1.5 }}>
-                O dia <strong style={{ color: 'var(--text, #fff)' }}>{formatDateBRFromYmd(savedCountModal.ymd)}</strong>{' '}
+              <p style={{ margin: '0 0 14px', fontSize: 15, color: '#444', lineHeight: 1.5 }}>
+                O dia <strong style={{ color: '#111' }}>{formatDateBRFromYmd(savedCountModal.ymd)}</strong>{' '}
                 ({savedCountModal.ymd}) foi gravado em <code style={{ fontSize: 12 }}>contagens_estoque</code>.
               </p>
               <div
                 style={{
-                  background: 'var(--panel-elevated, rgba(255,255,255,.06))',
+                  background: '#f5f7f7',
                   borderRadius: 10,
                   padding: '12px 14px',
                   marginBottom: 14,
@@ -5039,13 +5052,13 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                   </div>
                 ) : null}
                 {savedCountModal.pendAutoZero != null && savedCountModal.pendAutoZero > 0 ? (
-                  <div style={{ marginTop: 8, fontSize: 13, color: 'var(--text-muted, #aaa)' }}>
+                  <div style={{ marginTop: 8, fontSize: 13, color: '#555' }}>
                     {savedCountModal.pendAutoZero} item(ns) sem quantidade foram preenchidos com <strong>0</strong> para
                     permitir a gravação.
                   </div>
                 ) : null}
               </div>
-              <p style={{ margin: '0 0 16px', fontSize: 13, color: 'var(--text-muted, #999)', lineHeight: 1.5 }}>
+              <p style={{ margin: '0 0 16px', fontSize: 13, color: '#555', lineHeight: 1.5 }}>
                 Os dados ficam apenas no Supabase. Use <strong>Atualizar prévia</strong> para conferir no painel.
               </p>
               <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
