@@ -65,6 +65,7 @@ import {
   PRESENCA_POLL_INTERVAL_MS,
   upsertContagemDiariaPresenca,
 } from '../lib/contagemDiariaPresenca'
+import { mergeContagensDiariasDoDiaParaItems } from '../lib/mergeContagemDiariaDoBanco'
 
 const PREVIEW_PAGE_SIZE = 15
 /** Colunas fixas na prévia com dados de planilha (Câmara / Rua / POS / Nível + Conferente). Só no inventário. */
@@ -1935,7 +1936,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         )
       }
 
-      const items: OfflineChecklistItem[] = []
+      let items: OfflineChecklistItem[] = []
       itemsRaw.forEach((row, index) => {
         const p = lookupProductOptionByCodigo(row.codigo_interno.trim(), productByCode, productByCodeNoDots)
         const repeticoes = inventario ? ([1, 2, 3] as const) : ([1] as const)
@@ -1961,6 +1962,12 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
           })
         })
       })
+      let preenchidosDoBanco = 0
+      if (!inventario && conferenteId) {
+        const merged = await mergeContagensDiariasDoDiaParaItems(conferenteId, contagemDiaYmd, items)
+        items = merged.items
+        preenchidosDoBanco = merged.preenchidos
+      }
       const sess: OfflineSession = {
         sessionId: newSessionId(),
         data_contagem_ymd: contagemDiaYmd,
@@ -1983,7 +1990,11 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                   : ', ordem armazém (grupos 1ª–4ª contagem)'
                 : ''
             }. Preencha as quantidades e finalize.`
-          : `Lista carregada: ${items.length} itens. Preencha as quantidades e finalize quando terminar.`,
+          : `Lista carregada: ${items.length} itens.${
+              preenchidosDoBanco > 0
+                ? ` ${preenchidosDoBanco} linha(s) já preenchida(s) com o que foi gravado hoje para este conferente.`
+                : ''
+            } Preencha as quantidades e finalize quando terminar.`,
       )
       setSaveError('')
     } catch (e: any) {

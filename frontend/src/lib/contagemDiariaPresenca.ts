@@ -148,7 +148,7 @@ export async function fetchContagemDiariaPresencaDia(dataContagemYmd: string): P
 }
 
 /** Contagem diária no relatório: exclui linhas claramente de inventário. */
-function isContagemDiariaRowResumo(r: Record<string, unknown>): boolean {
+export function isContagemDiariaRowResumo(r: Record<string, unknown>): boolean {
   const o = r.origem != null ? String(r.origem) : ''
   if (o === 'inventario') return false
   if (o === '') {
