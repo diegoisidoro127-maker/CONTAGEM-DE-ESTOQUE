@@ -2076,10 +2076,18 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       setChecklistError('Sessão inválida ou já finalizada. Carregue a lista de produtos de novo.')
       return
     }
-    if (!conferenteId || session.conferente_id !== conferenteId) {
+    /**
+     * A sessão já guarda o conferente válido; se o seletor da tela estiver vazio/desalinhado
+     * (ex.: retorno de outra aba), sincronizamos e seguimos com o conferente da sessão.
+     */
+    const effectiveConferenteId = String(conferenteId || session.conferente_id || '').trim()
+    if (!effectiveConferenteId) {
       finalizePendAutoZeroRef.current = null
-      setChecklistError('Selecione o mesmo conferente da sessão (ou recarregue a lista).')
+      setChecklistError('Selecione um conferente para finalizar a sessão.')
       return
+    }
+    if (session.conferente_id !== effectiveConferenteId) {
+      setConferenteId(session.conferente_id)
     }
 
     setFinalizing(true)
