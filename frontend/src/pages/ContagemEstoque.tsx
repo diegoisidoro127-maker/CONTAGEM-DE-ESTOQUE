@@ -478,6 +478,9 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
   const [checklistShowAll, setChecklistShowAll] = useState(false)
   /** Feedback visual: linha da checklist acabou de ser gravada no `localStorage`. */
   const [checklistSavedFlashKey, setChecklistSavedFlashKey] = useState<string | null>(null)
+  /** "Só pendentes": mantém item visível por alguns segundos após preencher quantidade. */
+  const [checklistPendentesGraceUntil, setChecklistPendentesGraceUntil] = useState<Record<string, number>>({})
+  const checklistPendentesGraceTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
   const checklistSavedFlashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   /** Ancora scroll após “Atualizar prévia” para a seção ficar visível (página longa no mobile). */
   const previewSectionRef = useRef<HTMLDivElement | null>(null)
@@ -490,6 +493,33 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       setChecklistSavedFlashKey(null)
       checklistSavedFlashTimerRef.current = null
     }, 1800)
+  }
+
+  function schedulePendentesGrace(key: string, quantidade: string) {
+    const filled = String(quantidade ?? '').trim() !== ''
+    const prevTimer = checklistPendentesGraceTimersRef.current[key]
+    if (prevTimer) {
+      clearTimeout(prevTimer)
+      delete checklistPendentesGraceTimersRef.current[key]
+    }
+    if (!filled) {
+      setChecklistPendentesGraceUntil((prev) => {
+        if (!(key in prev)) return prev
+        const { [key]: _drop, ...rest } = prev
+        return rest
+      })
+      return
+    }
+    const until = Date.now() + 3000
+    setChecklistPendentesGraceUntil((prev) => ({ ...prev, [key]: until }))
+    checklistPendentesGraceTimersRef.current[key] = setTimeout(() => {
+      setChecklistPendentesGraceUntil((prev) => {
+        if (!(key in prev)) return prev
+        const { [key]: _drop, ...rest } = prev
+        return rest
+      })
+      delete checklistPendentesGraceTimersRef.current[key]
+    }, 3000)
   }
 
   const previewQuantidadeExibidaPrevia = useCallback(
@@ -572,6 +602,15 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
   useEffect(() => {
     if (codigoInterno.trim()) setBarcodeFotoHint('')
   }, [codigoInterno])
+
+  useEffect(() => {
+    return () => {
+      for (const id of Object.keys(checklistPendentesGraceTimersRef.current)) {
+        clearTimeout(checklistPendentesGraceTimersRef.current[id])
+      }
+      checklistPendentesGraceTimersRef.current = {}
+    }
+  }, [])
 
   // Restaura sessão offline aberta (persistência no navegador).
   useEffect(() => {
@@ -1826,6 +1865,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       saveOfflineSession(next, sessionMode)
       return next
     })
+    schedulePendentesGrace(key, quantidade)
     flashChecklistRowSaved(key)
   }
 
@@ -1861,6 +1901,9 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       saveOfflineSession(next, sessionMode)
       return next
     })
+    if ('quantidade_contada' in patch) {
+      schedulePendentesGrace(key, String(patch.quantidade_contada ?? ''))
+    }
     flashChecklistRowSaved(key)
   }
 
@@ -3274,7 +3317,11 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
               ? String(it.codigo_interno ?? '').trim() !== '' &&
                 String(it.quantidade_contada ?? '').trim() === ''
               : String(it.quantidade_contada ?? '').trim() === ''
-          const pendOk = !checklistFilterPendentes || pend
+          const graceActive =
+            checklistFilterPendentes &&
+            !pend &&
+            (checklistPendentesGraceUntil[it.key] ?? 0) > Date.now()
+          const pendOk = !checklistFilterPendentes || pend || graceActive
           return codOk && descOk && pendOk
         })
       : []
