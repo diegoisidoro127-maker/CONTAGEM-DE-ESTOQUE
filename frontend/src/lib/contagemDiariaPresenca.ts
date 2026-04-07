@@ -146,3 +146,81 @@ export async function fetchContagemDiariaPresencaDia(dataContagemYmd: string): P
     return []
   }
 }
+
+/** Contagem diária no relatório: exclui linhas claramente de inventário. */
+function isContagemDiariaRowResumo(r: Record<string, unknown>): boolean {
+  const o = r.origem != null ? String(r.origem) : ''
+  if (o === 'inventario') return false
+  if (o === '') {
+    const rep = r.inventario_repeticao != null && String(r.inventario_repeticao).trim() !== ''
+    const nc = r.inventario_numero_contagem != null && String(r.inventario_numero_contagem).trim() !== ''
+    if (rep || nc) return false
+  }
+  return true
+}
+
+export type ResumoFinalizadoDia = {
+  conferente_id: string
+  linhas_gravadas: number
+  ultima_data_hora: string | null
+}
+
+const CONTAGENS_FETCH_CHUNK = 2000
+
+/**
+ * Agrega linhas já gravadas em `contagens_estoque` no dia (contagem diária), por conferente.
+ * Usado para preencher o painel junto com quem está com checklist aberta.
+ */
+export async function fetchResumoFinalizadosContagemDiariaDia(dataContagemYmd: string): Promise<Map<string, { count: number; ultima: string | null }>> {
+  const map = new Map<string, { count: number; ultima: string | null }>()
+  const ymd = String(dataContagemYmd ?? '').trim()
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return map
+
+  async function pull(sel: string): Promise<Record<string, unknown>[] | null> {
+    const acc: Record<string, unknown>[] = []
+    let from = 0
+    while (true) {
+      const { data, error } = await supabase
+        .from('contagens_estoque')
+        .select(sel)
+        .eq('data_contagem', ymd)
+        .order('id', { ascending: true })
+        .range(from, from + CONTAGENS_FETCH_CHUNK - 1)
+      if (error) return null
+      const batch = (data ?? []) as Record<string, unknown>[]
+      acc.push(...batch)
+      if (batch.length < CONTAGENS_FETCH_CHUNK) break
+      from += CONTAGENS_FETCH_CHUNK
+      if (from > 120000) break
+    }
+    return acc
+  }
+
+  const selFull =
+    'conferente_id,data_hora_contagem,origem,inventario_repeticao,inventario_numero_contagem'.replace(/\s/g, '')
+  let rows = await pull(selFull)
+  if (rows == null) {
+    rows = await pull('conferente_id,data_hora_contagem'.replace(/\s/g, ''))
+  }
+  if (!rows) return map
+
+  const hasOrigemMeta = rows.length > 0 && 'origem' in (rows[0] as object)
+  for (const r of rows) {
+    if (hasOrigemMeta && !isContagemDiariaRowResumo(r)) continue
+    const id = r.conferente_id != null ? String(r.conferente_id).trim() : ''
+    if (!id) continue
+    const dhRaw = r.data_hora_contagem != null ? String(r.data_hora_contagem) : ''
+    const dh = dhRaw.trim() !== '' ? dhRaw : null
+    const prev = map.get(id)
+    const nextCount = (prev?.count ?? 0) + 1
+    let ultima = prev?.ultima ?? null
+    if (dh) {
+      const t = new Date(dh).getTime()
+      if (Number.isFinite(t)) {
+        if (!ultima || t > new Date(ultima).getTime()) ultima = dh
+      }
+    }
+    map.set(id, { count: nextCount, ultima })
+  }
+  return map
+}

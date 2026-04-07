@@ -58,6 +58,7 @@ import {
 import { fetchConferentesNomesPorIds } from '../lib/conferentesNomesBatch'
 import {
   fetchContagemDiariaPresencaDia,
+  fetchResumoFinalizadosContagemDiariaDia,
   formatPresencaRelativo,
   isPresencaAtiva,
   PRESENCA_PING_INTERVAL_MS,
@@ -523,6 +524,9 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       atualizado_em: string
       linhasComQtd?: number | null
       linhasTotal?: number | null
+      linhasGravadas: number
+      ultimaGravacao: string | null
+      checklistAtiva: boolean
     }>
   >([])
   /** Ancora scroll após “Atualizar prévia” para a seção ficar visível (página longa no mobile). */
@@ -689,19 +693,50 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
 
     let cancelled = false
     const load = async () => {
-      const raw = await fetchContagemDiariaPresencaDia(ymd)
+      const [raw, finalMap] = await Promise.all([
+        fetchContagemDiariaPresencaDia(ymd),
+        fetchResumoFinalizadosContagemDiariaDia(ymd),
+      ])
       const ativos = raw.filter((r) => isPresencaAtiva(r.atualizado_em))
-      const ids = [...new Set(ativos.map((r) => r.conferente_id))]
+      const presMap = new Map(ativos.map((p) => [p.conferente_id, p]))
+      const allIds = new Set<string>()
+      for (const p of ativos) allIds.add(p.conferente_id)
+      for (const id of finalMap.keys()) allIds.add(id)
+      const ids = [...allIds]
       const nomes = await fetchConferentesNomesPorIds(ids)
-      const merged = ativos
-        .map((r) => ({
-          conferente_id: r.conferente_id,
-          nome: nomes.get(r.conferente_id)?.trim() || r.conferente_id,
-          atualizado_em: r.atualizado_em,
-          linhasComQtd: r.linhas_com_qtd != null && Number.isFinite(Number(r.linhas_com_qtd)) ? Number(r.linhas_com_qtd) : null,
-          linhasTotal: r.linhas_total != null && Number.isFinite(Number(r.linhas_total)) ? Number(r.linhas_total) : null,
-        }))
-        .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
+      const merged = ids
+        .map((id) => {
+          const pres = presMap.get(id)
+          const fin = finalMap.get(id)
+          const checklistAtiva = pres != null && isPresencaAtiva(pres.atualizado_em)
+          const linhasGravadas = fin?.count ?? 0
+          const ultimaGravacao = fin?.ultima ?? null
+          const atualizado_em =
+            pres?.atualizado_em ??
+            ultimaGravacao ??
+            new Date(0).toISOString()
+          return {
+            conferente_id: id,
+            nome: nomes.get(id)?.trim() || id,
+            atualizado_em,
+            linhasComQtd:
+              pres?.linhas_com_qtd != null && Number.isFinite(Number(pres.linhas_com_qtd))
+                ? Number(pres.linhas_com_qtd)
+                : null,
+            linhasTotal:
+              pres?.linhas_total != null && Number.isFinite(Number(pres.linhas_total))
+                ? Number(pres.linhas_total)
+                : null,
+            linhasGravadas,
+            ultimaGravacao,
+            checklistAtiva,
+          }
+        })
+        .filter((row) => row.checklistAtiva || row.linhasGravadas > 0)
+        .sort((a, b) => {
+          if (a.checklistAtiva !== b.checklistAtiva) return a.checklistAtiva ? -1 : 1
+          return a.nome.localeCompare(b.nome, 'pt-BR')
+        })
       if (!cancelled) setPresencaContagemHoje(merged)
     }
 
@@ -3811,9 +3846,9 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
             lineHeight: 1.45,
           }}
         >
-          <strong style={{ color: '#ffd95c' }}>Contando neste dia</strong>
+          <strong style={{ color: '#ffd95c' }}>Contagem neste dia</strong>
           <span style={{ color: 'var(--text-muted, #aaa)', marginLeft: 8 }}>
-            (andamento na checklist · sinal nos últimos 3 min · cada um finaliza separado)
+            (checklist aberta · linhas já gravadas no banco · cada um finaliza separado)
           </span>
           <ul style={{ margin: '8px 0 0', paddingLeft: 18 }}>
             {presencaContagemHoje.map((p) => (
@@ -3825,19 +3860,36 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                 ) : (
                   ''
                 )}
-                {p.linhasTotal != null &&
+                {p.checklistAtiva &&
+                p.linhasTotal != null &&
                 p.linhasTotal > 0 &&
                 p.linhasComQtd != null &&
                 Number.isFinite(p.linhasComQtd) ? (
                   <>
                     {' · '}
                     <span style={{ opacity: 0.95 }}>
-                      {p.linhasComQtd}/{p.linhasTotal} linhas com quantidade
+                      {p.linhasComQtd}/{p.linhasTotal} na checklist
                     </span>
                   </>
                 ) : null}
-                {' · '}
-                <span style={{ opacity: 0.85 }}>{formatPresencaRelativo(p.atualizado_em)}</span>
+                {p.linhasGravadas > 0 ? (
+                  <>
+                    {' · '}
+                    <span style={{ opacity: 0.95 }}>{p.linhasGravadas} linha(s) já gravada(s) no banco</span>
+                  </>
+                ) : null}
+                {p.checklistAtiva ? (
+                  <>
+                    {' · '}
+                    <span style={{ opacity: 0.85 }}>{formatPresencaRelativo(p.atualizado_em)}</span>
+                    {' (checklist)'}
+                  </>
+                ) : p.ultimaGravacao ? (
+                  <>
+                    {' · '}
+                    <span style={{ opacity: 0.85 }}>última gravação {formatPresencaRelativo(p.ultimaGravacao)}</span>
+                  </>
+                ) : null}
               </li>
             ))}
           </ul>
