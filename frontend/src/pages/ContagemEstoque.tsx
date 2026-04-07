@@ -56,6 +56,14 @@ import {
   loadChecklistVisibleColsFromStorage,
 } from '../lib/checklistVisibleCols'
 import { fetchConferentesNomesPorIds } from '../lib/conferentesNomesBatch'
+import {
+  fetchContagemDiariaPresencaDia,
+  formatPresencaRelativo,
+  isPresencaAtiva,
+  PRESENCA_PING_INTERVAL_MS,
+  PRESENCA_POLL_INTERVAL_MS,
+  upsertContagemDiariaPresenca,
+} from '../lib/contagemDiariaPresenca'
 
 const PREVIEW_PAGE_SIZE = 15
 /** Colunas fixas na prévia com dados de planilha (Câmara / Rua / POS / Nível + Conferente). Só no inventário. */
@@ -197,6 +205,19 @@ function countPendingForSession(session: OfflineSession | null): number {
     return 0
   }
   return countPendingItems(session.items)
+}
+
+/** Resumo para o painel de presença: outros veem X/Y sem ver códigos (finalização continua separada por sessão). */
+function progressoPresencaContagemDiaria(session: OfflineSession): { linhasComQtd: number; linhasTotal: number } {
+  if (session.status !== 'aberta') return { linhasComQtd: 0, linhasTotal: 0 }
+  if (session.listMode === 'planilha') {
+    const items = session.items.filter((i) => String(i.codigo_interno ?? '').trim() !== '')
+    const com = items.filter((i) => String(i.quantidade_contada ?? '').trim() !== '').length
+    return { linhasComQtd: com, linhasTotal: items.length }
+  }
+  const total = session.items.length
+  const pend = countPendingItems(session.items)
+  return { linhasComQtd: Math.max(0, total - pend), linhasTotal: total }
 }
 
 function formatContagemLabel(contagem: number) {
@@ -449,6 +470,10 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
   /** Dia civil da contagem diária (lista + finalize usam este YMD). */
   const [contagemDiaYmd, setContagemDiaYmd] = useState(() => toISODateLocal(new Date()))
   const [offlineSession, setOfflineSession] = useState<OfflineSession | null>(null)
+  const offlineSessionRef = useRef<OfflineSession | null>(null)
+  useEffect(() => {
+    offlineSessionRef.current = offlineSession
+  }, [offlineSession])
   const [checklistLoading, setChecklistLoading] = useState(false)
   const [checklistError, setChecklistError] = useState('')
   const [finalizing, setFinalizing] = useState(false)
@@ -490,6 +515,16 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
   const [checklistPendentesGraceUntil, setChecklistPendentesGraceUntil] = useState<Record<string, number>>({})
   const checklistPendentesGraceTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
   const checklistSavedFlashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  /** Quem tem checklist aberta neste dia (heartbeat em `contagem_diaria_presenca`). */
+  const [presencaContagemHoje, setPresencaContagemHoje] = useState<
+    Array<{
+      conferente_id: string
+      nome: string
+      atualizado_em: string
+      linhasComQtd?: number | null
+      linhasTotal?: number | null
+    }>
+  >([])
   /** Ancora scroll após “Atualizar prévia” para a seção ficar visível (página longa no mobile). */
   const previewSectionRef = useRef<HTMLDivElement | null>(null)
   const checklistSectionRef = useRef<HTMLDivElement | null>(null)
@@ -639,6 +674,63 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     setChecklistShowAll(false)
     setPlanilhaTabelaPage(1)
   }, [checklistListMode, checklistFilterCodigo, checklistFilterDescricao, offlineSession?.status])
+
+  /** Lista quem está com sessão de contagem diária aberta no mesmo dia civil (heartbeat no Supabase). */
+  useEffect(() => {
+    if (inventario) {
+      setPresencaContagemHoje([])
+      return
+    }
+    const ymd =
+      offlineSession?.status === 'aberta' && offlineSession.data_contagem_ymd
+        ? offlineSession.data_contagem_ymd
+        : contagemDiaYmd
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return
+
+    let cancelled = false
+    const load = async () => {
+      const raw = await fetchContagemDiariaPresencaDia(ymd)
+      const ativos = raw.filter((r) => isPresencaAtiva(r.atualizado_em))
+      const ids = [...new Set(ativos.map((r) => r.conferente_id))]
+      const nomes = await fetchConferentesNomesPorIds(ids)
+      const merged = ativos
+        .map((r) => ({
+          conferente_id: r.conferente_id,
+          nome: nomes.get(r.conferente_id)?.trim() || r.conferente_id,
+          atualizado_em: r.atualizado_em,
+          linhasComQtd: r.linhas_com_qtd != null && Number.isFinite(Number(r.linhas_com_qtd)) ? Number(r.linhas_com_qtd) : null,
+          linhasTotal: r.linhas_total != null && Number.isFinite(Number(r.linhas_total)) ? Number(r.linhas_total) : null,
+        }))
+        .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
+      if (!cancelled) setPresencaContagemHoje(merged)
+    }
+
+    void load()
+    const id = window.setInterval(() => void load(), PRESENCA_POLL_INTERVAL_MS)
+    return () => {
+      cancelled = true
+      window.clearInterval(id)
+    }
+  }, [inventario, contagemDiaYmd, offlineSession?.status, offlineSession?.data_contagem_ymd])
+
+  /** Enquanto a checklist estiver aberta, renova presença para o dia da sessão. */
+  useEffect(() => {
+    if (inventario) return
+    if (!offlineSession || offlineSession.status !== 'aberta') return
+    const ymd = offlineSession.data_contagem_ymd
+    const cid = String(offlineSession.conferente_id ?? '').trim()
+    if (!cid || !/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return
+
+    const tick = () => {
+      const s = offlineSessionRef.current
+      if (!s || s.status !== 'aberta') return
+      const prog = progressoPresencaContagemDiaria(s)
+      void upsertContagemDiariaPresenca(cid, ymd, prog)
+    }
+    tick()
+    const id = window.setInterval(tick, PRESENCA_PING_INTERVAL_MS)
+    return () => window.clearInterval(id)
+  }, [inventario, offlineSession?.status, offlineSession?.sessionId, offlineSession?.conferente_id, offlineSession?.data_contagem_ymd])
 
   useEffect(() => {
     setPlanilhaTabelaPage(1)
@@ -3706,6 +3798,51 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       }}
     >
       <h2>{inventario ? 'Inventário físico' : 'Contagem de Estoque'}</h2>
+
+      {!inventario && presencaContagemHoje.length > 0 ? (
+        <div
+          style={{
+            marginTop: 12,
+            padding: '10px 14px',
+            border: '1px solid var(--border, #555)',
+            borderRadius: 8,
+            background: 'rgba(255,255,255,0.04)',
+            fontSize: 13,
+            lineHeight: 1.45,
+          }}
+        >
+          <strong style={{ color: '#ffd95c' }}>Contando neste dia</strong>
+          <span style={{ color: 'var(--text-muted, #aaa)', marginLeft: 8 }}>
+            (andamento na checklist · sinal nos últimos 3 min · cada um finaliza separado)
+          </span>
+          <ul style={{ margin: '8px 0 0', paddingLeft: 18 }}>
+            {presencaContagemHoje.map((p) => (
+              <li key={p.conferente_id}>
+                {p.nome}
+                {((conferenteId && conferenteId === p.conferente_id) ||
+                  (offlineSession?.status === 'aberta' && offlineSession.conferente_id === p.conferente_id)) ? (
+                  ' (você)'
+                ) : (
+                  ''
+                )}
+                {p.linhasTotal != null &&
+                p.linhasTotal > 0 &&
+                p.linhasComQtd != null &&
+                Number.isFinite(p.linhasComQtd) ? (
+                  <>
+                    {' · '}
+                    <span style={{ opacity: 0.95 }}>
+                      {p.linhasComQtd}/{p.linhasTotal} linhas com quantidade
+                    </span>
+                  </>
+                ) : null}
+                {' · '}
+                <span style={{ opacity: 0.85 }}>{formatPresencaRelativo(p.atualizado_em)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       <section
         style={{
