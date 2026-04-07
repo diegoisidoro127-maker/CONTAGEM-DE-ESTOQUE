@@ -64,6 +64,8 @@ const PREVIEW_COLS_PLANILHA_BASE = 5
 const CHECKLIST_PAGE_SIZE = 15
 /** Linhas por página na tabela “Inventário — formato planilha” (cada aba pode ter centenas de linhas). */
 const PLANILHA_TABELA_PAGE_SIZE = 30
+/** Código(s) removidos apenas da 3ª repetição da lista de inventário. */
+const INVENTARIO_EXCLUIR_DA_3A_CONTAGEM = new Set([normalizeCodigoInternoCompareKey('01.04.0028')])
 
 /** Senha exigida em "Excluir dia no banco" na prévia (proteção contra exclusão acidental). */
 const SENHA_EXCLUIR_TUDO_BANCO = 'AdminUltrapao'
@@ -471,6 +473,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
   const checklistSavedFlashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   /** Ancora scroll após “Atualizar prévia” para a seção ficar visível (página longa no mobile). */
   const previewSectionRef = useRef<HTMLDivElement | null>(null)
+  const checklistSectionRef = useRef<HTMLDivElement | null>(null)
 
   function flashChecklistRowSaved(key: string) {
     setChecklistSavedFlashKey(key)
@@ -1731,7 +1734,9 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       itemsRaw.forEach((row, index) => {
         const p = lookupProductOptionByCodigo(row.codigo_interno.trim(), productByCode, productByCodeNoDots)
         const repeticoes = inventario ? ([1, 2, 3] as const) : ([1] as const)
+        const codigoNorm = normalizeCodigoInternoCompareKey(row.codigo_interno)
         repeticoes.forEach((rep) => {
+          if (inventario && rep === 3 && INVENTARIO_EXCLUIR_DA_3A_CONTAGEM.has(codigoNorm)) return
           const idx = inventario ? index * 3 + (rep - 1) : index
           items.push({
             key: stableItemKey(row.codigo_interno, row.descricao, idx),
@@ -1883,6 +1888,12 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       }
       return next
     })
+  }
+
+  function scrollToChecklistTitle() {
+    window.setTimeout(() => {
+      checklistSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 0)
   }
 
   function openChecklistEdit(it: OfflineChecklistItem) {
@@ -3782,6 +3793,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         {offlineSession && offlineSession.status === 'aberta' ? (
           <>
             <div
+              ref={checklistSectionRef}
               style={{
                 marginTop: 12,
                 display: 'flex',
@@ -4806,7 +4818,10 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                         <button
                           type="button"
                           disabled={checklistShowAll || checklistPageSafe <= 1}
-                          onClick={() => setChecklistPage((p) => Math.max(1, p - 1))}
+                          onClick={() => {
+                            setChecklistPage((p) => Math.max(1, p - 1))
+                            scrollToChecklistTitle()
+                          }}
                           style={{
                             ...buttonStyle,
                             background: '#444',
@@ -4820,7 +4835,10 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                         <button
                           type="button"
                           disabled={checklistShowAll || checklistPageSafe >= checklistTotalPages}
-                          onClick={() => setChecklistPage((p) => Math.min(checklistTotalPages, p + 1))}
+                          onClick={() => {
+                            setChecklistPage((p) => Math.min(checklistTotalPages, p + 1))
+                            scrollToChecklistTitle()
+                          }}
                           style={{
                             ...buttonStyle,
                             background: '#444',
@@ -4839,6 +4857,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                               onClick={() => {
                                 setChecklistShowAll(false)
                                 setChecklistPage(1)
+                                scrollToChecklistTitle()
                               }}
                               style={{ ...buttonStyle, background: '#444', fontSize: 12 }}
                             >
