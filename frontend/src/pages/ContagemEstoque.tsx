@@ -120,6 +120,8 @@ type ContagemPreviewRow = {
   inventario_repeticao?: number | null
   /** Rodada 1–4 (inventário). */
   inventario_numero_contagem?: number | null
+  /** Lote da finalização (contagem diária); separa várias finalizações no mesmo dia/conferente. */
+  finalizacao_sessao_id?: string | null
   /** `inventario_planilha_linhas` por `contagens_estoque_id`. */
   planilha_grupo_armazem?: number | null
   planilha_rua?: string | null
@@ -336,6 +338,12 @@ function stripContagensEstoqueInventarioColumns(row: Record<string, unknown>): R
   delete r.origem
   delete r.inventario_repeticao
   delete r.inventario_numero_contagem
+  return r
+}
+
+function stripContagensEstoqueFinalizacaoSessaoColumn(row: Record<string, unknown>): Record<string, unknown> {
+  const r = { ...row }
+  delete r.finalizacao_sessao_id
   return r
 }
 
@@ -1380,8 +1388,9 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
               ? contagemDiaYmd
               : hojeYmd
 
-    const previewSelectFull =
+    const previewSelectFullLegacy =
       'id,data_hora_contagem,data_contagem,conferente_id,conferentes(nome),codigo_interno,descricao,unidade_medida,quantidade_up,up_adicional,lote,observacao,data_fabricacao,data_validade,ean,dun,foto_base64,origem,inventario_repeticao,inventario_numero_contagem'
+    const previewSelectFull = `${previewSelectFullLegacy},finalizacao_sessao_id`
     const previewSelectSemNc =
       'id,data_hora_contagem,data_contagem,conferente_id,conferentes(nome),codigo_interno,descricao,unidade_medida,quantidade_up,up_adicional,lote,observacao,data_fabricacao,data_validade,ean,dun,foto_base64,origem,inventario_repeticao'
     /** Sem `origem` no SELECT (coluna inexistente no banco) — mantém repetição e nº para agrupar a prévia. */
@@ -1395,8 +1404,9 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     const previewSelectSemRepSemNcComOrigem =
       'id,data_hora_contagem,data_contagem,conferente_id,conferentes(nome),codigo_interno,descricao,unidade_medida,quantidade_up,up_adicional,lote,observacao,data_fabricacao,data_validade,ean,dun,foto_base64,origem,inventario_numero_contagem'
     /** Mesmas colunas do “completo”, sem join em `conferentes` (RLS/embed quebra o SELECT inteiro). */
-    const previewSelectFlatFull =
+    const previewSelectFlatFullLegacy =
       'id,data_hora_contagem,data_contagem,conferente_id,codigo_interno,descricao,unidade_medida,quantidade_up,up_adicional,lote,observacao,data_fabricacao,data_validade,ean,dun,foto_base64,origem,inventario_repeticao,inventario_numero_contagem'
+    const previewSelectFlatFull = `${previewSelectFlatFullLegacy},finalizacao_sessao_id`
     const previewSelectFlatSemOrigem =
       'id,data_hora_contagem,data_contagem,conferente_id,codigo_interno,descricao,unidade_medida,quantidade_up,up_adicional,lote,observacao,data_fabricacao,data_validade,ean,dun,foto_base64,inventario_repeticao,inventario_numero_contagem'
     const previewSelectFlatSemNc =
@@ -1415,6 +1425,12 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         .limit(2000)
 
     let { data, error } = await queryPreview(previewSelectFull)
+
+    if (error && isMissingDbColumnError(error, 'finalizacao_sessao_id')) {
+      const rSess = await queryPreview(previewSelectFullLegacy)
+      data = rSess.data
+      error = rSess.error
+    }
 
     if (error && isMissingDbColumnError(error, 'origem')) {
       previewOrigemAusenteNoResultado = true
@@ -1447,7 +1463,10 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
 
     /** Falha comum: embed `conferentes(nome)` bloqueado por RLS — tenta colunas planas (sem join). */
     if (error) {
-      const rFlat = await queryPreview(previewSelectFlatFull)
+      let rFlat = await queryPreview(previewSelectFlatFull)
+      if (rFlat.error && isMissingDbColumnError(rFlat.error, 'finalizacao_sessao_id')) {
+        rFlat = await queryPreview(previewSelectFlatFullLegacy)
+      }
       if (!rFlat.error) {
         data = rFlat.data
         error = null
@@ -1548,6 +1567,10 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
             r.inventario_numero_contagem != null && r.inventario_numero_contagem !== ''
               ? Number(r.inventario_numero_contagem)
               : null,
+          finalizacao_sessao_id:
+            r.finalizacao_sessao_id != null && String(r.finalizacao_sessao_id).trim() !== ''
+              ? String(r.finalizacao_sessao_id)
+              : null,
         }
       }) as ContagemPreviewRow[]
 
@@ -1586,7 +1609,9 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         const grouped = new Map<string, ContagemPreviewRow>()
         for (const row of rawPreviewLinhas) {
           const day = dayKey
-          const key = `${day}|${normalizeCodigoInternoCompareKey(row.codigo_interno).toLowerCase()}|${row.descricao.trim().toLowerCase()}`
+          const sess = String(row.finalizacao_sessao_id ?? '').trim()
+          const sessKey = sess || '__legacy__'
+          const key = `${day}|${normalizeCodigoInternoCompareKey(row.codigo_interno).toLowerCase()}|${row.descricao.trim().toLowerCase()}|${sessKey}`
           const existing = grouped.get(key)
           if (!existing) {
             grouped.set(key, {
@@ -2166,6 +2191,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       }
 
       const dataHoraIso = toISOStringFromDatetimeLocal(dataHoraContagem)
+      const finalizacaoSessaoId = !inventario ? newSessionId() : null
       const rows: Record<string, unknown>[] = []
       /** Metadados paralelos a `rows` para gravar `inventario_planilha_linhas` após obter os ids de `contagens_estoque`. */
       const finalizeMeta: Array<{
@@ -2245,6 +2271,8 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
           rowPayload.inventario_numero_contagem = clampInventarioNumeroContagem(
             session.inventario_numero_contagem ?? 1,
           )
+        } else if (finalizacaoSessaoId) {
+          rowPayload.finalizacao_sessao_id = finalizacaoSessaoId
         }
         rows.push(rowPayload)
         finalizeMeta.push({ it, q, up_adicional, dfRaw, dvRaw, produtoId })
@@ -2285,6 +2313,12 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         if (insErr && inventario && isMissingAnyInventarioContagensColumn(insErr)) {
           insertWithoutInventarioColumns = true
           attemptPayload = chunk.map((r) => stripContagensEstoqueInventarioColumns(r))
+          const res = await supabase.from('contagens_estoque').insert(attemptPayload).select('id')
+          insertedChunk = res.data
+          insErr = res.error
+        }
+        if (insErr && isMissingDbColumnError(insErr, 'finalizacao_sessao_id')) {
+          attemptPayload = attemptPayload.map((r) => stripContagensEstoqueFinalizacaoSessaoColumn(r))
           const res = await supabase.from('contagens_estoque').insert(attemptPayload).select('id')
           insertedChunk = res.data
           insErr = res.error
@@ -3374,7 +3408,6 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
           contagem,
           items: filteredChecklistItems.filter((it) => getArmazemContagemForItem(it) === contagem),
         }))
-        .filter((g) => g.items.length > 0)
     : []
 
   const checklistProductTotal = checklistDisplayItems.reduce((acc, item) => {
@@ -4109,6 +4142,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                 ) : null}
                 {isMobile ? (
                   <>
+                    {checklistPaginationControls}
                     <div
                       data-checklist-nav-root
                       style={{ marginTop: 6, display: 'grid', gap: 6 }}

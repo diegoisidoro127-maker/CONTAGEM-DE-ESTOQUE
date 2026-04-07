@@ -90,6 +90,8 @@ type RowMergeContagemDiaria = Record<string, unknown> & {
   codigo_interno?: string
   descricao?: string
   data_contagem?: string | null
+  /** Mesma finalização (lote) no mesmo dia — separa relançamentos do mesmo conferente. */
+  finalizacao_sessao_id?: string | null
   conferente_id?: string
   quantidade_up?: number
   up_adicional?: number | null
@@ -124,14 +126,16 @@ function conferenteNomeParaDetalhe(r: Record<string, unknown>): string {
 }
 
 /**
- * Agrupa como a prévia da contagem diária: mesmo dia civil + código + descrição, somando quantidades.
+ * Agrupa como a prévia da contagem diária: mesmo dia civil + código + descrição + lote de finalização (`finalizacao_sessao_id`), somando quantidades.
  * Preenche `preview_conferentes_detalhe` para permitir ver total vs quantidade por conferente.
  */
 export function agruparContagemDiariaComoPrevia<T extends RowMergeContagemDiaria>(rows: T[]): T[] {
   const grouped = new Map<string, T>()
   for (const row of rows) {
     const day = row.data_contagem != null ? String(row.data_contagem).slice(0, 10) : ''
-    const key = `${day}|${normalizeCodigoInternoCompareKey(String(row.codigo_interno ?? '')).toLowerCase()}|${String(row.descricao ?? '').trim().toLowerCase()}`
+    const sess = String(row.finalizacao_sessao_id ?? '').trim()
+    const sessKey = sess || '__legacy__'
+    const key = `${day}|${normalizeCodigoInternoCompareKey(String(row.codigo_interno ?? '')).toLowerCase()}|${String(row.descricao ?? '').trim().toLowerCase()}|${sessKey}`
     const existing = grouped.get(key)
     const rowRec = row as Record<string, unknown>
     const cid = String(row.conferente_id ?? '').trim() || '__sem__'

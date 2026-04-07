@@ -73,6 +73,9 @@ create table if not exists public.contagens_estoque (
   -- conferente responsável pela contagem
   conferente_id uuid not null references public.conferentes(id) on delete restrict,
 
+  -- lote da finalização (contagem diária): ver alter_contagens_estoque_finalizacao_sessao.sql
+  finalizacao_sessao_id uuid,
+
   created_at timestamptz not null default now()
 );
 

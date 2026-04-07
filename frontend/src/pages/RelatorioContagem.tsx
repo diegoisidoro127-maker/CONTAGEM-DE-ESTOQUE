@@ -48,6 +48,8 @@ type ContagemRow = {
   inventario_repeticao?: number | null
   /** Quando a linha é agrupamento da contagem diária (igual à prévia), ids aglutinados */
   source_ids?: string[]
+  /** Lote da finalização (contagem diária); separa várias finalizações no mesmo dia/conferente. */
+  finalizacao_sessao_id?: string | null
   /** Preenchido a partir de `inventario_planilha_linhas` (inventário formato planilha). */
   planilha_grupo_armazem?: number | null
   planilha_rua?: string | null
@@ -199,11 +201,13 @@ const RELATORIO_PAGE_SIZE = 15
 /** PostgREST costuma limitar ~1000 linhas por requisição; buscamos em fatias para trazer o relatório inteiro. */
 const RELATORIO_FETCH_CHUNK = 2000
 
-/** Uma linha no histórico: conferente × dia civil × quantidade de lançamentos (itens contados). */
+/** Uma linha no histórico: conferente × dia civil × lote de finalização × quantidade de lançamentos. */
 type HistoricoContagemItem = {
   conferenteId: string | null
   conferenteNome: string
   dataYmd: string
+  /** `null` = registros sem coluna de sessão (legado) ou vazio; UUID = uma finalização específica. */
+  finalizacaoSessaoId: string | null
   /** Horário(ões) de registro (`data_hora_contagem`) no grupo: primeiro–último ou único. */
   horaInputLabel: string
   totalItens: number
@@ -406,6 +410,29 @@ export default function RelatorioContagem({
     const useSd = opts?.singleDayYmd != null ? true : useSingleDay
     const singleDayVal = opts?.singleDayYmd ?? singleDay
 
+    const selectCompletoSemSessao = `
+      id,
+      data_contagem,
+      data_hora_contagem,
+      conferente_id,
+      conferentes(nome),
+      produto_id,
+      codigo_interno,
+      descricao,
+      unidade_medida,
+      quantidade_up,
+      up_adicional,
+      lote,
+      observacao,
+      data_fabricacao,
+      data_validade,
+      ean,
+      dun,
+      foto_base64,
+      origem,
+      inventario_repeticao,
+      inventario_numero_contagem
+    `
     const selectCompleto = `
       id,
       data_contagem,
@@ -425,11 +452,13 @@ export default function RelatorioContagem({
       ean,
       dun,
       foto_base64,
+      finalizacao_sessao_id,
       origem,
       inventario_repeticao,
       inventario_numero_contagem
     `
     const selectCompletoCompact = selectCompleto.replace(/\s+/g, '')
+    const selectCompletoSemSessaoCompact = selectCompletoSemSessao.replace(/\s+/g, '')
 
     const selectBasico = `
       id,
@@ -448,7 +477,7 @@ export default function RelatorioContagem({
     const selectBasicoCompact = selectBasico.replace(/\s+/g, '')
 
     /** Mesmas colunas do SELECT completo, sem embed `conferentes(nome)` (fallback quando o join falha). */
-    const selectFlatCompleto = `
+    const selectFlatCompletoSemSessao = `
       id,
       data_contagem,
       data_hora_contagem,
@@ -470,7 +499,31 @@ export default function RelatorioContagem({
       inventario_repeticao,
       inventario_numero_contagem
     `
+    const selectFlatCompleto = `
+      id,
+      data_contagem,
+      data_hora_contagem,
+      conferente_id,
+      produto_id,
+      codigo_interno,
+      descricao,
+      unidade_medida,
+      quantidade_up,
+      up_adicional,
+      lote,
+      observacao,
+      data_fabricacao,
+      data_validade,
+      ean,
+      dun,
+      foto_base64,
+      finalizacao_sessao_id,
+      origem,
+      inventario_repeticao,
+      inventario_numero_contagem
+    `
     const selectFlatCompletoCompact = selectFlatCompleto.replace(/\s+/g, '')
+    const selectFlatCompletoSemSessaoCompact = selectFlatCompletoSemSessao.replace(/\s+/g, '')
 
     /** Mesmo SELECT sem colunas de inventário, sem embed de conferente. */
     const selectFlatSemColunasInventario = `
@@ -666,7 +719,13 @@ export default function RelatorioContagem({
     }
 
     try {
-      const data = await fetchRowsComFallbackEmbed(selectCompletoCompact, selectFlatCompletoCompact, true)
+      let data: ContagemRow[]
+      try {
+        data = await fetchRowsComFallbackEmbed(selectCompletoCompact, selectFlatCompletoCompact, true)
+      } catch (e0: unknown) {
+        if (!isColumnMissingErrorRel(e0)) throw e0
+        data = await fetchRowsComFallbackEmbed(selectCompletoSemSessaoCompact, selectFlatCompletoSemSessaoCompact, true)
+      }
       return {
         rows: await enrichPlanilhaEConferente(mapSemOrigem(data)),
         origemAusenteNoResultado: false,
@@ -821,6 +880,11 @@ export default function RelatorioContagem({
 
   async function fetchHistoricoRawRows(): Promise<{ rows: ContagemRow[]; origemAusenteNoResultado: boolean }> {
     const cand1 =
+      'id,data_contagem,data_hora_contagem,conferente_id,origem,inventario_repeticao,inventario_numero_contagem,finalizacao_sessao_id'.replace(
+        /\s/g,
+        '',
+      )
+    const cand1SemSess =
       'id,data_contagem,data_hora_contagem,conferente_id,origem,inventario_repeticao,inventario_numero_contagem'.replace(
         /\s/g,
         '',
@@ -847,7 +911,11 @@ export default function RelatorioContagem({
     try {
       return { rows: await pull(cand1), origemAusenteNoResultado: false }
     } catch {
-      return { rows: await pull(cand2), origemAusenteNoResultado: true }
+      try {
+        return { rows: await pull(cand1SemSess), origemAusenteNoResultado: false }
+      } catch {
+        return { rows: await pull(cand2), origemAusenteNoResultado: true }
+      }
     }
   }
 
@@ -868,14 +936,23 @@ export default function RelatorioContagem({
 
     const bucket = new Map<
       string,
-      { dataYmd: string; conferenteId: string | null; total: number; minTs: number | null; maxTs: number | null }
+      {
+        dataYmd: string
+        conferenteId: string | null
+        finalizacaoSessaoId: string | null
+        total: number
+        minTs: number | null
+        maxTs: number | null
+      }
     >()
     for (const r of filtered) {
       const dataYmd = diaYmdSoDataContagemRow(r)
       if (!dataYmd) continue
       const cidRaw = String(r.conferente_id ?? '').trim()
       const conferenteId = cidRaw === '' ? null : cidRaw
-      const key = `${dataYmd}|${conferenteId ?? '__sem__'}`
+      const sidRaw = String(r.finalizacao_sessao_id ?? '').trim()
+      const finalizacaoSessaoId = sidRaw === '' ? null : sidRaw
+      const key = `${dataYmd}|${conferenteId ?? '__sem__'}|${finalizacaoSessaoId ?? '__legacy__'}`
       const ts = tsFromDataHoraContagem(r.data_hora_contagem)
       const prev = bucket.get(key)
       if (prev) {
@@ -888,6 +965,7 @@ export default function RelatorioContagem({
         bucket.set(key, {
           dataYmd,
           conferenteId,
+          finalizacaoSessaoId,
           total: 1,
           minTs: ts,
           maxTs: ts,
@@ -905,15 +983,19 @@ export default function RelatorioContagem({
         conferenteId: v.conferenteId,
         conferenteNome: nome,
         dataYmd: v.dataYmd,
+        finalizacaoSessaoId: v.finalizacaoSessaoId,
         horaInputLabel: formatHistoricoHorarioInput(v.minTs, v.maxTs),
         totalItens: v.total,
       })
     }
-    out.sort((a, b) =>
-      a.dataYmd !== b.dataYmd
-        ? b.dataYmd.localeCompare(a.dataYmd)
-        : a.conferenteNome.localeCompare(b.conferenteNome, 'pt-BR'),
-    )
+    out.sort((a, b) => {
+      if (a.dataYmd !== b.dataYmd) return b.dataYmd.localeCompare(a.dataYmd)
+      const c = a.conferenteNome.localeCompare(b.conferenteNome, 'pt-BR')
+      if (c !== 0) return c
+      const sa = a.finalizacaoSessaoId ?? ''
+      const sb = b.finalizacaoSessaoId ?? ''
+      return sa.localeCompare(sb, 'pt-BR')
+    })
     return out
   }
 
@@ -958,6 +1040,13 @@ export default function RelatorioContagem({
       let dataForPrevia = data
       if (fh === '__sem__') dataForPrevia = data.filter((r) => !String(r.conferente_id ?? '').trim())
       else dataForPrevia = data.filter((r) => String(r.conferente_id ?? '').trim() === fh)
+      if (item.finalizacaoSessaoId != null) {
+        dataForPrevia = dataForPrevia.filter(
+          (r) => String(r.finalizacao_sessao_id ?? '').trim() === item.finalizacaoSessaoId,
+        )
+      } else {
+        dataForPrevia = dataForPrevia.filter((r) => !String(r.finalizacao_sessao_id ?? '').trim())
+      }
       const finalRows = await aplicarMesmaRegraDaPreviaAsync(dataForPrevia, origemAusenteNoResultado)
       setRows(finalRows)
       const baseMsg = successMessage ? `${successMessage} ` : ''
@@ -1446,9 +1535,9 @@ export default function RelatorioContagem({
             </button>
           </div>
           <p style={{ margin: '0 0 12px', fontSize: 12, color: 'var(--text-muted, #888)', lineHeight: 1.45 }}>
-            Contagens diárias agrupadas por conferente e dia civil (mesma regra da lista abaixo). A coluna «Hora do
-            registro» usa o horário gravado em cada lançamento (primeiro ao último do dia, se houver vários). Use «Ver
-            contagem» para abrir o detalhe filtrado.
+            Contagens diárias agrupadas por conferente, dia civil e cada finalização (o mesmo conferente pode aparecer
+            mais de uma vez no mesmo dia). A coluna «Hora do registro» usa o horário gravado em cada lançamento (primeiro
+            ao último do dia, se houver vários). Use «Ver contagem» para abrir o detalhe filtrado.
           </p>
           {historicoError ? <div style={{ color: '#b00020', marginBottom: 8 }}>{historicoError}</div> : null}
           {historicoLoading && historicoItems.length === 0 ? (
@@ -1471,7 +1560,9 @@ export default function RelatorioContagem({
                 </thead>
                 <tbody>
                   {historicoItems.map((item) => (
-                    <tr key={`${item.dataYmd}|${item.conferenteId ?? '__sem__'}`}>
+                    <tr
+                      key={`${item.dataYmd}|${item.conferenteId ?? '__sem__'}|${item.finalizacaoSessaoId ?? '__legacy__'}`}
+                    >
                       <td style={tdStyle}>{item.conferenteNome}</td>
                       <td style={tdStyle}>{formatDateBR(item.dataYmd)}</td>
                       <td style={tdStyle}>{item.horaInputLabel}</td>
