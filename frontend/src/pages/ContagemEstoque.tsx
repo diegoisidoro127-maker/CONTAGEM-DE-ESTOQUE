@@ -3573,6 +3573,95 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     offlineSession.status !== 'aberta' ||
     offlineSession.items.length === 0
 
+  const checklistPaginationControls =
+    checklistProductTotal > 0 ? (
+      <div
+        style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          alignItems: 'center',
+          gap: 10,
+          marginTop: 10,
+        }}
+      >
+        <span style={{ fontSize: 13, color: 'var(--text, #888)' }}>
+          {checklistShowAll
+            ? `Exibindo todos os ${checklistProductTotal} registros`
+            : isArmazemPaginado
+              ? isPlanilhaInventarioNav
+                ? `${checklistRangeFrom}–${checklistRangeTo} de ${checklistProductTotal} · Aba ${checklistPageSafe} de ${checklistTotalPages} · ${inventarioAbaTitulo(armazemGrupos[checklistPageSafe - 1]?.contagem ?? null)} · ${formatContagemLabel(inventarioNumeroContagemRodada)} · ${INVENTARIO_PLANILHA_LINHAS_TOTAIS_POR_ABA} linhas nesta RUA`
+                : `${checklistRangeFrom}–${checklistRangeTo} de ${checklistProductTotal} · Página ${checklistPageSafe} de ${checklistTotalPages} · ${inventario ? `${inventarioAbaTitulo(armazemGrupos[checklistPageSafe - 1]?.contagem ?? null)} · ${formatContagemLabel(inventarioNumeroContagemRodada)}` : formatContagemLabel(armazemGrupos[checklistPageSafe - 1]?.contagem ?? checklistPageSafe)}`
+              : `${checklistRangeFrom}–${checklistRangeTo} de ${checklistProductTotal} · Página ${checklistPageSafe} de ${checklistTotalPages} · ${CHECKLIST_PAGE_SIZE} por página`}
+        </span>
+        {isPlanilhaInventarioNav ? (
+          <span style={{ fontSize: 12, color: 'var(--text, #888)', maxWidth: 420 }}>
+            Troque de <strong>CAMARA/RUA</strong> apenas pelas <strong>abas</strong> acima — a tabela desta aba mostra as
+            15 posições inteiras ({INVENTARIO_PLANILHA_LINHAS_TOTAIS_POR_ABA} linhas).
+          </span>
+        ) : (
+          <>
+            <button
+              type="button"
+              disabled={checklistShowAll || checklistPageSafe <= 1}
+              onClick={() => {
+                setChecklistPage((p) => Math.max(1, p - 1))
+                scrollToChecklistTitle()
+              }}
+              style={{
+                ...buttonStyle,
+                background: '#444',
+                fontSize: 12,
+                opacity: checklistShowAll || checklistPageSafe <= 1 ? 0.5 : 1,
+                cursor: checklistShowAll || checklistPageSafe <= 1 ? 'not-allowed' : 'pointer',
+              }}
+            >
+              Anterior
+            </button>
+            <button
+              type="button"
+              disabled={checklistShowAll || checklistPageSafe >= checklistTotalPages}
+              onClick={() => {
+                setChecklistPage((p) => Math.min(checklistTotalPages, p + 1))
+                scrollToChecklistTitle()
+              }}
+              style={{
+                ...buttonStyle,
+                background: '#444',
+                fontSize: 12,
+                opacity: checklistShowAll || checklistPageSafe >= checklistTotalPages ? 0.5 : 1,
+                cursor: checklistShowAll || checklistPageSafe >= checklistTotalPages ? 'not-allowed' : 'pointer',
+              }}
+            >
+              Próxima
+            </button>
+            {checklistProductTotal > CHECKLIST_PAGE_SIZE ? (
+              checklistShowAll ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setChecklistShowAll(false)
+                    setChecklistPage(1)
+                    scrollToChecklistTitle()
+                  }}
+                  style={{ ...buttonStyle, background: '#444', fontSize: 12 }}
+                >
+                  Paginar ({CHECKLIST_PAGE_SIZE} por página)
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setChecklistShowAll(true)}
+                  style={{ ...buttonStyle, background: '#444', fontSize: 12 }}
+                >
+                  Mostrar tudo
+                </button>
+              )
+            ) : null}
+          </>
+        )}
+      </div>
+    ) : null
+
   return (
     <div
       style={{
@@ -4377,6 +4466,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                     <h4 style={{ margin: '0 0 10px', fontSize: 15, fontWeight: 700, color: '#fff59d' }}>
                       Inventário — tabela no formato da planilha
                     </h4>
+                    {checklistPaginationControls}
                     <InventarioPlanilhaTabela
                       items={itemsPlanilhaTabelaPagina}
                       armazemItemsSorted={armazemItemsSorted}
@@ -4457,6 +4547,8 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                     ) : null}
                   </section>
                 ) : (
+                  <>
+                  {checklistPaginationControls}
                   <div style={{ overflowX: 'auto', marginTop: 10 }}>
                     <table
                       style={{
@@ -4849,95 +4941,9 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                       </tbody>
                     </table>
                   </div>
+                  </>
                 )}
-                {checklistProductTotal > 0 ? (
-                  <div
-                    style={{
-                      display: 'flex',
-                      flexWrap: 'wrap',
-                      alignItems: 'center',
-                      gap: 10,
-                      marginTop: 10,
-                    }}
-                  >
-                    <span style={{ fontSize: 13, color: 'var(--text, #888)' }}>
-                      {checklistShowAll
-                        ? `Exibindo todos os ${checklistProductTotal} registros`
-                        : isArmazemPaginado
-                          ? isPlanilhaInventarioNav
-                            ? `${checklistRangeFrom}–${checklistRangeTo} de ${checklistProductTotal} · Aba ${checklistPageSafe} de ${checklistTotalPages} · ${inventarioAbaTitulo(armazemGrupos[checklistPageSafe - 1]?.contagem ?? null)} · ${formatContagemLabel(inventarioNumeroContagemRodada)} · ${INVENTARIO_PLANILHA_LINHAS_TOTAIS_POR_ABA} linhas nesta RUA`
-                            : `${checklistRangeFrom}–${checklistRangeTo} de ${checklistProductTotal} · Página ${checklistPageSafe} de ${checklistTotalPages} · ${inventario ? `${inventarioAbaTitulo(armazemGrupos[checklistPageSafe - 1]?.contagem ?? null)} · ${formatContagemLabel(inventarioNumeroContagemRodada)}` : formatContagemLabel(armazemGrupos[checklistPageSafe - 1]?.contagem ?? checklistPageSafe)}`
-                          : `${checklistRangeFrom}–${checklistRangeTo} de ${checklistProductTotal} · Página ${checklistPageSafe} de ${checklistTotalPages} · ${CHECKLIST_PAGE_SIZE} por página`}
-                    </span>
-                    {isPlanilhaInventarioNav ? (
-                      <span style={{ fontSize: 12, color: 'var(--text, #888)', maxWidth: 420 }}>
-                        Troque de <strong>CAMARA/RUA</strong> apenas pelas <strong>abas</strong> acima — a tabela desta aba
-                        mostra as 15 posições inteiras ({INVENTARIO_PLANILHA_LINHAS_TOTAIS_POR_ABA} linhas).
-                      </span>
-                    ) : (
-                      <>
-                        <button
-                          type="button"
-                          disabled={checklistShowAll || checklistPageSafe <= 1}
-                          onClick={() => {
-                            setChecklistPage((p) => Math.max(1, p - 1))
-                            scrollToChecklistTitle()
-                          }}
-                          style={{
-                            ...buttonStyle,
-                            background: '#444',
-                            fontSize: 12,
-                            opacity: checklistShowAll || checklistPageSafe <= 1 ? 0.5 : 1,
-                            cursor: checklistShowAll || checklistPageSafe <= 1 ? 'not-allowed' : 'pointer',
-                          }}
-                        >
-                          Anterior
-                        </button>
-                        <button
-                          type="button"
-                          disabled={checklistShowAll || checklistPageSafe >= checklistTotalPages}
-                          onClick={() => {
-                            setChecklistPage((p) => Math.min(checklistTotalPages, p + 1))
-                            scrollToChecklistTitle()
-                          }}
-                          style={{
-                            ...buttonStyle,
-                            background: '#444',
-                            fontSize: 12,
-                            opacity: checklistShowAll || checklistPageSafe >= checklistTotalPages ? 0.5 : 1,
-                            cursor:
-                              checklistShowAll || checklistPageSafe >= checklistTotalPages ? 'not-allowed' : 'pointer',
-                          }}
-                        >
-                          Próxima
-                        </button>
-                        {checklistProductTotal > CHECKLIST_PAGE_SIZE ? (
-                          checklistShowAll ? (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setChecklistShowAll(false)
-                                setChecklistPage(1)
-                                scrollToChecklistTitle()
-                              }}
-                              style={{ ...buttonStyle, background: '#444', fontSize: 12 }}
-                            >
-                              Paginar ({CHECKLIST_PAGE_SIZE} por página)
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => setChecklistShowAll(true)}
-                              style={{ ...buttonStyle, background: '#444', fontSize: 12 }}
-                            >
-                              Mostrar tudo
-                            </button>
-                          )
-                        ) : null}
-                      </>
-                    )}
-                  </div>
-                ) : null}
+                {checklistPaginationControls}
               </>
             ) : null}
           </>
