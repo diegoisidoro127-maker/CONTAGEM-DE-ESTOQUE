@@ -1233,7 +1233,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     }
 
     if (isVencimentoAntesFabricacao(dataFabricacao, dataVencimento)) {
-      setSaveError('Data de vencimento não pode ser menor que a data de fabricação.')
+      setSaveError('Data de validade não pode ser menor que a data de fabricação.')
       return
     }
 
@@ -2142,7 +2142,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         const dvRaw = String(it.data_validade ?? '').trim()
         if (isVencimentoAntesFabricacao(dfRaw, dvRaw)) {
           setChecklistError(
-            `Datas inválidas para ${it.codigo_interno}${it.inventario_repeticao ? ` (${it.inventario_repeticao}ª contagem)` : ''}: vencimento antes da fabricação.`,
+            `Datas inválidas para ${it.codigo_interno}${it.inventario_repeticao ? ` (${it.inventario_repeticao}ª contagem)` : ''}: validade antes da fabricação.`,
           )
           return
         }
@@ -2903,7 +2903,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                     ) : null}
                     {prevCol('data_validade') ? (
                       <div style={{ marginTop: 4, fontSize: 12, color: 'var(--text, #555)' }}>
-                        Data de vencimento:{' '}
+                        Data de validade:{' '}
                         {r.data_validade ? formatDateBRFromYmd(String(r.data_validade).slice(0, 10)) : '—'}
                       </div>
                     ) : null}
@@ -3038,7 +3038,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
               {prevCol('unidade') ? <th style={thStyle}>Unidade de medida</th> : null}
               {prevCol('quantidade') ? <th style={thStyle}>Quantidade contada</th> : null}
               {prevCol('data_fabricacao') ? <th style={thStyle}>Data de fabricação</th> : null}
-              {prevCol('data_validade') ? <th style={thStyle}>Data de vencimento</th> : null}
+              {prevCol('data_validade') ? <th style={thStyle}>Data de validade</th> : null}
               {prevCol('lote') ? <th style={thStyle}>Lote</th> : null}
               {prevCol('up') ? <th style={thStyle}>UP</th> : null}
               {prevCol('observacao') ? <th style={thStyle}>Observação</th> : null}
@@ -3496,7 +3496,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       { id: 'unidade', label: 'Unidade de medida' },
       { id: 'quantidade', label: 'Quantidade contada' },
       { id: 'data_fabricacao', label: 'Data de fabricação' },
-      { id: 'data_validade', label: 'Data de vencimento' },
+      { id: 'data_validade', label: 'Data de validade' },
       { id: 'lote', label: 'Lote' },
       { id: 'up', label: 'UP' },
       { id: 'observacao', label: 'Observação' },
@@ -4205,7 +4205,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                   ) : null}
                                   {inventario || showChecklistColumn('data_validade') ? (
                                     <label style={{ ...labelStyle, gap: 4 }}>
-                                      <span>Data de vencimento</span>
+                                      <span>Data de validade</span>
                                       <input
                                         type="date"
                                         value={it.data_validade ?? ''}
@@ -4418,7 +4418,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                           {showChecklistColumn('unidade') ? <th style={thStyle}>Unidade de medida</th> : null}
                           {showChecklistColumn('quantidade') ? <th style={thStyle}>Quantidade contada</th> : null}
                           {showChecklistColumn('data_fabricacao') ? <th style={thStyle}>Data de fabricação</th> : null}
-                          {showChecklistColumn('data_validade') ? <th style={thStyle}>Data de vencimento</th> : null}
+                          {showChecklistColumn('data_validade') ? <th style={thStyle}>Data de validade</th> : null}
                           {showChecklistColumn('lote') ? <th style={thStyle}>Lote</th> : null}
                           {showChecklistColumn('up') ? <th style={thStyle}>UP</th> : null}
                           {showChecklistColumn('observacao') ? <th style={thStyle}>Observação</th> : null}
@@ -4563,7 +4563,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                         value={it.data_validade ?? ''}
                                         onChange={(e) => updateOfflineItemFields(it.key, { data_validade: e.target.value })}
                                         style={{ ...checklistQtdInputStyle, width: 145 }}
-                                        aria-label={`Data de vencimento ${it.codigo_interno}`}
+                                        aria-label={`Data de validade ${it.codigo_interno}`}
                                       />
                                     </td>
                                   ) : null}
@@ -4704,7 +4704,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                         value={it.data_validade ?? ''}
                                         onChange={(e) => updateOfflineItemFields(it.key, { data_validade: e.target.value })}
                                         style={{ ...checklistQtdInputStyle, width: 145 }}
-                                        aria-label={`Data de vencimento ${it.codigo_interno}`}
+                                        aria-label={`Data de validade ${it.codigo_interno}`}
                                       />
                                     </td>
                                   ) : null}
@@ -5561,7 +5561,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
               />
             </label>
             <label style={labelStyle}>
-              Data de vencimento
+              Data de validade
               <input
                 type="date"
                 value={dataVencimento}
