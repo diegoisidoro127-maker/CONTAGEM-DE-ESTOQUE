@@ -2035,24 +2035,6 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     const itemsSnapshot = offlineSession.items.map((i) => ({ ...i }))
     const pend = countPendingForSession(offlineSession)
     if (pend > 0) {
-      if (!inventario) {
-        const nowIso = new Date().toISOString()
-        const nextSession: OfflineSession = {
-          ...offlineSession,
-          updatedAt: nowIso,
-          items: offlineSession.items.map((it) => {
-            const codigo = String(it.codigo_interno ?? '').trim()
-            const qtd = String(it.quantidade_contada ?? '').trim()
-            if (!codigo || qtd !== '') return it
-            return { ...it, quantidade_contada: '0' }
-          }),
-        }
-        setOfflineSession(nextSession)
-        saveOfflineSession(nextSession, sessionMode)
-        finalizePendAutoZeroRef.current = pend
-        await finalizeInternal(nextSession)
-        return
-      }
       const rodadaPend = clampInventarioNumeroContagem(offlineSession.inventario_numero_contagem ?? 1)
       const missing = itemsSnapshot.filter((i) => {
         if (offlineSession.listMode === 'planilha') {
@@ -4917,9 +4899,20 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
               ) : null}
               <div style={{ fontSize: 13, color: 'var(--text, #444)', lineHeight: 1.45 }}>
                 Há <strong>{missingItemsForFinalize.length}</strong> produto(s) com <strong>quantidade em branco</strong>.
-                Esses <strong>não serão gravados</strong> no Supabase até você preencher a quantidade (nada é convertido
-                para 0). Lote, observação, UP, datas, EAN/DUN e foto podem ficar em branco nos itens que tiverem
-                quantidade informada.
+                {inventario ? (
+                  <>
+                    {' '}
+                    Esses <strong>não serão gravados</strong> no Supabase até você preencher a quantidade (nada é
+                    convertido para 0). Lote, observação, UP, datas, EAN/DUN e foto podem ficar em branco nos itens que
+                    tiverem quantidade informada.
+                  </>
+                ) : (
+                  <>
+                    {' '}
+                    Se você escolher <strong>Finalizar em branco</strong>, esses itens ficam sem quantidade e{' '}
+                    <strong>não serão gravados</strong> nesta finalização.
+                  </>
+                )}
                 <br />
                 <br />
                 Você pode voltar para preencher ou finalizar agora: serão salvos <strong>somente</strong> os produtos que
@@ -4972,7 +4965,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                   onClick={() => void finalizeInternal()}
                   disabled={finalizing}
                 >
-                  Finalizar e gravar só os preenchidos
+                  {inventario ? 'Finalizar e gravar só os preenchidos' : 'Finalizar em branco'}
                 </button>
               </div>
             </div>
