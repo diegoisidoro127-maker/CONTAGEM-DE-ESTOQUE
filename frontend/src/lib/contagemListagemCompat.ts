@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { contagemLinhaAVenceB } from './contagemOrdemLinha'
 import { normalizeCodigoInternoCompareKey } from './codigoInternoCompare'
 
 export type ModoListagemContagem = 'inventario' | 'contagem_diaria'
@@ -217,11 +218,6 @@ export function agruparContagemDiariaComoPrevia<T extends RowMergeContagemDiaria
   return Array.from(grouped.values())
 }
 
-function rowTsContagemDiaria(r: RowMergeContagemDiaria): number {
-  const t = new Date(String(r.data_hora_contagem ?? '')).getTime()
-  return Number.isFinite(t) ? t : -1
-}
-
 function rowKeyCodigoBase(r: RowMergeContagemDiaria): string {
   const day = r.data_contagem != null ? String(r.data_contagem).slice(0, 10) : ''
   const code = normalizeCodigoInternoCompareKey(String(r.codigo_interno ?? '')).toLowerCase()
@@ -242,9 +238,12 @@ export function consolidarUltimaContagemDiariaPorCodigo<T extends RowMergeContag
       byKey.set(key, { ...row, source_ids: [String(row.id)] } as T)
       continue
     }
-    const tPrev = rowTsContagemDiaria(prev)
-    const tCur = rowTsContagemDiaria(row)
-    if (tCur > tPrev || (tCur === tPrev && String(row.id) > String(prev.id))) {
+    if (
+      contagemLinhaAVenceB(
+        { data_hora_contagem: String(row.data_hora_contagem ?? ''), id: String(row.id) },
+        { data_hora_contagem: String(prev.data_hora_contagem ?? ''), id: String(prev.id) },
+      )
+    ) {
       byKey.set(key, { ...row, source_ids: [String(row.id)] } as T)
     }
   }
@@ -265,9 +264,12 @@ export function consolidarUltimaContagemDiariaPorCodigoEConferente<T extends Row
       byKey.set(key, { ...row, source_ids: [String(row.id)] } as T)
       continue
     }
-    const tPrev = rowTsContagemDiaria(prev)
-    const tCur = rowTsContagemDiaria(row)
-    if (tCur > tPrev || (tCur === tPrev && String(row.id) > String(prev.id))) {
+    if (
+      contagemLinhaAVenceB(
+        { data_hora_contagem: String(row.data_hora_contagem ?? ''), id: String(row.id) },
+        { data_hora_contagem: String(prev.data_hora_contagem ?? ''), id: String(prev.id) },
+      )
+    ) {
       byKey.set(key, { ...row, source_ids: [String(row.id)] } as T)
     }
   }

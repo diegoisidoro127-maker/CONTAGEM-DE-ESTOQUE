@@ -1,4 +1,5 @@
 import { supabase } from './supabaseClient'
+import { contagemLinhaAVenceB } from './contagemOrdemLinha'
 import { normalizeCodigoInternoCompareKey } from './codigoInternoCompare'
 import { isContagemDiariaRowResumo } from './contagemDiariaPresenca'
 import { fetchConferentesNomesPorIds } from './conferentesNomesBatch'
@@ -32,28 +33,6 @@ type RowSnapshot = {
   ean: string | null
   dun: string | null
   data_hora_contagem: string
-}
-
-function parseDataHoraMs(dh: string): number {
-  const t = new Date(dh).getTime()
-  return Number.isFinite(t) ? t : -1
-}
-
-/** Desempate alinhado à prévia: maior `id` quando o horário é o mesmo (ids numéricos = mais novo). */
-function rowWinsOverSnapshot(a: RowSnapshot, b: RowSnapshot): boolean {
-  const ta = parseDataHoraMs(a.data_hora_contagem)
-  const tb = parseDataHoraMs(b.data_hora_contagem)
-  if (ta !== tb) return ta > tb
-  const ida = String(a.contagensRowId ?? '')
-  const idb = String(b.contagensRowId ?? '')
-  if (/^\d+$/.test(ida) && /^\d+$/.test(idb)) {
-    try {
-      return BigInt(ida) > BigInt(idb)
-    } catch {
-      /* fall through */
-    }
-  }
-  return ida.localeCompare(idb, 'en') > 0
 }
 
 /**
@@ -125,7 +104,13 @@ async function fetchUltimasPorCodigo(dataContagemYmd: string): Promise<Map<strin
     }
 
     const prev = map.get(key)
-    if (!prev || rowWinsOverSnapshot(snap, prev)) {
+    if (
+      !prev ||
+      contagemLinhaAVenceB(
+        { data_hora_contagem: snap.data_hora_contagem, id: snap.contagensRowId },
+        { data_hora_contagem: prev.data_hora_contagem, id: prev.contagensRowId },
+      )
+    ) {
       map.set(key, snap)
     }
   }
@@ -136,6 +121,8 @@ async function fetchUltimasPorCodigo(dataContagemYmd: string): Promise<Map<strin
 export type MergeContagemDiariaOptions = {
   /** Itens que o usuário alterou localmente — não sobrescreve com o banco até limpar a quantidade. */
   skipKeys?: Set<string>
+  /** Conferente da sessão aberta: nas linhas em skip, o nome “último conferente” segue quem está editando. */
+  nomeConferenteEdicaoLocal?: string
 }
 
 /**
@@ -147,6 +134,7 @@ export async function mergeContagensDiariasDoDiaParaItems(
   options?: MergeContagemDiariaOptions,
 ): Promise<{ items: OfflineChecklistItem[]; preenchidos: number }> {
   const skipKeys = options?.skipKeys
+  const nomeLocal = options?.nomeConferenteEdicaoLocal?.trim()
   const porCodigo = await fetchUltimasPorCodigo(dataContagemYmd)
   if (porCodigo.size === 0) {
     return { items: items.map((i) => ({ ...i })), preenchidos: 0 }
@@ -158,7 +146,9 @@ export async function mergeContagensDiariasDoDiaParaItems(
   let preenchidos = 0
   const next = items.map((it) => {
     if (skipKeys?.has(it.key)) {
-      return { ...it }
+      return nomeLocal
+        ? { ...it, contagem_banco_ultimo_conferente_nome: nomeLocal }
+        : { ...it }
     }
     const k = normalizeCodigoInternoCompareKey(it.codigo_interno)
     const snap = k ? porCodigo.get(k) : undefined

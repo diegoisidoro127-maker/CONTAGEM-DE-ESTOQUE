@@ -841,8 +841,20 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       if (!s || s.status !== 'aberta' || cancelled) return
       if (s.items.length === 0) return
       const skip = checklistContagemBancoDirtyKeysRef.current
+      const cidSess = String(s.conferente_id ?? '').trim()
+      const nomeEdicaoLocal =
+        cidSess === ''
+          ? undefined
+          : (() => {
+              const row = conferentes.find((c) => c.id === cidSess)
+              const n = row?.nome != null ? String(row.nome).trim() : ''
+              return n !== '' ? n : cidSess
+            })()
       try {
-        const { items: merged } = await mergeContagensDiariasDoDiaParaItems(ymd, s.items, { skipKeys: skip })
+        const { items: merged } = await mergeContagensDiariasDoDiaParaItems(ymd, s.items, {
+          skipKeys: skip,
+          nomeConferenteEdicaoLocal: nomeEdicaoLocal,
+        })
         if (cancelled) return
         setOfflineSession((prev) => {
           if (!prev || prev.status !== 'aberta') return prev
@@ -861,7 +873,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       unsubRealtime()
       window.clearInterval(id)
     }
-  }, [inventario, offlineSession?.status, offlineSession?.sessionId, offlineSession?.data_contagem_ymd])
+  }, [inventario, offlineSession?.status, offlineSession?.sessionId, offlineSession?.data_contagem_ymd, conferentes])
 
   /** Prévia do banco: atualiza quando qualquer conferente grava no mesmo dia (Realtime). */
   useEffect(() => {
