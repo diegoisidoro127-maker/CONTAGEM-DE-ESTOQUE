@@ -2935,7 +2935,9 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         return
       }
       if (!previewPodeEditarQuantidadePrevia(row)) {
-        setPreviewRowError('Selecione um conferente (não «Total») para editar a quantidade deste produto.')
+        setPreviewRowError(
+          'Selecione um conferente específico (nome na linha) para editar a quantidade; não é possível editar a soma de todos.',
+        )
         return
       }
       const sourceIds = previewSourceIdsParaAcaoPrevia(row)
@@ -3173,19 +3175,18 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                     <div style={{ fontSize: 13 }}>
                       {!inventario && r.preview_conferentes_detalhe && r.preview_conferentes_detalhe.length > 1 ? (
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
-                          <button
-                            type="button"
-                            style={previewModoBtnStyle((previewConferenteModo[r.id] ?? 'total') === 'total')}
-                            onClick={() => setPreviewConferenteModo((m) => ({ ...m, [r.id]: 'total' }))}
-                          >
-                            Total
-                          </button>
                           {r.preview_conferentes_detalhe.map((d) => (
                             <button
                               key={d.conferente_id}
                               type="button"
                               style={previewModoBtnStyle((previewConferenteModo[r.id] ?? 'total') === d.conferente_id)}
-                              onClick={() => setPreviewConferenteModo((m) => ({ ...m, [r.id]: d.conferente_id }))}
+                              onClick={() =>
+                                setPreviewConferenteModo((m) => {
+                                  const cur = m[r.id] ?? 'total'
+                                  const next = cur === d.conferente_id ? 'total' : d.conferente_id
+                                  return { ...m, [r.id]: next }
+                                })
+                              }
                             >
                               {d.conferente_nome}
                             </button>
@@ -3317,7 +3318,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                           style={buttonStyle}
                           title={
                             !previewPodeEditarQuantidadePrevia(r)
-                              ? 'Selecione um conferente (não Total) para editar a quantidade'
+                              ? 'Selecione um conferente específico (nome acima) para editar a quantidade'
                               : undefined
                           }
                           onClick={() => {
@@ -3431,19 +3432,18 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                   <td style={{ ...tdStyle, whiteSpace: 'normal', maxWidth: 240 }}>
                     {!inventario && r.preview_conferentes_detalhe && r.preview_conferentes_detalhe.length > 1 ? (
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
-                        <button
-                          type="button"
-                          style={previewModoBtnStyle((previewConferenteModo[r.id] ?? 'total') === 'total')}
-                          onClick={() => setPreviewConferenteModo((m) => ({ ...m, [r.id]: 'total' }))}
-                        >
-                          Total
-                        </button>
                         {r.preview_conferentes_detalhe.map((d) => (
                           <button
                             key={d.conferente_id}
                             type="button"
                             style={previewModoBtnStyle((previewConferenteModo[r.id] ?? 'total') === d.conferente_id)}
-                            onClick={() => setPreviewConferenteModo((m) => ({ ...m, [r.id]: d.conferente_id }))}
+                            onClick={() =>
+                              setPreviewConferenteModo((m) => {
+                                const cur = m[r.id] ?? 'total'
+                                const next = cur === d.conferente_id ? 'total' : d.conferente_id
+                                return { ...m, [r.id]: next }
+                              })
+                            }
                           >
                             {d.conferente_nome}
                           </button>
@@ -3533,7 +3533,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                               style={buttonStyle}
                               title={
                                 !previewPodeEditarQuantidadePrevia(r)
-                                  ? 'Selecione um conferente (não Total) para editar a quantidade'
+                                  ? 'Selecione um conferente específico (nome na coluna) para editar a quantidade'
                                   : undefined
                               }
                               onClick={() => {
