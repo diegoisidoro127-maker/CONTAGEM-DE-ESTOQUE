@@ -6692,12 +6692,13 @@ function checklistActionBtnFinalizar(disabled: boolean, pending: number): React.
 }
 
 const thStyle: React.CSSProperties = {
-  borderBottom: '1px solid #ddd',
+  borderBottom: '1px solid #3a3b45',
   textAlign: 'left',
   padding: '6px 8px',
   fontWeight: 700,
   fontSize: 12,
-  background: '#fafafa',
+  background: '#1d1e24',
+  color: '#fff',
   whiteSpace: 'nowrap',
   lineHeight: 1.25,
 }

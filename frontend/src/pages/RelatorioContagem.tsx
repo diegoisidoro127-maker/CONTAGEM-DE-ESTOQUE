@@ -244,7 +244,7 @@ type RelatorioContagemProps = {
 
 export default function RelatorioContagem({
   mode = 'periodo',
-  listColumnPrefsInventario = true,
+  listColumnPrefsInventario = false,
 }: RelatorioContagemProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string>('')
@@ -1625,6 +1625,32 @@ export default function RelatorioContagem({
       ) : null}
 
       <div ref={listaRelatorioRef} style={{ display: 'grid', gap: 12, marginTop: 12 }}>
+        <label
+          style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: 10,
+            fontSize: 13,
+            cursor: 'pointer',
+            maxWidth: 720,
+            lineHeight: 1.45,
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={useInventarioCols}
+            onChange={(e) => setUseInventarioCols(e.target.checked)}
+            style={{ marginTop: 3 }}
+          />
+          <span>
+            Usar colunas da tela <strong>Inventário</strong> (Câmara, Rua, POS, Nível, rodada). Desmarcado ={' '}
+            <strong>Contagem diária</strong> (sem «Nº contagem (inventário)» nesta linha de filtros).
+          </span>
+        </label>
+        <p style={{ fontSize: 13, color: 'var(--text, #666)', marginTop: 0, maxWidth: 720, lineHeight: 1.45 }}>
+          Mesmas colunas que a lista — controle em <strong>Ocultar/mostrar colunas</strong> na tela correspondente.
+        </p>
+
         <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'flex-end' }}>
           <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13 }}>
             Início
@@ -1811,34 +1837,6 @@ export default function RelatorioContagem({
             </button>
           </div>
         ) : null}
-
-        <label
-          style={{
-            display: 'flex',
-            alignItems: 'flex-start',
-            gap: 10,
-            fontSize: 13,
-            marginTop: 10,
-            cursor: 'pointer',
-            maxWidth: 720,
-            lineHeight: 1.45,
-          }}
-        >
-          <input
-            type="checkbox"
-            checked={useInventarioCols}
-            onChange={(e) => setUseInventarioCols(e.target.checked)}
-            style={{ marginTop: 3 }}
-          />
-          <span>
-            Usar colunas salvas na tela <strong>Inventário</strong> (desmarcado = <strong>Contagem diária</strong>). Em{' '}
-            <strong>Relatório completo</strong> e <strong>Todas as contagens</strong> o modo inicial é Inventário; o
-            campo «Nº contagem (inventário)» só aparece neste modo (some na contagem diária).
-          </span>
-        </label>
-        <p style={{ fontSize: 13, color: 'var(--text, #666)', marginTop: 8, maxWidth: 720, lineHeight: 1.45 }}>
-          Mesmas colunas que a lista — controle em <strong>Ocultar/mostrar colunas</strong> na tela correspondente.
-        </p>
 
         {rows.length ? (
           <div style={{ overflowX: 'auto' }}>
@@ -2040,12 +2038,13 @@ export default function RelatorioContagem({
 }
 
 const thStyle: React.CSSProperties = {
-  borderBottom: '1px solid #ddd',
+  borderBottom: '1px solid #3a3b45',
   textAlign: 'left',
   padding: 8,
   fontWeight: 700,
   fontSize: 13,
-  background: '#fafafa',
+  background: '#1d1e24',
+  color: '#fff',
   whiteSpace: 'nowrap',
 }
 

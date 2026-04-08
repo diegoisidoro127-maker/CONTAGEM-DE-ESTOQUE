@@ -191,17 +191,9 @@ export default function App() {
           ) : view === 'baseDados' ? (
             <BaseProdutos key="baseDados" />
           ) : view === 'relatorio' ? (
-            <RelatorioContagem
-              key="relatorio"
-              mode="periodo"
-              listColumnPrefsInventario
-            />
+            <RelatorioContagem key="relatorio" mode="periodo" />
           ) : (
-            <RelatorioContagem
-              key="todas"
-              mode="dia"
-              listColumnPrefsInventario
-            />
+            <RelatorioContagem key="todas" mode="dia" />
           )}
         </>
       )}
