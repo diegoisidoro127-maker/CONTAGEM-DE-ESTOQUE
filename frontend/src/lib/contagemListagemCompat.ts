@@ -202,3 +202,60 @@ export function agruparContagemDiariaComoPrevia<T extends RowMergeContagemDiaria
   }
   return Array.from(grouped.values())
 }
+
+function rowTsContagemDiaria(r: RowMergeContagemDiaria): number {
+  const t = new Date(String(r.data_hora_contagem ?? '')).getTime()
+  return Number.isFinite(t) ? t : -1
+}
+
+function rowKeyCodigoBase(r: RowMergeContagemDiaria): string {
+  const day = r.data_contagem != null ? String(r.data_contagem).slice(0, 10) : ''
+  const code = normalizeCodigoInternoCompareKey(String(r.codigo_interno ?? '')).toLowerCase()
+  const desc = String(r.descricao ?? '').trim().toLowerCase()
+  return `${day}|${code}|${desc}`
+}
+
+/**
+ * Consolida a contagem diária para "valor real do dia": mantém apenas a última linha por dia+código+descrição.
+ * Critério de desempate: maior `data_hora_contagem`; depois maior `id`.
+ */
+export function consolidarUltimaContagemDiariaPorCodigo<T extends RowMergeContagemDiaria>(rows: T[]): T[] {
+  const byKey = new Map<string, T>()
+  for (const row of rows) {
+    const key = rowKeyCodigoBase(row)
+    const prev = byKey.get(key)
+    if (!prev) {
+      byKey.set(key, { ...row, source_ids: [String(row.id)] } as T)
+      continue
+    }
+    const tPrev = rowTsContagemDiaria(prev)
+    const tCur = rowTsContagemDiaria(row)
+    if (tCur > tPrev || (tCur === tPrev && String(row.id) > String(prev.id))) {
+      byKey.set(key, { ...row, source_ids: [String(row.id)] } as T)
+    }
+  }
+  return Array.from(byKey.values())
+}
+
+/**
+ * Igual à consolidação por código, mas separa por conferente.
+ * Útil para exportar por abas de conferente sem somar relançamentos antigos.
+ */
+export function consolidarUltimaContagemDiariaPorCodigoEConferente<T extends RowMergeContagemDiaria>(rows: T[]): T[] {
+  const byKey = new Map<string, T>()
+  for (const row of rows) {
+    const cid = String(row.conferente_id ?? '').trim() || '__sem__'
+    const key = `${rowKeyCodigoBase(row)}|${cid}`
+    const prev = byKey.get(key)
+    if (!prev) {
+      byKey.set(key, { ...row, source_ids: [String(row.id)] } as T)
+      continue
+    }
+    const tPrev = rowTsContagemDiaria(prev)
+    const tCur = rowTsContagemDiaria(row)
+    if (tCur > tPrev || (tCur === tPrev && String(row.id) > String(prev.id))) {
+      byKey.set(key, { ...row, source_ids: [String(row.id)] } as T)
+    }
+  }
+  return Array.from(byKey.values())
+}

@@ -7,7 +7,8 @@ import { enrichContagemRowsWithPlanilhaLinhas } from '../lib/enrichContagemRowsW
 import { enrichContagemRowsEanDunFromTodosOsProdutos } from '../lib/enrichContagemRowsEanDunFromTodosOsProdutos'
 import { fetchConferentesNomesPorIds } from '../lib/conferentesNomesBatch'
 import {
-  agruparContagemDiariaComoPrevia,
+  consolidarUltimaContagemDiariaPorCodigo,
+  consolidarUltimaContagemDiariaPorCodigoEConferente,
   fetchPlanilhaContagemIdsParaIntervalo,
   filterContagensPorModoListagem,
   ordenarLinhasInventarioComoPrevia,
@@ -861,7 +862,7 @@ export default function RelatorioContagem({
     return { modo, filtered }
   }
 
-  /** Mesma regra da prévia em ContagemEstoque: filtro origem/planilha + ordem (inventário) ou agrupamento (contagem diária). */
+  /** Regra do relatório: inventário ordenado como prévia; contagem diária consolidada pela última gravação por código. */
   async function aplicarMesmaRegraDaPreviaAsync(
     data: ContagemRow[],
     origemAusenteNoResultado: boolean,
@@ -875,7 +876,7 @@ export default function RelatorioContagem({
       }
       return inv
     }
-    return agruparContagemDiariaComoPrevia(filtered) as ContagemRow[]
+    return consolidarUltimaContagemDiariaPorCodigo(filtered) as ContagemRow[]
   }
 
   async function fetchHistoricoRawRows(): Promise<{ rows: ContagemRow[]; origemAusenteNoResultado: boolean }> {
@@ -1282,7 +1283,7 @@ export default function RelatorioContagem({
         const wb = XLSX.utils.book_new()
         const usedSheetNames = new Set<string>()
         for (const [, list] of sorted) {
-          const grouped = agruparContagemDiariaComoPrevia(list)
+          const grouped = consolidarUltimaContagemDiariaPorCodigoEConferente(list)
           const ws = XLSX.utils.aoa_to_sheet(buildRelatorioExcelAoa(grouped))
           const first = list[0]!
           const nome = conferenteNomeRelatorio(first)
