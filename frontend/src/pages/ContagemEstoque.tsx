@@ -823,12 +823,16 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     if (next && next !== contagemDiaYmd) setContagemDiaYmd(next)
   }, [dataHoraContagem, offlineSession?.status, contagemDiaYmd])
 
-  // Prévia do banco: mesmo dia da sessão de inventário/contagem (evita buscar “hoje” quando os dados são de outro dia).
+  // Prévia do banco: acompanha automaticamente o dia ativo da tela (sessão aberta ou dia civil atual da contagem).
   useEffect(() => {
-    if (offlineSession?.status !== 'aberta') return
-    const y = offlineSession.data_contagem_ymd
-    if (y && /^\d{4}-\d{2}-\d{2}$/.test(y)) setPreviewConsultaDiaYmd(y)
-  }, [offlineSession?.status, offlineSession?.data_contagem_ymd])
+    const y =
+      offlineSession?.status === 'aberta' && /^\d{4}-\d{2}-\d{2}$/.test(offlineSession.data_contagem_ymd)
+        ? offlineSession.data_contagem_ymd
+        : contagemDiaYmd
+    if (y && /^\d{4}-\d{2}-\d{2}$/.test(y) && y !== previewConsultaDiaYmd) {
+      setPreviewConsultaDiaYmd(y)
+    }
+  }, [offlineSession?.status, offlineSession?.data_contagem_ymd, contagemDiaYmd, previewConsultaDiaYmd])
 
   // Mantém conferente_id da sessão alinhado ao seletor.
   useEffect(() => {
