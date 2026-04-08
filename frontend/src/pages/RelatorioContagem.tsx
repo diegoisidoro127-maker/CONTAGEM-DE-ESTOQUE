@@ -318,8 +318,8 @@ export default function RelatorioContagem({
   const prevLoadingRef = useRef(false)
   const [baseExportLoading, setBaseExportLoading] = useState(false)
   const [exportExcelLoading, setExportExcelLoading] = useState(false)
-  /** Contagem diária: `total` ou `conferente_id` por linha agrupada. */
-  const [relatorioConferenteModo, setRelatorioConferenteModo] = useState<Record<string, 'total' | string>>({})
+  /** Contagem diária: conferente exibido em todas as linhas agrupadas — `total` (soma) ou `conferente_id` (igual à prévia). */
+  const [relatorioConferenteModoGlobal, setRelatorioConferenteModoGlobal] = useState<'total' | string>('total')
 
   /** Só em “Todas as contagens”: histórico agregado + filtro vindo de “Ver contagem”. */
   const [historicoItems, setHistoricoItems] = useState<HistoricoContagemItem[]>([])
@@ -349,12 +349,12 @@ export default function RelatorioContagem({
       if (useInventarioCols || !r.preview_conferentes_detalhe || r.preview_conferentes_detalhe.length <= 1) {
         return r.quantidade_up
       }
-      const modo = relatorioConferenteModo[r.id] ?? 'total'
+      const modo = relatorioConferenteModoGlobal
       if (modo === 'total') return r.quantidade_up
       const part = r.preview_conferentes_detalhe.find((d) => d.conferente_id === modo)
       return part ? part.quantidade_up : r.quantidade_up
     },
-    [useInventarioCols, relatorioConferenteModo],
+    [useInventarioCols, relatorioConferenteModoGlobal],
   )
 
   const relatorioSourceIdsParaAcao = useCallback(
@@ -363,12 +363,12 @@ export default function RelatorioContagem({
       if (useInventarioCols || !r.preview_conferentes_detalhe || r.preview_conferentes_detalhe.length <= 1) {
         return ids
       }
-      const modo = relatorioConferenteModo[r.id] ?? 'total'
+      const modo = relatorioConferenteModoGlobal
       if (modo === 'total') return ids
       const part = r.preview_conferentes_detalhe.find((d) => d.conferente_id === modo)
       return part?.source_ids?.length ? part.source_ids : ids
     },
-    [useInventarioCols, relatorioConferenteModo],
+    [useInventarioCols, relatorioConferenteModoGlobal],
   )
 
   const relatorioPodeEditarQuantidade = useCallback(
@@ -376,10 +376,32 @@ export default function RelatorioContagem({
       if (useInventarioCols) return true
       const det = r.preview_conferentes_detalhe
       if (!det || det.length <= 1) return true
-      return (relatorioConferenteModo[r.id] ?? 'total') !== 'total'
+      return relatorioConferenteModoGlobal !== 'total'
     },
-    [useInventarioCols, relatorioConferenteModo],
+    [useInventarioCols, relatorioConferenteModoGlobal],
   )
+
+  const conferentesRelatorioOpcoes = useMemo(() => {
+    if (useInventarioCols) return [] as Array<{ id: string; nome: string }>
+    const map = new Map<string, string>()
+    for (const r of rows) {
+      const det = r.preview_conferentes_detalhe
+      if (!det?.length) continue
+      for (const d of det) {
+        if (d.conferente_id) map.set(d.conferente_id, String(d.conferente_nome ?? '').trim() || d.conferente_id)
+      }
+    }
+    return Array.from(map.entries())
+      .map(([id, nome]) => ({ id, nome }))
+      .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
+  }, [rows, useInventarioCols])
+
+  useEffect(() => {
+    if (relatorioConferenteModoGlobal === 'total') return
+    if (!conferentesRelatorioOpcoes.some((o) => o.id === relatorioConferenteModoGlobal)) {
+      setRelatorioConferenteModoGlobal('total')
+    }
+  }, [conferentesRelatorioOpcoes, relatorioConferenteModoGlobal])
 
   const relatorioTotalPages = Math.max(1, Math.ceil(rows.length / RELATORIO_PAGE_SIZE))
   const relatorioPageSafe = Math.min(relatorioPage, relatorioTotalPages)
@@ -1027,7 +1049,7 @@ export default function RelatorioContagem({
     setSingleDay(item.dataYmd)
     setUseInventarioCols(false)
     setConferenteFiltroHistorico(item.conferenteId == null ? '__sem__' : item.conferenteId)
-    setRelatorioConferenteModo({})
+    setRelatorioConferenteModoGlobal('total')
     setLoading(true)
     setError('')
     setSuccess('')
@@ -1072,7 +1094,7 @@ export default function RelatorioContagem({
     setError('')
     setSuccess('')
     setRows([])
-    setRelatorioConferenteModo({})
+    setRelatorioConferenteModoGlobal('total')
     try {
       const { rows: data, successMessage, origemAusenteNoResultado } = await fetchRelatorioContagemRows()
       let dataForPrevia = data
@@ -1100,7 +1122,7 @@ export default function RelatorioContagem({
       row &&
       row.preview_conferentes_detalhe &&
       row.preview_conferentes_detalhe.length > 1 &&
-      (relatorioConferenteModo[row.id] ?? 'total') !== 'total'
+      relatorioConferenteModoGlobal !== 'total'
     const msg = excluiSoUmConferente
       ? `Excluir ${idsToDelete.length} registro(s) deste conferente no banco?`
       : idsToDelete.length > 1
@@ -1141,7 +1163,9 @@ export default function RelatorioContagem({
       return
     }
     if (!relatorioPodeEditarQuantidade(row)) {
-      setError('Selecione um conferente (não «Total») para editar a quantidade deste produto.')
+      setError(
+        'Selecione um conferente específico no seletor “Conferente na lista” acima para editar a quantidade deste produto.',
+      )
       return
     }
 
@@ -1468,19 +1492,50 @@ export default function RelatorioContagem({
     </div>
   )
 
-  function relatorioModoBtnStyle(active: boolean): React.CSSProperties {
-    return {
-      padding: '4px 8px',
-      fontSize: 11,
-      lineHeight: 1.2,
-      borderRadius: 6,
-      border: `1px solid ${active ? 'var(--accent, #1976d2)' : 'var(--border, #ccc)'}`,
-      background: active ? 'rgba(25, 118, 210, 0.15)' : 'var(--surface, #fff)',
-      color: 'var(--text, #111)',
-      cursor: 'pointer',
-      fontWeight: active ? 700 : 500,
-    }
-  }
+  const relatorioConferenteGlobalBar =
+    !useInventarioCols && conferentesRelatorioOpcoes.length > 0 ? (
+      <div
+        style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          alignItems: 'center',
+          gap: 10,
+          marginBottom: 8,
+          padding: '10px 12px',
+          borderRadius: 8,
+          border: '1px solid var(--border, #ccc)',
+          background: 'rgba(25, 118, 210, 0.08)',
+        }}
+      >
+        <label
+          htmlFor="relatorio-conferente-global"
+          style={{ fontSize: 13, fontWeight: 600, color: 'var(--text, #333)' }}
+        >
+          Conferente na lista (todas as linhas)
+        </label>
+        <select
+          id="relatorio-conferente-global"
+          value={relatorioConferenteModoGlobal}
+          onChange={(e) => setRelatorioConferenteModoGlobal(e.target.value)}
+          style={{
+            padding: '8px 10px',
+            border: '1px solid #ccc',
+            borderRadius: 8,
+            minWidth: 240,
+            flex: '1 1 200px',
+            maxWidth: '100%',
+          }}
+          aria-label="Conferente na lista para todas as linhas"
+        >
+          <option value="total">Soma (todos os conferentes)</option>
+          {conferentesRelatorioOpcoes.map((o) => (
+            <option key={o.id} value={o.id}>
+              {o.nome}
+            </option>
+          ))}
+        </select>
+      </div>
+    ) : null
 
   return (
     <div style={{ padding: 16, maxWidth: 1400, margin: '0 auto' }}>
@@ -1807,6 +1862,7 @@ export default function RelatorioContagem({
 
         {rows.length ? (
           <div style={{ overflowX: 'auto' }}>
+            {relatorioConferenteGlobalBar}
             {relatorioPagination}
             <table
               style={{
@@ -1881,25 +1937,12 @@ export default function RelatorioContagem({
                     ) : null}
                     <td style={{ ...tdStyle, whiteSpace: 'normal', maxWidth: 260 }}>
                       {!useInventarioCols && r.preview_conferentes_detalhe && r.preview_conferentes_detalhe.length > 1 ? (
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
-                          <button
-                            type="button"
-                            style={relatorioModoBtnStyle((relatorioConferenteModo[r.id] ?? 'total') === 'total')}
-                            onClick={() => setRelatorioConferenteModo((m) => ({ ...m, [r.id]: 'total' }))}
-                          >
-                            Total
-                          </button>
-                          {r.preview_conferentes_detalhe.map((d) => (
-                            <button
-                              key={d.conferente_id}
-                              type="button"
-                              style={relatorioModoBtnStyle((relatorioConferenteModo[r.id] ?? 'total') === d.conferente_id)}
-                              onClick={() => setRelatorioConferenteModo((m) => ({ ...m, [r.id]: d.conferente_id }))}
-                            >
-                              {d.conferente_nome}
-                            </button>
-                          ))}
-                        </div>
+                        relatorioConferenteModoGlobal === 'total' ? (
+                          conferenteNomeRelatorio(r)
+                        ) : (
+                          r.preview_conferentes_detalhe.find((d) => d.conferente_id === relatorioConferenteModoGlobal)
+                            ?.conferente_nome ?? '—'
+                        )
                       ) : (
                         conferenteNomeRelatorio(r)
                       )}
@@ -1976,7 +2019,7 @@ export default function RelatorioContagem({
                               type="button"
                               title={
                                 !relatorioPodeEditarQuantidade(r)
-                                  ? 'Selecione um conferente (não Total) para editar a quantidade'
+                                  ? 'Selecione um conferente no seletor “Conferente na lista” acima para editar a quantidade'
                                   : undefined
                               }
                               onClick={() => {
