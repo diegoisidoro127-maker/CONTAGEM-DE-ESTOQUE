@@ -7,11 +7,11 @@ import { enrichContagemRowsWithPlanilhaLinhas } from '../lib/enrichContagemRowsW
 import { enrichContagemRowsEanDunFromTodosOsProdutos } from '../lib/enrichContagemRowsEanDunFromTodosOsProdutos'
 import { fetchConferentesNomesPorIds } from '../lib/conferentesNomesBatch'
 import {
-  agruparContagemDiariaComoPrevia,
   consolidarUltimaContagemDiariaPorCodigoEConferente,
   fetchPlanilhaContagemIdsParaIntervalo,
   filterContagensPorModoListagem,
   ordenarLinhasInventarioComoPrevia,
+  prepararContagemDiariaOficialComoListaSeparada,
   type ConferenteDetalheGrupo,
 } from '../lib/contagemListagemCompat'
 import { formatContagemLabel, inventarioCamaraLabelFromGrupo } from '../components/inventario/inventarioPlanilhaModel'
@@ -878,7 +878,7 @@ export default function RelatorioContagem({
     return { modo, filtered }
   }
 
-  /** Regra do relatório: inventário ordenado como prévia; contagem diária agrupada como a prévia (total + detalhe por conferente). */
+  /** Regra do relatório: inventário ordenado como prévia; contagem diária = uma linha por conferente e produto (sem somar conferentes na mesma linha). */
   async function aplicarMesmaRegraDaPreviaAsync(
     data: ContagemRow[],
     origemAusenteNoResultado: boolean,
@@ -892,7 +892,7 @@ export default function RelatorioContagem({
       }
       return inv
     }
-    const grouped = agruparContagemDiariaComoPrevia(filtered as ContagemRow[]) as ContagemRow[]
+    const grouped = prepararContagemDiariaOficialComoListaSeparada(filtered as ContagemRow[]) as ContagemRow[]
     return grouped.sort((a, b) => {
       const c = a.codigo_interno.localeCompare(b.codigo_interno, 'pt-BR')
       if (c !== 0) return c

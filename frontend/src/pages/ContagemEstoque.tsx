@@ -65,6 +65,10 @@ import {
   PRESENCA_POLL_INTERVAL_MS,
   upsertContagemDiariaPresenca,
 } from '../lib/contagemDiariaPresenca'
+import {
+  agruparContagemDiariaComoPrevia,
+  prepararContagemDiariaOficialComoListaSeparada,
+} from '../lib/contagemListagemCompat'
 import { mergeContagensDiariasDoDiaParaItems } from '../lib/mergeContagemDiariaDoBanco'
 import { subscribeContagensEstoqueDia } from '../lib/subscribeContagensEstoqueRealtime'
 
@@ -136,6 +140,8 @@ type ContagemPreviewRow = {
   inventario_numero_contagem?: number | null
   /** Lote da finalização (contagem diária); separa várias finalizações no mesmo dia/conferente. */
   finalizacao_sessao_id?: string | null
+  /** Rascunho em tempo real; oficiais (finalizados) aparecem em linhas separadas por conferente. */
+  contagem_rascunho?: boolean | null
   /** `inventario_planilha_linhas` por `contagens_estoque_id`. */
   planilha_grupo_armazem?: number | null
   planilha_rua?: string | null
@@ -298,18 +304,6 @@ function conferenteNomeFromJoin(row: Record<string, unknown>): string {
   if (!c) return ''
   if (Array.isArray(c)) return String(c[0]?.nome ?? '')
   return String(c.nome ?? '')
-}
-
-/** Ao agrupar linhas da prévia com conferentes diferentes, lista nomes únicos separados por vírgula. */
-function mergeConferenteNomesUnicos(a: string, b: string): string {
-  const parts = new Set<string>()
-  for (const s of [a, b]) {
-    for (const part of String(s ?? '').split(',')) {
-      const t = part.trim()
-      if (t) parts.add(t)
-    }
-  }
-  return Array.from(parts).sort((x, y) => x.localeCompare(y, 'pt-BR')).join(', ') || '—'
 }
 
 /**
@@ -1649,7 +1643,8 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
 
     const previewSelectFullLegacy =
       'id,data_hora_contagem,data_contagem,conferente_id,conferentes(nome),codigo_interno,descricao,unidade_medida,quantidade_up,up_adicional,lote,observacao,data_fabricacao,data_validade,ean,dun,foto_base64,origem,inventario_repeticao,inventario_numero_contagem'
-    const previewSelectFull = `${previewSelectFullLegacy},finalizacao_sessao_id`
+    const previewSelectFullBase = `${previewSelectFullLegacy},finalizacao_sessao_id`
+    const previewSelectFull = `${previewSelectFullBase},contagem_rascunho`
     const previewSelectSemNc =
       'id,data_hora_contagem,data_contagem,conferente_id,conferentes(nome),codigo_interno,descricao,unidade_medida,quantidade_up,up_adicional,lote,observacao,data_fabricacao,data_validade,ean,dun,foto_base64,origem,inventario_repeticao'
     /** Sem `origem` no SELECT (coluna inexistente no banco) — mantém repetição e nº para agrupar a prévia. */
@@ -1665,7 +1660,8 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     /** Mesmas colunas do “completo”, sem join em `conferentes` (RLS/embed quebra o SELECT inteiro). */
     const previewSelectFlatFullLegacy =
       'id,data_hora_contagem,data_contagem,conferente_id,codigo_interno,descricao,unidade_medida,quantidade_up,up_adicional,lote,observacao,data_fabricacao,data_validade,ean,dun,foto_base64,origem,inventario_repeticao,inventario_numero_contagem'
-    const previewSelectFlatFull = `${previewSelectFlatFullLegacy},finalizacao_sessao_id`
+    const previewSelectFlatFullBase = `${previewSelectFlatFullLegacy},finalizacao_sessao_id`
+    const previewSelectFlatFull = `${previewSelectFlatFullBase},contagem_rascunho`
     const previewSelectFlatSemNc =
       'id,data_hora_contagem,data_contagem,conferente_id,codigo_interno,descricao,unidade_medida,quantidade_up,up_adicional,lote,observacao,data_fabricacao,data_validade,ean,dun,foto_base64,origem,inventario_repeticao'
     const previewSelectFlatSemOrigemSemNc =
@@ -1687,6 +1683,12 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       const rSess = await queryPreview(previewSelectFullLegacy)
       data = rSess.data
       error = rSess.error
+    }
+
+    if (error && isMissingDbColumnError(error, 'contagem_rascunho')) {
+      const rR = await queryPreview(previewSelectFullBase)
+      data = rR.data
+      error = rR.error
     }
 
     if (error && isMissingDbColumnError(error, 'origem')) {
@@ -1723,6 +1725,8 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       let rFlat = await queryPreview(previewSelectFlatFull)
       if (rFlat.error && isMissingDbColumnError(rFlat.error, 'finalizacao_sessao_id')) {
         rFlat = await queryPreview(previewSelectFlatFullLegacy)
+      } else if (rFlat.error && isMissingDbColumnError(rFlat.error, 'contagem_rascunho')) {
+        rFlat = await queryPreview(previewSelectFlatFullBase)
       }
       if (!rFlat.error) {
         data = rFlat.data
@@ -1828,6 +1832,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
             r.finalizacao_sessao_id != null && String(r.finalizacao_sessao_id).trim() !== ''
               ? String(r.finalizacao_sessao_id)
               : null,
+          contagem_rascunho: r.contagem_rascunho === true,
         }
       }) as ContagemPreviewRow[]
 
@@ -1843,7 +1848,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         return nome ? { ...r, conferente_nome: nome } : r
       })
 
-      // Contagem diária: agrupa por dia + código + descrição e soma quantidades.
+      // Contagem diária: rascunho agrupa por produto (tempo real entre conferentes); finalizados = lista separada por conferente.
       // Inventário: uma linha por registro em `contagens_estoque` (mesma lógica da planilha: mesmo código em POS/Níveis diferentes não pode virar uma linha só).
       let previewList: ContagemPreviewRow[]
       if (inventario) {
@@ -1863,70 +1868,24 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
           return String(a.id).localeCompare(String(b.id), 'pt-BR')
         })
       } else {
-        const grouped = new Map<string, ContagemPreviewRow>()
-        for (const row of rawPreviewLinhas) {
-          const day = dayKey
-          const key = `${day}|${normalizeCodigoInternoCompareKey(row.codigo_interno).toLowerCase()}|${row.descricao.trim().toLowerCase()}`
-          const existing = grouped.get(key)
-          if (!existing) {
-            grouped.set(key, {
-              ...row,
-              preview_conferentes_detalhe: [
-                {
-                  conferente_id: row.conferente_id,
-                  conferente_nome: row.conferente_nome,
-                  quantidade_up: Number(row.quantidade_up ?? 0),
-                  source_ids: [...row.source_ids],
-                },
-              ],
-            })
-            continue
-          }
-          existing.quantidade_up += Number(row.quantidade_up ?? 0)
-          existing.source_ids = existing.source_ids.concat(row.source_ids)
-          existing.conferente_nome = mergeConferenteNomesUnicos(existing.conferente_nome, row.conferente_nome)
-          const det = existing.preview_conferentes_detalhe
-          if (det) {
-            const idx = det.findIndex((d) => d.conferente_id === row.conferente_id)
-            if (idx >= 0) {
-              det[idx].quantidade_up += Number(row.quantidade_up ?? 0)
-              det[idx].source_ids = det[idx].source_ids.concat(row.source_ids)
-            } else {
-              det.push({
-                conferente_id: row.conferente_id,
-                conferente_nome: row.conferente_nome,
-                quantidade_up: Number(row.quantidade_up ?? 0),
-                source_ids: [...row.source_ids],
-              })
-            }
-            det.sort((a, b) => a.conferente_nome.localeCompare(b.conferente_nome, 'pt-BR'))
-          }
-          if (!existing.foto_base64 && row.foto_base64) existing.foto_base64 = row.foto_base64
-          if (existing.planilha_grupo_armazem == null && row.planilha_grupo_armazem != null) {
-            existing.planilha_grupo_armazem = row.planilha_grupo_armazem
-            existing.planilha_rua = row.planilha_rua ?? null
-            existing.planilha_posicao = row.planilha_posicao ?? null
-            existing.planilha_nivel = row.planilha_nivel ?? null
-          }
-          if (!existing.lote && row.lote) existing.lote = row.lote
-          if (!existing.observacao && row.observacao) existing.observacao = row.observacao
-          if (!existing.unidade_medida && row.unidade_medida) existing.unidade_medida = row.unidade_medida
-          if (!existing.data_fabricacao && row.data_fabricacao) existing.data_fabricacao = row.data_fabricacao
-          if (!existing.data_validade && row.data_validade) existing.data_validade = row.data_validade
-          if (!existing.ean && row.ean) existing.ean = row.ean
-          if (!existing.dun && row.dun) existing.dun = row.dun
-          const av = row.quantidade_up_secundaria
-          if (av != null && Number.isFinite(av)) {
-            const ev = existing.quantidade_up_secundaria
-            existing.quantidade_up_secundaria = (ev != null && Number.isFinite(ev) ? ev : 0) + av
-          }
-        }
-        previewList = Array.from(grouped.values())
+        const linhasRascunho = rawPreviewLinhas.filter((r) => r.contagem_rascunho === true)
+        const linhasOficiais = rawPreviewLinhas.filter((r) => r.contagem_rascunho !== true)
+        const draftMerged = agruparContagemDiariaComoPrevia(linhasRascunho) as ContagemPreviewRow[]
+        const oficialSeparado = prepararContagemDiariaOficialComoListaSeparada(
+          linhasOficiais,
+        ) as ContagemPreviewRow[]
+        previewList = [...draftMerged, ...oficialSeparado].sort((a, b) => {
+          const c = a.codigo_interno.localeCompare(b.codigo_interno, 'pt-BR')
+          if (c !== 0) return c
+          const d = a.descricao.localeCompare(b.descricao, 'pt-BR')
+          if (d !== 0) return d
+          return a.conferente_nome.localeCompare(b.conferente_nome, 'pt-BR')
+        })
       }
 
       setPreviewQueryDayYmd(dayKey)
       setPreviewRows(previewList)
-      setPreviewConferenteModoGlobal('total')
+      setPreviewConferenteModoGlobal(null)
       if (!silent) {
         window.setTimeout(() => {
           previewSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })

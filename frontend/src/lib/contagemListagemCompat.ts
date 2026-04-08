@@ -129,6 +129,8 @@ function mergeConferenteNomesUnicos(a: string, b: string): string {
 }
 
 function conferenteNomeParaDetalhe(r: Record<string, unknown>): string {
+  const plain = String(r.conferente_nome ?? '').trim()
+  if (plain) return plain
   const n = nomeConferenteJoinRow(r)
   if (n) return n
   const id = String(r.conferente_id ?? '').trim()
@@ -136,8 +138,8 @@ function conferenteNomeParaDetalhe(r: Record<string, unknown>): string {
 }
 
 /**
- * Agrupa a contagem diária por dia civil + código + descrição (sem separar por lote de finalização).
- * Soma quantidades no total da linha e em `preview_conferentes_detalhe` por conferente — igual à prévia no app.
+ * Rascunhos (`contagem_rascunho`): agrupa por dia + código + descrição para ver e editar em tempo real
+ * a contagem de todos os conferentes na mesma linha (detalhe por conferente em `preview_conferentes_detalhe`).
  */
 export function agruparContagemDiariaComoPrevia<T extends RowMergeContagemDiaria>(rows: T[]): T[] {
   const grouped = new Map<string, T>()
@@ -200,13 +202,16 @@ export function agruparContagemDiariaComoPrevia<T extends RowMergeContagemDiaria
     if (!existing.dun && row.dun) existing.dun = row.dun
     if (!existing.foto_base64 && row.foto_base64) existing.foto_base64 = row.foto_base64
     const ex = existing as Record<string, unknown>
-    const n1 = nomeConferenteJoinRow(ex)
-    const n2 = nomeConferenteJoinRow(row as Record<string, unknown>)
+    const n1 = conferenteNomeParaDetalhe(ex)
+    const n2 = conferenteNomeParaDetalhe(row as Record<string, unknown>)
     const merged = mergeConferenteNomesUnicos(n1, n2)
     if (merged && merged !== n1) {
+      ex.conferente_nome = merged
       ex.conferentes = { nome: merged }
     } else if (!n1 && n2) {
       ex.conferentes = (row as Record<string, unknown>).conferentes
+      const pl = String((row as Record<string, unknown>).conferente_nome ?? '').trim()
+      if (pl) ex.conferente_nome = pl
     }
   }
   return Array.from(grouped.values())
@@ -267,4 +272,32 @@ export function consolidarUltimaContagemDiariaPorCodigoEConferente<T extends Row
     }
   }
   return Array.from(byKey.values())
+}
+
+/**
+ * Contagem diária oficial (finalizada): uma linha por conferente e produto no dia, sem somar conferentes na mesma linha.
+ * Quando há vários registros do mesmo par, mantém o mais recente (`data_hora_contagem` / `id`).
+ */
+export function prepararContagemDiariaOficialComoListaSeparada<T extends RowMergeContagemDiaria>(rows: T[]): T[] {
+  const cons = consolidarUltimaContagemDiariaPorCodigoEConferente(rows)
+  return cons.map((r) => {
+    const rowRec = r as Record<string, unknown>
+    const cid = String(r.conferente_id ?? '').trim() || '__sem__'
+    const nomeLinha = conferenteNomeParaDetalhe(rowRec)
+    const sid = r.source_ids?.length ? [...r.source_ids] : [String(r.id)]
+    const q = Number(r.quantidade_up ?? 0)
+    return {
+      ...r,
+      quantidade_up: q,
+      source_ids: sid,
+      preview_conferentes_detalhe: [
+        {
+          conferente_id: cid,
+          conferente_nome: nomeLinha,
+          quantidade_up: q,
+          source_ids: sid,
+        },
+      ],
+    } as T
+  })
 }
