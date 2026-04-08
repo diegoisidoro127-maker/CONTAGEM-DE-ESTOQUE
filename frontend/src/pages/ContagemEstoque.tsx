@@ -460,8 +460,8 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
 
   const [previewLoading, setPreviewLoading] = useState(false)
   const [previewRows, setPreviewRows] = useState<ContagemPreviewRow[]>([])
-  /** Contagem diária: conferente exibido na prévia para todas as linhas — `total` (soma) ou `conferente_id`. */
-  const [previewConferenteModoGlobal, setPreviewConferenteModoGlobal] = useState<'total' | string>('total')
+  /** Contagem diária: conferente na prévia — `null` = padrão (conferente da sessão nos dados do dia), `total` = soma, ou id. */
+  const [previewConferenteModoGlobal, setPreviewConferenteModoGlobal] = useState<'total' | string | null>(null)
   /** Dia consultado em `contagens_estoque.data_contagem` (alinha sessão / planilha; não só “hoje”). */
   const [previewConsultaDiaYmd, setPreviewConsultaDiaYmd] = useState<string>(() => toISODateLocal(new Date()))
 
@@ -580,17 +580,42 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     }, 3000)
   }
 
+  const conferentesPreviaOpcoes = useMemo(() => {
+    if (inventario) return [] as Array<{ id: string; nome: string }>
+    const map = new Map<string, string>()
+    for (const r of previewRows) {
+      const det = r.preview_conferentes_detalhe
+      if (!det?.length) continue
+      for (const d of det) {
+        if (d.conferente_id) map.set(d.conferente_id, String(d.conferente_nome ?? '').trim() || d.conferente_id)
+      }
+    }
+    return Array.from(map.entries())
+      .map(([id, nome]) => ({ id, nome }))
+      .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
+  }, [previewRows, inventario])
+
+  /** Modo efetivo na prévia: com `previewConferenteModoGlobal === null`, prioriza o conferente selecionado na sessão. */
+  const previewConferenteModoEffective = useMemo(() => {
+    if (inventario) return 'total'
+    const manual = previewConferenteModoGlobal
+    if (manual !== null) return manual
+    const cid = String(conferenteId ?? '').trim()
+    if (cid && conferentesPreviaOpcoes.some((o) => o.id === cid)) return cid
+    return 'total'
+  }, [inventario, previewConferenteModoGlobal, conferenteId, conferentesPreviaOpcoes])
+
   const previewQuantidadeExibidaPrevia = useCallback(
     (r: ContagemPreviewRow) => {
       if (inventario || !r.preview_conferentes_detalhe || r.preview_conferentes_detalhe.length <= 1) {
         return r.quantidade_up
       }
-      const modo = previewConferenteModoGlobal
+      const modo = previewConferenteModoEffective
       if (modo === 'total') return r.quantidade_up
       const part = r.preview_conferentes_detalhe.find((d) => d.conferente_id === modo)
       return part ? part.quantidade_up : r.quantidade_up
     },
-    [inventario, previewConferenteModoGlobal],
+    [inventario, previewConferenteModoEffective],
   )
 
   const previewSourceIdsParaAcaoPrevia = useCallback(
@@ -599,12 +624,12 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       if (inventario || !r.preview_conferentes_detalhe || r.preview_conferentes_detalhe.length <= 1) {
         return ids
       }
-      const modo = previewConferenteModoGlobal
+      const modo = previewConferenteModoEffective
       if (modo === 'total') return ids
       const part = r.preview_conferentes_detalhe.find((d) => d.conferente_id === modo)
       return part?.source_ids?.length ? part.source_ids : ids
     },
-    [inventario, previewConferenteModoGlobal],
+    [inventario, previewConferenteModoEffective],
   )
 
   /** Com vários conferentes na mesma linha agrupada, edição de quantidade só faz sentido por conferente (não na soma). */
@@ -613,9 +638,9 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       if (inventario) return true
       const det = r.preview_conferentes_detalhe
       if (!det || det.length <= 1) return true
-      return previewConferenteModoGlobal !== 'total'
+      return previewConferenteModoEffective !== 'total'
     },
-    [inventario, previewConferenteModoGlobal],
+    [inventario, previewConferenteModoEffective],
   )
 
   const dataHoraContagem = useMemo(() => {
@@ -2991,25 +3016,10 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     previewFilterInventarioNumeroContagem,
   ])
 
-  const conferentesPreviaOpcoes = useMemo(() => {
-    if (inventario) return [] as Array<{ id: string; nome: string }>
-    const map = new Map<string, string>()
-    for (const r of previewRows) {
-      const det = r.preview_conferentes_detalhe
-      if (!det?.length) continue
-      for (const d of det) {
-        if (d.conferente_id) map.set(d.conferente_id, String(d.conferente_nome ?? '').trim() || d.conferente_id)
-      }
-    }
-    return Array.from(map.entries())
-      .map(([id, nome]) => ({ id, nome }))
-      .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
-  }, [previewRows, inventario])
-
   useEffect(() => {
-    if (previewConferenteModoGlobal === 'total') return
+    if (previewConferenteModoGlobal === null || previewConferenteModoGlobal === 'total') return
     if (!conferentesPreviaOpcoes.some((o) => o.id === previewConferenteModoGlobal)) {
-      setPreviewConferenteModoGlobal('total')
+      setPreviewConferenteModoGlobal(null)
     }
   }, [conferentesPreviaOpcoes, previewConferenteModoGlobal])
 
@@ -3272,8 +3282,11 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
           </label>
           <select
             id="preview-conferente-global"
-            value={previewConferenteModoGlobal}
-            onChange={(e) => setPreviewConferenteModoGlobal(e.target.value)}
+            value={previewConferenteModoEffective}
+            onChange={(e) => {
+              const v = e.target.value
+              setPreviewConferenteModoGlobal(v === 'total' ? 'total' : v)
+            }}
             style={{
               padding: '8px 10px',
               border: '1px solid #ccc',
@@ -3471,10 +3484,10 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                     <div style={{ fontSize: 12, color: 'var(--text, #888)', marginTop: 8 }}>Conferente</div>
                     <div style={{ fontSize: 13 }}>
                       {!inventario && r.preview_conferentes_detalhe && r.preview_conferentes_detalhe.length > 1 ? (
-                        previewConferenteModoGlobal === 'total' ? (
+                        previewConferenteModoEffective === 'total' ? (
                           r.conferente_nome
                         ) : (
-                          r.preview_conferentes_detalhe.find((d) => d.conferente_id === previewConferenteModoGlobal)
+                          r.preview_conferentes_detalhe.find((d) => d.conferente_id === previewConferenteModoEffective)
                             ?.conferente_nome ?? '—'
                         )
                       ) : String(r.conferente_nome ?? '').trim() !== '' ? (
@@ -3717,10 +3730,10 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                   ) : null}
                   <td style={{ ...tdStyle, whiteSpace: 'normal', maxWidth: 240 }}>
                     {!inventario && r.preview_conferentes_detalhe && r.preview_conferentes_detalhe.length > 1 ? (
-                      previewConferenteModoGlobal === 'total' ? (
+                      previewConferenteModoEffective === 'total' ? (
                         r.conferente_nome
                       ) : (
-                        r.preview_conferentes_detalhe.find((d) => d.conferente_id === previewConferenteModoGlobal)
+                        r.preview_conferentes_detalhe.find((d) => d.conferente_id === previewConferenteModoEffective)
                           ?.conferente_nome ?? '—'
                       )
                     ) : String(r.conferente_nome ?? '').trim() !== '' ? (
