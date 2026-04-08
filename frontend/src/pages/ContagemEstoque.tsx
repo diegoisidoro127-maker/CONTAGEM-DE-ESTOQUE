@@ -360,6 +360,17 @@ function stripContagensEstoqueContagemRascunhoColumn(row: Record<string, unknown
   return r
 }
 
+/** Valor de `contagem_rascunho` vindo do PostgREST (boolean; em raros casos string). */
+function isContagemRascunhoValorDb(v: unknown): boolean {
+  if (v === true) return true
+  if (v === false || v === null || v === undefined) return false
+  if (typeof v === 'string') {
+    const t = v.trim().toLowerCase()
+    return t === 'true' || t === 't' || t === '1'
+  }
+  return false
+}
+
 function isMissingAnyInventarioContagensColumn(e: unknown): boolean {
   return (
     isMissingDbColumnError(e, 'origem') ||
@@ -1832,7 +1843,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
             r.finalizacao_sessao_id != null && String(r.finalizacao_sessao_id).trim() !== ''
               ? String(r.finalizacao_sessao_id)
               : null,
-          contagem_rascunho: r.contagem_rascunho === true,
+          contagem_rascunho: isContagemRascunhoValorDb(r.contagem_rascunho),
         }
       }) as ContagemPreviewRow[]
 
@@ -1874,13 +1885,15 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         const oficialSeparado = prepararContagemDiariaOficialComoListaSeparada(
           linhasOficiais,
         ) as ContagemPreviewRow[]
-        previewList = [...draftMerged, ...oficialSeparado].sort((a, b) => {
+        /** Finalizados: lista “fechada” por conferente (agrupa todos os itens do mesmo nome antes de misturar com outro). */
+        const sortPreviaContagemDiaria = (a: ContagemPreviewRow, b: ContagemPreviewRow) => {
+          const conf = a.conferente_nome.localeCompare(b.conferente_nome, 'pt-BR')
+          if (conf !== 0) return conf
           const c = a.codigo_interno.localeCompare(b.codigo_interno, 'pt-BR')
           if (c !== 0) return c
-          const d = a.descricao.localeCompare(b.descricao, 'pt-BR')
-          if (d !== 0) return d
-          return a.conferente_nome.localeCompare(b.conferente_nome, 'pt-BR')
-        })
+          return a.descricao.localeCompare(b.descricao, 'pt-BR')
+        }
+        previewList = [...draftMerged.sort(sortPreviaContagemDiaria), ...oficialSeparado.sort(sortPreviaContagemDiaria)]
       }
 
       setPreviewQueryDayYmd(dayKey)
@@ -2760,8 +2773,10 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
           rowPayload.inventario_numero_contagem = clampInventarioNumeroContagem(
             session.inventario_numero_contagem ?? 1,
           )
-        } else if (finalizacaoSessaoId) {
-          rowPayload.finalizacao_sessao_id = finalizacaoSessaoId
+        } else {
+          if (finalizacaoSessaoId) rowPayload.finalizacao_sessao_id = finalizacaoSessaoId
+          /** Linha definitiva — separa da prévia colaborativa (`contagem_rascunho = true`). */
+          rowPayload.contagem_rascunho = false
         }
         rows.push(rowPayload)
         finalizeMeta.push({ it, q, up_adicional, dfRaw, dvRaw, produtoId })
@@ -2808,6 +2823,12 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         }
         if (insErr && isMissingDbColumnError(insErr, 'finalizacao_sessao_id')) {
           attemptPayload = attemptPayload.map((r) => stripContagensEstoqueFinalizacaoSessaoColumn(r))
+          const res = await supabase.from('contagens_estoque').insert(attemptPayload).select('id')
+          insertedChunk = res.data
+          insErr = res.error
+        }
+        if (insErr && isMissingDbColumnError(insErr, 'contagem_rascunho')) {
+          attemptPayload = attemptPayload.map((r) => stripContagensEstoqueContagemRascunhoColumn(r))
           const res = await supabase.from('contagens_estoque').insert(attemptPayload).select('id')
           insertedChunk = res.data
           insErr = res.error

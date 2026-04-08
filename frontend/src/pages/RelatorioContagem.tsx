@@ -894,6 +894,8 @@ export default function RelatorioContagem({
     }
     const grouped = prepararContagemDiariaOficialComoListaSeparada(filtered as ContagemRow[]) as ContagemRow[]
     return grouped.sort((a, b) => {
+      const cn = conferenteNomeRelatorio(a).localeCompare(conferenteNomeRelatorio(b), 'pt-BR')
+      if (cn !== 0) return cn
       const c = a.codigo_interno.localeCompare(b.codigo_interno, 'pt-BR')
       if (c !== 0) return c
       return a.descricao.localeCompare(b.descricao, 'pt-BR')
