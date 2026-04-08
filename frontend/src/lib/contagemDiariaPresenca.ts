@@ -198,7 +198,15 @@ export async function fetchResumoFinalizadosContagemDiariaDia(dataContagemYmd: s
 
   const selFull =
     'conferente_id,data_hora_contagem,origem,inventario_repeticao,inventario_numero_contagem'.replace(/\s/g, '')
-  let rows = await pull(selFull)
+  const selWithRasc =
+    'conferente_id,data_hora_contagem,origem,inventario_repeticao,inventario_numero_contagem,contagem_rascunho'.replace(
+      /\s/g,
+      '',
+    )
+  let rows = await pull(selWithRasc)
+  if (rows == null) {
+    rows = await pull(selFull)
+  }
   if (rows == null) {
     rows = await pull('conferente_id,data_hora_contagem'.replace(/\s/g, ''))
   }
@@ -206,6 +214,7 @@ export async function fetchResumoFinalizadosContagemDiariaDia(dataContagemYmd: s
 
   const hasOrigemMeta = rows.length > 0 && 'origem' in (rows[0] as object)
   for (const r of rows) {
+    if (r.contagem_rascunho === true) continue
     if (hasOrigemMeta && !isContagemDiariaRowResumo(r)) continue
     const id = r.conferente_id != null ? String(r.conferente_id).trim() : ''
     if (!id) continue

@@ -360,6 +360,12 @@ function stripContagensEstoqueFinalizacaoSessaoColumn(row: Record<string, unknow
   return r
 }
 
+function stripContagensEstoqueContagemRascunhoColumn(row: Record<string, unknown>): Record<string, unknown> {
+  const r = { ...row }
+  delete r.contagem_rascunho
+  return r
+}
+
 function isMissingAnyInventarioContagensColumn(e: unknown): boolean {
   return (
     isMissingDbColumnError(e, 'origem') ||
@@ -617,6 +623,13 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     return toDatetimeLocalValue(new Date(clockBaseMs + elapsed))
   }, [clockBaseMs, clockRealStartMs, clockTick])
 
+  const dataHoraContagemRef = useRef(dataHoraContagem)
+  useEffect(() => {
+    dataHoraContagemRef.current = dataHoraContagem
+  }, [dataHoraContagem])
+
+  const contagemDiariaPersistTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
+
   useEffect(() => {
     const id = setInterval(() => setClockTick((v) => v + 1), 1000)
     return () => clearInterval(id)
@@ -664,6 +677,15 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     }
   }, [])
 
+  useEffect(() => {
+    return () => {
+      for (const id of Object.keys(contagemDiariaPersistTimersRef.current)) {
+        clearTimeout(contagemDiariaPersistTimersRef.current[id])
+      }
+      contagemDiariaPersistTimersRef.current = {}
+    }
+  }, [])
+
   // Restaura sessão offline aberta (persistência no navegador).
   useEffect(() => {
     const s = loadOfflineSession(sessionMode)
@@ -677,6 +699,22 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       setStartFreshNotice('')
     }
   }, [sessionMode])
+
+  /** Sessões antigas sem UUID de rascunho: gera um para permitir sync em tempo real no Supabase. */
+  useEffect(() => {
+    if (inventario) return
+    setOfflineSession((prev) => {
+      if (!prev || prev.status !== 'aberta') return prev
+      if (prev.contagem_diaria_rascunho_sessao_id && isUuid(prev.contagem_diaria_rascunho_sessao_id)) return prev
+      const next = {
+        ...prev,
+        contagem_diaria_rascunho_sessao_id: newSessionId(),
+        updatedAt: new Date().toISOString(),
+      }
+      saveOfflineSession(next, sessionMode)
+      return next
+    })
+  }, [inventario, offlineSession?.sessionId, offlineSession?.status, sessionMode])
 
   useEffect(() => {
     setChecklistPage(1)
@@ -962,6 +1000,13 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     }
     return map
   }, [productOptions])
+
+  const productByCodeRef = useRef(productByCode)
+  const productByCodeNoDotsRef = useRef(productByCodeNoDots)
+  useEffect(() => {
+    productByCodeRef.current = productByCode
+    productByCodeNoDotsRef.current = productByCodeNoDots
+  }, [productByCode, productByCodeNoDots])
 
   const productByDescricao = useMemo(() => {
     const map = new Map<string, ProductOption>()
@@ -2058,7 +2103,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         listMode: listModeEfetivo,
         context: sessionMode,
         items,
-        ...(inventario ? { inventario_numero_contagem: 1 as const } : {}),
+        ...(inventario ? { inventario_numero_contagem: 1 as const } : { contagem_diaria_rascunho_sessao_id: newSessionId() }),
         updatedAt: new Date().toISOString(),
       }
       setOfflineSession(sess)
@@ -2101,6 +2146,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       return
     }
     if (!confirm('Limpar a sessão local? As quantidades não finalizadas serão perdidas.')) return
+    void apagarRascunhoSupabaseParaSessao(offlineSession)
     clearOfflineSession(sessionMode)
     setOfflineSession(null)
     setChecklistError('')
@@ -2119,6 +2165,174 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     )
     if (!ok) return
     void handleCarregarListaPlanilha({ forceZero: true })
+  }
+
+  async function apagarRascunhoSupabaseParaSessao(s: OfflineSession) {
+    if (inventario) return
+    const dr = s.contagem_diaria_rascunho_sessao_id
+    const cid = String(s.conferente_id ?? '').trim()
+    const ymd = s.data_contagem_ymd
+    if (!cid || !/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return
+    if (dr && isUuid(dr)) {
+      const { error } = await supabase
+        .from('contagens_estoque')
+        .delete()
+        .eq('conferente_id', cid)
+        .eq('finalizacao_sessao_id', dr)
+      if (!error) return
+      if (!isMissingDbColumnError(error, 'finalizacao_sessao_id') && import.meta.env.DEV) {
+        console.warn('[contagem rascunho] delete por sessão', error)
+      }
+    }
+    const { error: e2 } = await supabase
+      .from('contagens_estoque')
+      .delete()
+      .eq('conferente_id', cid)
+      .eq('data_contagem', ymd)
+      .eq('contagem_rascunho', true)
+    if (e2 && import.meta.env.DEV && !isMissingDbColumnError(e2, 'contagem_rascunho')) {
+      console.warn('[contagem rascunho] delete fallback', e2)
+    }
+  }
+
+  function scheduleContagemDiariaRascunhoPersist(itemKey: string) {
+    if (inventario || finalizing) return
+    const s = offlineSessionRef.current
+    if (!s || s.status !== 'aberta') return
+    if (!s.contagem_diaria_rascunho_sessao_id || !isUuid(s.contagem_diaria_rascunho_sessao_id)) return
+    const prevT = contagemDiariaPersistTimersRef.current[itemKey]
+    if (prevT) clearTimeout(prevT)
+    contagemDiariaPersistTimersRef.current[itemKey] = setTimeout(() => {
+      delete contagemDiariaPersistTimersRef.current[itemKey]
+      void flushPersistContagemDiariaRascunho(itemKey)
+    }, 700)
+  }
+
+  async function flushPersistContagemDiariaRascunho(itemKey: string) {
+    if (inventario || finalizing) return
+    const s = offlineSessionRef.current
+    if (!s || s.status !== 'aberta') return
+    const draftId = s.contagem_diaria_rascunho_sessao_id
+    if (!draftId || !isUuid(draftId)) return
+    const cid = String(s.conferente_id ?? '').trim()
+    if (!cid) return
+    const ymd = s.data_contagem_ymd
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return
+    const it = s.items.find((i) => i.key === itemKey)
+    if (!it) return
+    const codRaw = String(it.codigo_interno ?? '').trim()
+    if (!codRaw) return
+    const catalog = lookupProductOptionByCodigo(codRaw, productByCodeRef.current, productByCodeNoDotsRef.current)
+    const codigoDb = String(catalog?.codigo ?? it.codigo_interno).trim()
+    const qStr = String(it.quantidade_contada ?? '').trim()
+
+    const delLinha = async () => {
+      const { error } = await supabase
+        .from('contagens_estoque')
+        .delete()
+        .eq('data_contagem', ymd)
+        .eq('conferente_id', cid)
+        .eq('finalizacao_sessao_id', draftId)
+        .eq('codigo_interno', codigoDb)
+      if (!error) return
+      if (isMissingDbColumnError(error, 'finalizacao_sessao_id')) {
+        const r2 = await supabase
+          .from('contagens_estoque')
+          .delete()
+          .eq('data_contagem', ymd)
+          .eq('conferente_id', cid)
+          .eq('codigo_interno', codigoDb)
+          .eq('contagem_rascunho', true)
+        if (r2.error && import.meta.env.DEV) console.warn('[contagem rascunho] delete qty vazia', r2.error)
+        return
+      }
+      if (import.meta.env.DEV) console.warn('[contagem rascunho] delete qty vazia', error)
+    }
+
+    if (qStr === '') {
+      await delLinha()
+      checklistContagemBancoDirtyKeysRef.current.delete(itemKey)
+      return
+    }
+    const q = Number(qStr.replace(',', '.'))
+    if (!Number.isFinite(q) || q < 0) return
+    const dfRaw = String(it.data_fabricacao ?? '').trim()
+    const dvRaw = String(it.data_validade ?? '').trim()
+    if (isVencimentoAntesFabricacao(dfRaw, dvRaw)) return
+    const upRaw = String(it.up_quantidade ?? '').trim()
+    let up_adicional: number | null = null
+    if (upRaw !== '') {
+      const u = Number(upRaw.replace(',', '.'))
+      if (!Number.isFinite(u) || u < 0) return
+      up_adicional = u
+    }
+    const produtoId = catalog?.id != null && isUuid(String(catalog.id)) ? String(catalog.id) : null
+    const dataHoraIso = toISOStringFromDatetimeLocal(dataHoraContagemRef.current)
+
+    let rowPayload: Record<string, unknown> = {
+      data_contagem: ymd,
+      data_hora_contagem: dataHoraIso,
+      conferente_id: cid,
+      produto_id: produtoId,
+      codigo_interno: codigoDb,
+      descricao: it.descricao.trim(),
+      unidade_medida:
+        it.unidade_medida != null && String(it.unidade_medida).trim() !== ''
+          ? String(it.unidade_medida).trim()
+          : null,
+      quantidade_up: q,
+      up_adicional,
+      foto_base64:
+        it.foto_base64 !== undefined && String(it.foto_base64 ?? '').trim() !== ''
+          ? String(it.foto_base64)
+          : null,
+      lote: String(it.lote ?? '').trim() || null,
+      observacao: String(it.observacao ?? '').trim() || null,
+      data_fabricacao: dfRaw === '' ? null : dfRaw,
+      data_validade: dvRaw === '' ? null : dvRaw,
+      ean: it.ean != null && String(it.ean).trim() !== '' ? String(it.ean).trim() : null,
+      dun: it.dun != null && String(it.dun).trim() !== '' ? String(it.dun).trim() : null,
+      finalizacao_sessao_id: draftId,
+      contagem_rascunho: true,
+    }
+
+    {
+      const { error: delErr } = await supabase
+        .from('contagens_estoque')
+        .delete()
+        .eq('data_contagem', ymd)
+        .eq('conferente_id', cid)
+        .eq('finalizacao_sessao_id', draftId)
+        .eq('codigo_interno', codigoDb)
+      if (delErr && !isMissingDbColumnError(delErr, 'finalizacao_sessao_id') && import.meta.env.DEV) {
+        console.warn('[contagem rascunho] delete antes do insert', delErr)
+      }
+      if (delErr && isMissingDbColumnError(delErr, 'finalizacao_sessao_id')) {
+        const r2 = await supabase
+          .from('contagens_estoque')
+          .delete()
+          .eq('data_contagem', ymd)
+          .eq('conferente_id', cid)
+          .eq('codigo_interno', codigoDb)
+          .eq('contagem_rascunho', true)
+        if (r2.error && import.meta.env.DEV) console.warn('[contagem rascunho] delete antes insert fallback', r2.error)
+      }
+    }
+
+    let ins = await supabase.from('contagens_estoque').insert(rowPayload).select('id').limit(1)
+    if (ins.error && isMissingDbColumnError(ins.error, 'contagem_rascunho')) {
+      rowPayload = stripContagensEstoqueContagemRascunhoColumn(rowPayload)
+      ins = await supabase.from('contagens_estoque').insert(rowPayload).select('id').limit(1)
+    }
+    if (ins.error && isMissingDbColumnError(ins.error, 'finalizacao_sessao_id')) {
+      rowPayload = stripContagensEstoqueFinalizacaoSessaoColumn(rowPayload)
+      ins = await supabase.from('contagens_estoque').insert(rowPayload).select('id').limit(1)
+    }
+    if (ins.error) {
+      if (import.meta.env.DEV) console.warn('[contagem rascunho] insert', ins.error)
+      return
+    }
+    checklistContagemBancoDirtyKeysRef.current.delete(itemKey)
   }
 
   function updateOfflineItemQty(key: string, quantidade: string, opts?: { skipBloqueioGuard?: boolean }) {
@@ -2144,6 +2358,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     })
     schedulePendentesGrace(key, quantidade)
     flashChecklistRowSaved(key)
+    if (!inventario) scheduleContagemDiariaRascunhoPersist(key)
   }
 
   function handleLimparQuantidadeOffline(key: string) {
@@ -2194,6 +2409,19 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       schedulePendentesGrace(key, String(patch.quantidade_contada ?? ''))
     }
     flashChecklistRowSaved(key)
+    if (!inventario) {
+      const syncKeys: (keyof OfflineChecklistItem)[] = [
+        'quantidade_contada',
+        'up_quantidade',
+        'lote',
+        'observacao',
+        'data_fabricacao',
+        'data_validade',
+        'ean',
+        'dun',
+      ]
+      if (syncKeys.some((k) => k in patch)) scheduleContagemDiariaRascunhoPersist(key)
+    }
   }
 
   function setInventarioNumeroContagemRodada(n: 1 | 2 | 3 | 4) {
@@ -2438,6 +2666,11 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
 
     setFinalizing(true)
     try {
+      for (const k of Object.keys(contagemDiariaPersistTimersRef.current)) {
+        clearTimeout(contagemDiariaPersistTimersRef.current[k])
+      }
+      contagemDiariaPersistTimersRef.current = {}
+
       const pendAutoZeroSnapshot = finalizePendAutoZeroRef.current
       finalizePendAutoZeroRef.current = null
 
@@ -2458,6 +2691,10 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
           'Nenhuma linha com código e quantidade preenchidos. Informe a quantidade nos produtos que deseja gravar (campos vazios permanecem de fora do banco).',
         )
         return
+      }
+
+      if (!inventario) {
+        await apagarRascunhoSupabaseParaSessao(session)
       }
 
       const dataHoraIso = toISOStringFromDatetimeLocal(dataHoraContagem)

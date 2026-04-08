@@ -58,6 +58,12 @@ type ContagemRow = {
   planilha_nivel?: number | null
   /** Contagem diária agrupada: quantidade por conferente (mesma regra da prévia). */
   preview_conferentes_detalhe?: ConferenteDetalheGrupo[]
+  /** true = sincronização em andamento (excluir do relatório oficial). */
+  contagem_rascunho?: boolean | null
+}
+
+function semLinhasRascunhoRelatorio<T extends { contagem_rascunho?: boolean | null }>(rows: T[]): T[] {
+  return rows.filter((r) => r.contagem_rascunho !== true)
 }
 
 function toISODateLocal(d: Date) {
@@ -439,7 +445,8 @@ export default function RelatorioContagem({
       foto_base64,
       origem,
       inventario_repeticao,
-      inventario_numero_contagem
+      inventario_numero_contagem,
+      contagem_rascunho
     `
     const selectCompleto = `
       id,
@@ -463,7 +470,8 @@ export default function RelatorioContagem({
       finalizacao_sessao_id,
       origem,
       inventario_repeticao,
-      inventario_numero_contagem
+      inventario_numero_contagem,
+      contagem_rascunho
     `
     const selectCompletoCompact = selectCompleto.replace(/\s+/g, '')
     const selectCompletoSemSessaoCompact = selectCompletoSemSessao.replace(/\s+/g, '')
@@ -505,7 +513,8 @@ export default function RelatorioContagem({
       foto_base64,
       origem,
       inventario_repeticao,
-      inventario_numero_contagem
+      inventario_numero_contagem,
+      contagem_rascunho
     `
     const selectFlatCompleto = `
       id,
@@ -528,7 +537,8 @@ export default function RelatorioContagem({
       finalizacao_sessao_id,
       origem,
       inventario_repeticao,
-      inventario_numero_contagem
+      inventario_numero_contagem,
+      contagem_rascunho
     `
     const selectFlatCompletoCompact = selectFlatCompleto.replace(/\s+/g, '')
     const selectFlatCompletoSemSessaoCompact = selectFlatCompletoSemSessao.replace(/\s+/g, '')
@@ -732,7 +742,7 @@ export default function RelatorioContagem({
         data = await fetchRowsComFallbackEmbed(selectCompletoSemSessaoCompact, selectFlatCompletoSemSessaoCompact, true)
       }
       return {
-        rows: await enrichPlanilhaEConferente(mapSemOrigem(data)),
+        rows: await enrichPlanilhaEConferente(mapSemOrigem(semLinhasRascunhoRelatorio(data))),
         origemAusenteNoResultado: false,
       }
     } catch (e: unknown) {
@@ -746,7 +756,7 @@ export default function RelatorioContagem({
           true,
         )
         return {
-          rows: await enrichPlanilhaEConferente(mapSemOrigem(injectNumeroSeFiltroAtivo(data))),
+          rows: await enrichPlanilhaEConferente(mapSemOrigem(injectNumeroSeFiltroAtivo(semLinhasRascunhoRelatorio(data)))),
           successMessage:
             'Colunas origem / nº contagem ausentes no SELECT (migre com os SQL em supabase/sql). O filtro por nº da contagem foi aplicado no servidor.',
           origemAusenteNoResultado: true,
@@ -759,10 +769,12 @@ export default function RelatorioContagem({
         }
       }
       try {
-        const data = await fetchRowsComFallbackEmbed(
-          selectSemColunasInventarioCompact,
-          selectFlatSemColunasInventarioCompact,
-          false,
+        const data = semLinhasRascunhoRelatorio(
+          await fetchRowsComFallbackEmbed(
+            selectSemColunasInventarioCompact,
+            selectFlatSemColunasInventarioCompact,
+            false,
+          ),
         )
         return {
           rows: await enrichPlanilhaEConferente(
@@ -798,7 +810,7 @@ export default function RelatorioContagem({
           if (!isColumnMissingErrorRel(eExt)) throw eExt
           data = (await fetchRowsComFallbackEmbed(selectBasicoCompact, selectFlatBasicoCompact, false)) as ContagemRow[]
         }
-        const mapped = data.map((r) => ({
+        const mapped = semLinhasRascunhoRelatorio(data).map((r) => ({
           ...r,
           data_fabricacao: null,
           data_validade: null,
@@ -911,7 +923,7 @@ export default function RelatorioContagem({
         from += RELATORIO_FETCH_CHUNK
         if (from > 100000) break
       }
-      return acc
+      return semLinhasRascunhoRelatorio(acc)
     }
     try {
       return { rows: await pull(cand1), origemAusenteNoResultado: false }

@@ -64,6 +64,11 @@ export type OfflineSession = {
    * Gravado em `contagens_estoque.inventario_numero_contagem` ao finalizar.
    */
   inventario_numero_contagem?: 1 | 2 | 3 | 4
+  /**
+   * Contagem diária: UUID reutilizado em `finalizacao_sessao_id` nas linhas de rascunho no Supabase
+   * (sincronização em tempo real); removidas ao finalizar.
+   */
+  contagem_diaria_rascunho_sessao_id?: string
 }
 
 
