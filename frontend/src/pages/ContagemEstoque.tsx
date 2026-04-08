@@ -535,6 +535,10 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       checklistAtiva: boolean
     }>
   >([])
+  /** Contagem diária bloqueada para edição quando já há 2+ conferentes finalizados no dia. */
+  const [contagemDiariaBloqueadaEdicao, setContagemDiariaBloqueadaEdicao] = useState(false)
+  /** Após bloqueio (2 conferentes finalizados), permite editar se o usuário escolher essa opção no aviso. */
+  const [permitirEdicaoAposBloqueio, setPermitirEdicaoAposBloqueio] = useState(false)
   /** Ancora scroll após “Atualizar prévia” para a seção ficar visível (página longa no mobile). */
   const previewSectionRef = useRef<HTMLDivElement | null>(null)
   const checklistSectionRef = useRef<HTMLDivElement | null>(null)
@@ -689,6 +693,8 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
   useEffect(() => {
     if (inventario) {
       setPresencaContagemHoje([])
+      setContagemDiariaBloqueadaEdicao(false)
+      setPermitirEdicaoAposBloqueio(false)
       return
     }
     const ymd =
@@ -703,6 +709,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         fetchContagemDiariaPresencaDia(ymd),
         fetchResumoFinalizadosContagemDiariaDia(ymd),
       ])
+      if (!cancelled) setContagemDiariaBloqueadaEdicao(finalMap.size >= 2)
       const ativos = raw.filter((r) => isPresencaAtiva(r.atualizado_em))
       const presMap = new Map(ativos.map((p) => [p.conferente_id, p]))
       const allIds = new Set<string>()
@@ -753,6 +760,10 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       window.clearInterval(id)
     }
   }, [inventario, contagemDiaYmd, offlineSession?.status, offlineSession?.data_contagem_ymd])
+
+  useEffect(() => {
+    setPermitirEdicaoAposBloqueio(false)
+  }, [contagemDiaYmd])
 
   /** Contagem diária: atualiza quantidades/nomes a partir do banco (todos os conferentes), sem sobrescrever linhas já editadas. */
   useEffect(() => {
@@ -823,17 +834,16 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     if (next && next !== contagemDiaYmd) setContagemDiaYmd(next)
   }, [dataHoraContagem, offlineSession?.status, contagemDiaYmd])
 
-  // Prévia do banco: acompanha automaticamente o dia ativo da tela (sessão aberta ou dia civil atual da contagem).
+  // Prévia do banco: sempre usa a data atual do dispositivo.
   useEffect(() => {
-    const todayYmd = toISODateLocal(new Date())
-    const y =
-      offlineSession?.status === 'aberta' && /^\d{4}-\d{2}-\d{2}$/.test(offlineSession.data_contagem_ymd)
-        ? offlineSession.data_contagem_ymd
-        : todayYmd
-    if (y && /^\d{4}-\d{2}-\d{2}$/.test(y) && y !== previewConsultaDiaYmd) {
-      setPreviewConsultaDiaYmd(y)
+    const sync = () => {
+      const todayYmd = toISODateLocal(new Date())
+      setPreviewConsultaDiaYmd((prev) => (prev === todayYmd ? prev : todayYmd))
     }
-  }, [offlineSession?.status, offlineSession?.data_contagem_ymd, previewConsultaDiaYmd])
+    sync()
+    const id = window.setInterval(sync, 60 * 1000)
+    return () => window.clearInterval(id)
+  }, [])
 
   // Mantém conferente_id da sessão alinhado ao seletor.
   useEffect(() => {
@@ -1884,7 +1894,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
   }
 
   async function handleCarregarListaPlanilha(opts?: { forceZero?: boolean }) {
-    const forceZero = Boolean(opts?.forceZero)
+    let forceZero = Boolean(opts?.forceZero)
     setChecklistError('')
     if (!conferenteId) {
       setChecklistError('Selecione um conferente antes de carregar a lista.')
@@ -1903,12 +1913,17 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       if (!inventario) {
         const finalizadosHoje = await fetchResumoFinalizadosContagemDiariaDia(contagemDiaYmd)
         if (finalizadosHoje.size >= 2 && !forceZero) {
-          const aviso =
-            'A contagem diária deste dia já foi finalizada por 2 conferentes. A edição está bloqueada. ' +
-            'Se quiser contar novamente no mesmo dia, use o botão "Iniciar contagem do dia do zero".'
-          setChecklistError(aviso)
-          window.alert(aviso)
-          return
+          const okEditar = window.confirm(
+            `${checklistEdicaoBloqueadaMsg}\n\n` +
+              'OK: fazer alteração na quantidade contada do dia.\n' +
+              'Cancelar: iniciar a contagem do zero.',
+          )
+          if (okEditar) {
+            setPermitirEdicaoAposBloqueio(true)
+          } else {
+            forceZero = true
+            setPermitirEdicaoAposBloqueio(false)
+          }
         }
       }
 
@@ -2095,6 +2110,10 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
   }
 
   function updateOfflineItemQty(key: string, quantidade: string) {
+    if (checklistEdicaoBloqueada) {
+      avisarChecklistBloqueadaPerguntarAcao()
+      return
+    }
     if (!inventario) {
       const trimmed = String(quantidade ?? '').trim()
       if (trimmed === '') checklistContagemBancoDirtyKeysRef.current.delete(key)
@@ -2136,6 +2155,10 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       >
     >,
   ) {
+    if (checklistEdicaoBloqueada) {
+      avisarChecklistBloqueadaPerguntarAcao()
+      return
+    }
     if (!inventario && 'quantidade_contada' in patch) {
       const trimmed = String(patch.quantidade_contada ?? '').trim()
       if (trimmed === '') checklistContagemBancoDirtyKeysRef.current.delete(key)
@@ -2203,6 +2226,10 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
   }
 
   function openChecklistEdit(it: OfflineChecklistItem) {
+    if (checklistEdicaoBloqueada) {
+      avisarChecklistBloqueadaPerguntarAcao()
+      return
+    }
     if (checklistEditingKey && checklistEditingKey !== it.key) {
       if (!confirm('Há outra linha em edição. Descartar alterações nela e editar esta?')) return
     }
@@ -3822,6 +3849,23 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
   const visibleChecklistColumns = checklistColumns.filter((c) => checklistVisibleCols[c.id] !== false)
   const visibleChecklistColCount = Math.max(1, visibleChecklistColumns.length)
   const showChecklistColumn = (id: string) => checklistVisibleCols[id] !== false
+  const checklistEdicaoBloqueada = !inventario && contagemDiariaBloqueadaEdicao && !permitirEdicaoAposBloqueio
+  const checklistEdicaoBloqueadaMsg =
+    'A contagem diária deste dia já foi finalizada por 2 conferentes.'
+  function avisarChecklistBloqueadaPerguntarAcao(): boolean {
+    const okEditar = window.confirm(
+      `${checklistEdicaoBloqueadaMsg}\n\n` +
+        'OK: fazer alteração na quantidade contada do dia.\n' +
+        'Cancelar: iniciar a contagem do zero.',
+    )
+    if (okEditar) {
+      setPermitirEdicaoAposBloqueio(true)
+      setChecklistError('')
+      return true
+    }
+    void handleCarregarListaPlanilha({ forceZero: true })
+    return false
+  }
 
   const carregarListaDisabled = checklistLoading || finalizing || !conferenteId
   const finalizarListaDisabled =
@@ -4245,6 +4289,9 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         ) : null}
 
         {checklistError ? <div style={{ color: '#b00020', marginTop: 10 }}>{checklistError}</div> : null}
+        {checklistEdicaoBloqueada ? (
+          <div style={{ color: '#b00020', marginTop: 8, fontSize: 13, textAlign: 'left' }}>{checklistEdicaoBloqueadaMsg}</div>
+        ) : null}
         {!productOptionsLoading && productOptions.length === 0 && produtoError ? (
           <div
             role="alert"
@@ -4650,6 +4697,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                         : it.quantidade_contada
                                     }
                                     onChange={(e) => updateOfflineItemQty(it.key, e.target.value)}
+                                    disabled={checklistEdicaoBloqueada}
                                     {...{ [CHECKLIST_QTY_NAV_ATTR]: '' }}
                                     style={{ ...inputStyle, padding: '4px 6px', fontSize: 10 }}
                                     placeholder="—"
@@ -4753,6 +4801,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                 <button
                                   type="button"
                                   style={{ ...buttonStyle, background: '#2a4d7a', fontSize: 11, padding: '6px 6px' }}
+                                  disabled={checklistEdicaoBloqueada}
                                   onClick={() => openChecklistEdit(it)}
                                 >
                                   Editar
@@ -4760,6 +4809,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                 <button
                                   type="button"
                                   style={{ ...buttonStyle, background: '#666', fontSize: 11, padding: '6px 6px' }}
+                                  disabled={checklistEdicaoBloqueada}
                                   onClick={() => handleLimparQuantidadeOffline(it.key)}
                                 >
                                   Limpar
@@ -5193,6 +5243,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                           inputMode="decimal"
                                           value={it.quantidade_contada}
                                           onChange={(e) => updateOfflineItemQty(it.key, e.target.value)}
+                                          disabled={checklistEdicaoBloqueada}
                                           {...{ [CHECKLIST_QTY_NAV_ATTR]: '' }}
                                           style={checklistQtdInputStyle}
                                           placeholder="—"
@@ -5272,6 +5323,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                         <button
                                           type="button"
                                           style={{ ...buttonStyle, background: '#2a4d7a', fontSize: 12, padding: '6px 10px' }}
+                                          disabled={checklistEdicaoBloqueada}
                                           onClick={() => openChecklistEdit(it)}
                                         >
                                           Editar
@@ -5279,6 +5331,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                         <button
                                           type="button"
                                           style={{ ...buttonStyle, background: '#666', fontSize: 12, padding: '6px 10px' }}
+                                          disabled={checklistEdicaoBloqueada}
                                           onClick={() => handleLimparQuantidadeOffline(it.key)}
                                         >
                                           Limpar
@@ -6110,8 +6163,8 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
               <strong>Finalizar contagem diária</strong> — aí os registros são enviados para a tabela{' '}
               <code style={{ fontSize: 12 }}>contagens_estoque</code>. Esta prévia mostra exatamente o que já foi gravado
               no banco (por dia civil). Colunas iguais à lista acima (<strong>Ocultar/mostrar colunas</strong>). Após
-              finalizar, a prévia é atualizada automaticamente; use <strong>Atualizar prévia</strong> para buscar de novo
-              (por exemplo, outro dia ou depois de editar no banco).
+              finalizar, a prévia é atualizada automaticamente no <strong>dia atual</strong>; use{' '}
+              <strong>Atualizar prévia</strong> para buscar de novo depois de editar no banco.
             </>
           )}
         </div>
@@ -6121,10 +6174,12 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
             <input
               type="date"
               value={previewConsultaDiaYmd}
-              onChange={(e) => setPreviewConsultaDiaYmd(e.target.value)}
-              disabled={previewLoading}
+              onChange={() => {
+                /* Dia da prévia fixo no dia atual. */
+              }}
+              disabled
               style={{ ...inputStyle, marginTop: 4, maxWidth: 200 }}
-              title="Filtra contagens_estoque por data_contagem (mesmo dia de data_inventario na planilha)"
+              title="Filtra contagens_estoque sempre pela data atual (data_contagem de hoje)"
             />
           </label>
           <button
