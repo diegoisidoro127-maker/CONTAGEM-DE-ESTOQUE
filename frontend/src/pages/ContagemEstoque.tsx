@@ -4697,7 +4697,6 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                         : it.quantidade_contada
                                     }
                                     onChange={(e) => updateOfflineItemQty(it.key, e.target.value)}
-                                    disabled={checklistEdicaoBloqueada}
                                     {...{ [CHECKLIST_QTY_NAV_ATTR]: '' }}
                                     style={{ ...inputStyle, padding: '4px 6px', fontSize: 10 }}
                                     placeholder="—"
@@ -4801,7 +4800,6 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                 <button
                                   type="button"
                                   style={{ ...buttonStyle, background: '#2a4d7a', fontSize: 11, padding: '6px 6px' }}
-                                  disabled={checklistEdicaoBloqueada}
                                   onClick={() => openChecklistEdit(it)}
                                 >
                                   Editar
@@ -4809,7 +4807,6 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                 <button
                                   type="button"
                                   style={{ ...buttonStyle, background: '#666', fontSize: 11, padding: '6px 6px' }}
-                                  disabled={checklistEdicaoBloqueada}
                                   onClick={() => handleLimparQuantidadeOffline(it.key)}
                                 >
                                   Limpar
@@ -5243,7 +5240,6 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                           inputMode="decimal"
                                           value={it.quantidade_contada}
                                           onChange={(e) => updateOfflineItemQty(it.key, e.target.value)}
-                                          disabled={checklistEdicaoBloqueada}
                                           {...{ [CHECKLIST_QTY_NAV_ATTR]: '' }}
                                           style={checklistQtdInputStyle}
                                           placeholder="—"
@@ -5323,7 +5319,6 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                         <button
                                           type="button"
                                           style={{ ...buttonStyle, background: '#2a4d7a', fontSize: 12, padding: '6px 10px' }}
-                                          disabled={checklistEdicaoBloqueada}
                                           onClick={() => openChecklistEdit(it)}
                                         >
                                           Editar
@@ -5331,7 +5326,6 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                         <button
                                           type="button"
                                           style={{ ...buttonStyle, background: '#666', fontSize: 12, padding: '6px 10px' }}
-                                          disabled={checklistEdicaoBloqueada}
                                           onClick={() => handleLimparQuantidadeOffline(it.key)}
                                         >
                                           Limpar
