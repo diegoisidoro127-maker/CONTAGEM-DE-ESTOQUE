@@ -66,6 +66,10 @@ import {
   upsertContagemDiariaPresenca,
 } from '../lib/contagemDiariaPresenca'
 import { mergeContagensDiariasDoDiaParaItems } from '../lib/mergeContagemDiariaDoBanco'
+import { subscribeContagensEstoqueDia } from '../lib/subscribeContagensEstoqueRealtime'
+
+/** Se o Realtime falhar, ainda sincroniza a checklist a cada 2 min. */
+const CONTAGEM_BANCO_MERGE_FALLBACK_MS = 120_000
 
 const PREVIEW_PAGE_SIZE = 15
 /** Colunas fixas na prévia com dados de planilha (Câmara / Rua / POS / Nível + Conferente). Só no inventário. */
@@ -459,6 +463,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
   const [contagemDiaYmd, setContagemDiaYmd] = useState(() => toISODateLocal(new Date()))
   const [offlineSession, setOfflineSession] = useState<OfflineSession | null>(null)
   const offlineSessionRef = useRef<OfflineSession | null>(null)
+  const loadPreviewRef = useRef<(dayOverride?: string, opts?: { silent?: boolean }) => Promise<void>>(async () => {})
   useEffect(() => {
     offlineSessionRef.current = offlineSession
   }, [offlineSession])
@@ -755,7 +760,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     setPermitirEdicaoAposBloqueio(false)
   }, [contagemDiaYmd])
 
-  /** Contagem diária: atualiza quantidades/nomes a partir do banco (todos os conferentes), sem sobrescrever linhas já editadas. */
+  /** Contagem diária: atualiza quantidades/nomes a partir do banco (todos os conferentes), em tempo real + fallback lento. */
   useEffect(() => {
     if (inventario) return
     if (!offlineSession || offlineSession.status !== 'aberta') return
@@ -781,12 +786,24 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       }
     }
     void tick()
-    const id = window.setInterval(() => void tick(), PRESENCA_POLL_INTERVAL_MS)
+    const unsubRealtime = subscribeContagensEstoqueDia(ymd, () => void tick())
+    const id = window.setInterval(() => void tick(), CONTAGEM_BANCO_MERGE_FALLBACK_MS)
     return () => {
       cancelled = true
+      unsubRealtime()
       window.clearInterval(id)
     }
   }, [inventario, offlineSession?.status, offlineSession?.sessionId, offlineSession?.data_contagem_ymd])
+
+  /** Prévia do banco: atualiza quando qualquer conferente grava no mesmo dia (Realtime). */
+  useEffect(() => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(previewConsultaDiaYmd)) return
+    const ymd = previewConsultaDiaYmd
+    const unsub = subscribeContagensEstoqueDia(ymd, () => {
+      void loadPreviewRef.current(ymd, { silent: true })
+    })
+    return () => unsub()
+  }, [previewConsultaDiaYmd, inventario])
 
   /** Enquanto a checklist estiver aberta, renova presença para o dia da sessão. */
   useEffect(() => {
@@ -1540,8 +1557,9 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     }
   }
 
-  async function loadPreview(dayOverride?: string) {
-    setPreviewLoading(true)
+  async function loadPreview(dayOverride?: string, opts?: { silent?: boolean }) {
+    const silent = !!opts?.silent
+    if (!silent) setPreviewLoading(true)
     try {
     const pad = (n: number) => String(n).padStart(2, '0')
     const now = new Date()
@@ -1841,18 +1859,20 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       setPreviewQueryDayYmd(dayKey)
       setPreviewRows(previewList)
       setPreviewConferenteModoGlobal('total')
-      window.setTimeout(() => {
-        previewSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-      }, 0)
+      if (!silent) {
+        window.setTimeout(() => {
+          previewSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+        }, 0)
+      }
     }
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e)
-      setSaveError(`Erro ao carregar prévia: ${msg}`)
+      if (!silent) setSaveError(`Erro ao carregar prévia: ${msg}`)
     } finally {
-      setPreviewLoading(false)
+      if (!silent) setPreviewLoading(false)
     }
   }
-
+  loadPreviewRef.current = loadPreview
 
   async function fetchListaChecklistFromDb(): Promise<Array<{ codigo_interno: string; descricao: string }>> {
     const { data, error } = await supabase.from(TABELA_PRODUTOS).select('*').limit(15000)
