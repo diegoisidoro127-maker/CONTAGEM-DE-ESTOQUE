@@ -539,6 +539,10 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
   const [contagemDiariaBloqueadaEdicao, setContagemDiariaBloqueadaEdicao] = useState(false)
   /** Após bloqueio (2 conferentes finalizados), permite editar se o usuário escolher essa opção no aviso. */
   const [permitirEdicaoAposBloqueio, setPermitirEdicaoAposBloqueio] = useState(false)
+  /** Modal customizado no lugar de `confirm` quando a contagem diária está bloqueada (2 finalizações). */
+  const [bloqueioContagemDiariaModalOpen, setBloqueioContagemDiariaModalOpen] = useState(false)
+  const bloqueioResolverRef = useRef<null | ((v: 'editar' | 'zero' | 'fechar') => void)>(null)
+  const bloqueioPendingActionRef = useRef<(() => void) | null>(null)
   /** Ancora scroll após “Atualizar prévia” para a seção ficar visível (página longa no mobile). */
   const previewSectionRef = useRef<HTMLDivElement | null>(null)
   const checklistSectionRef = useRef<HTMLDivElement | null>(null)
@@ -1913,12 +1917,16 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       if (!inventario) {
         const finalizadosHoje = await fetchResumoFinalizadosContagemDiariaDia(contagemDiaYmd)
         if (finalizadosHoje.size >= 2 && !forceZero) {
-          const okEditar = window.confirm(
-            `${checklistEdicaoBloqueadaMsg}\n\n` +
-              'OK: fazer alteração na quantidade contada do dia.\n' +
-              'Cancelar: iniciar a contagem do zero.',
-          )
-          if (okEditar) {
+          const choice = await new Promise<'editar' | 'zero' | 'fechar'>((resolve) => {
+            bloqueioPendingActionRef.current = null
+            setBloqueioContagemDiariaModalOpen(true)
+            bloqueioResolverRef.current = resolve
+          })
+          if (choice === 'fechar') {
+            setChecklistLoading(false)
+            return
+          }
+          if (choice === 'editar') {
             setPermitirEdicaoAposBloqueio(true)
           } else {
             forceZero = true
@@ -2109,9 +2117,11 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     void handleCarregarListaPlanilha({ forceZero: true })
   }
 
-  function updateOfflineItemQty(key: string, quantidade: string) {
-    if (checklistEdicaoBloqueada) {
-      avisarChecklistBloqueadaPerguntarAcao()
+  function updateOfflineItemQty(key: string, quantidade: string, opts?: { skipBloqueioGuard?: boolean }) {
+    if (!opts?.skipBloqueioGuard && checklistEdicaoBloqueada) {
+      setBloqueioContagemDiariaModalOpen(true)
+      bloqueioResolverRef.current = null
+      bloqueioPendingActionRef.current = () => updateOfflineItemQty(key, quantidade, { skipBloqueioGuard: true })
       return
     }
     if (!inventario) {
@@ -2154,9 +2164,12 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         | 'data_validade'
       >
     >,
+    opts?: { skipBloqueioGuard?: boolean },
   ) {
-    if (checklistEdicaoBloqueada) {
-      avisarChecklistBloqueadaPerguntarAcao()
+    if (!opts?.skipBloqueioGuard && checklistEdicaoBloqueada) {
+      setBloqueioContagemDiariaModalOpen(true)
+      bloqueioResolverRef.current = null
+      bloqueioPendingActionRef.current = () => updateOfflineItemFields(key, patch, { skipBloqueioGuard: true })
       return
     }
     if (!inventario && 'quantidade_contada' in patch) {
@@ -2225,9 +2238,11 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     }, 0)
   }
 
-  function openChecklistEdit(it: OfflineChecklistItem) {
-    if (checklistEdicaoBloqueada) {
-      avisarChecklistBloqueadaPerguntarAcao()
+  function openChecklistEdit(it: OfflineChecklistItem, opts?: { skipBloqueioGuard?: boolean }) {
+    if (!opts?.skipBloqueioGuard && checklistEdicaoBloqueada) {
+      setBloqueioContagemDiariaModalOpen(true)
+      bloqueioResolverRef.current = null
+      bloqueioPendingActionRef.current = () => openChecklistEdit(it, { skipBloqueioGuard: true })
       return
     }
     if (checklistEditingKey && checklistEditingKey !== it.key) {
@@ -3852,19 +3867,41 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
   const checklistEdicaoBloqueada = !inventario && contagemDiariaBloqueadaEdicao && !permitirEdicaoAposBloqueio
   const checklistEdicaoBloqueadaMsg =
     'A contagem diária deste dia já foi finalizada por 2 conferentes.'
-  function avisarChecklistBloqueadaPerguntarAcao(): boolean {
-    const okEditar = window.confirm(
-      `${checklistEdicaoBloqueadaMsg}\n\n` +
-        'OK: fazer alteração na quantidade contada do dia.\n' +
-        'Cancelar: iniciar a contagem do zero.',
-    )
-    if (okEditar) {
-      setPermitirEdicaoAposBloqueio(true)
-      setChecklistError('')
-      return true
+
+  function handleBloqueioModalFazerAlteracao() {
+    setChecklistError('')
+    const r = bloqueioResolverRef.current
+    bloqueioResolverRef.current = null
+    const p = bloqueioPendingActionRef.current
+    bloqueioPendingActionRef.current = null
+    setBloqueioContagemDiariaModalOpen(false)
+    if (r) {
+      r('editar')
+      return
     }
+    setPermitirEdicaoAposBloqueio(true)
+    if (p) p()
+  }
+
+  function handleBloqueioModalIniciarZero() {
+    const r = bloqueioResolverRef.current
+    bloqueioResolverRef.current = null
+    bloqueioPendingActionRef.current = null
+    setBloqueioContagemDiariaModalOpen(false)
+    if (r) {
+      r('zero')
+      return
+    }
+    setPermitirEdicaoAposBloqueio(false)
     void handleCarregarListaPlanilha({ forceZero: true })
-    return false
+  }
+
+  function handleBloqueioModalFechar() {
+    const r = bloqueioResolverRef.current
+    bloqueioResolverRef.current = null
+    bloqueioPendingActionRef.current = null
+    setBloqueioContagemDiariaModalOpen(false)
+    if (r) r('fechar')
   }
 
   const carregarListaDisabled = checklistLoading || finalizing || !conferenteId
@@ -5370,6 +5407,83 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
             Nenhuma sessão aberta. Acima, selecione o conferente e a data; depois clique em <strong>Carregar lista de produtos</strong>.
           </div>
         )}
+
+        {bloqueioContagemDiariaModalOpen ? (
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="bloqueio-contagem-diaria-modal-title"
+            style={{
+              position: 'fixed',
+              inset: 0,
+              background: 'rgba(0,0,0,.55)',
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+              padding: 16,
+              zIndex: 10001,
+            }}
+          >
+            <div
+              style={{
+                width: 'min(440px, 100%)',
+                background: '#1e1e1e',
+                color: '#eee',
+                border: '1px solid #444',
+                borderRadius: 12,
+                padding: 16,
+                boxShadow: '0 12px 36px rgba(0,0,0,.45)',
+              }}
+            >
+              <h3 id="bloqueio-contagem-diaria-modal-title" style={{ margin: '0 0 10px', fontSize: 16 }}>
+                Contagem diária
+              </h3>
+              <p style={{ margin: '0 0 14px', fontSize: 14, lineHeight: 1.45, color: '#ddd' }}>
+                {checklistEdicaoBloqueadaMsg}
+              </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <button
+                  type="button"
+                  style={{
+                    ...buttonStyle,
+                    background: 'linear-gradient(180deg, #4f8eff 0%, #2f6fdf 100%)',
+                    border: '1px solid #7fb0ff',
+                    color: '#f4f9ff',
+                    fontWeight: 600,
+                  }}
+                  onClick={handleBloqueioModalFazerAlteracao}
+                >
+                  Fazer alteração da quantidade contada do dia
+                </button>
+                <button
+                  type="button"
+                  style={{
+                    ...buttonStyle,
+                    background: 'linear-gradient(180deg, #43a047 0%, #2e7d32 100%)',
+                    border: '1px solid #81c784',
+                    color: '#fff',
+                    fontWeight: 600,
+                  }}
+                  onClick={handleBloqueioModalIniciarZero}
+                >
+                  Iniciar contagem do zero
+                </button>
+                <button
+                  type="button"
+                  style={{
+                    ...buttonStyle,
+                    background: '#444',
+                    border: '1px solid #666',
+                    color: '#eee',
+                  }}
+                  onClick={handleBloqueioModalFechar}
+                >
+                  Fechar o aviso
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
 
         {confirmFinalizeMissingOpen ? (
           <div
