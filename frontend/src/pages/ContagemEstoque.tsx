@@ -69,6 +69,7 @@ import {
   prepararContagemDiariaOficialListaUnicaPorProduto,
 } from '../lib/contagemListagemCompat'
 import { mergeContagensDiariasDoDiaParaItems } from '../lib/mergeContagemDiariaDoBanco'
+import { atualizarTodosOsProdutosEanDunAposFinalizacao } from '../lib/atualizarTodosOsProdutosEanDunAposFinalizacao'
 import { subscribeContagensEstoqueDia } from '../lib/subscribeContagensEstoqueRealtime'
 
 /** Se o Realtime falhar, ainda sincroniza a checklist a cada 2 min. */
@@ -2885,6 +2886,24 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         if (!planilhaAviso) planilhaGravada = true
       }
 
+      setFinalizeProgress('Atualizando cadastro (EAN/DUN)...')
+      const { atualizados: cadastroEanDunAtualizados, avisos: avisosCadastroEanDun } =
+        await atualizarTodosOsProdutosEanDunAposFinalizacao(
+          itemsSnapshot.map((it) => ({
+            codigo_interno: it.codigo_interno,
+            ean: it.ean ?? null,
+            dun: it.dun ?? null,
+          })),
+          productByCodeRef.current,
+          productByCodeNoDotsRef.current,
+        )
+      if (avisosCadastroEanDun.length) {
+        console.warn('[ContagemEstoque] Cadastro EAN/DUN:', avisosCadastroEanDun)
+      }
+      if (cadastroEanDunAtualizados > 0) {
+        await loadProductOptions()
+      }
+
       clearOfflineSession(sessionMode)
       setOfflineSession(null)
       setChecklistListMode('todos')
@@ -2895,11 +2914,16 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       setPreviewConsultaDiaYmd(ymd)
       await loadPreview(ymd)
 
+      const msgCadastroEanDun =
+        cadastroEanDunAtualizados > 0
+          ? ` Cadastro “Todos os Produtos”: ${cadastroEanDunAtualizados} produto(s) com EAN/DUN e datas de alteração atualizados.`
+          : ''
+
       if (inventario) {
         setSaveSuccess(
           `Inventário do dia ${ymd} finalizado: ${rows.length} novo(s) registro(s) em contagens_estoque (acumula com contagens anteriores do mesmo dia).${
             planilhaGravada ? ` ${rows.length} linha(s) em inventario_planilha_linhas.` : ''
-          }${planilhaAviso ?? ''}${inventarioDbCompatMsg}`,
+          }${planilhaAviso ?? ''}${inventarioDbCompatMsg}${msgCadastroEanDun}`,
         )
       } else {
         const confRow = conferentes.find((x) => x.id === session.conferente_id)
@@ -2912,7 +2936,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
             pendAutoZeroSnapshot != null && pendAutoZeroSnapshot > 0 ? pendAutoZeroSnapshot : undefined,
           conferenteNome: nomeConf,
         })
-        setSaveSuccess('Contagem salva no Supabase.')
+        setSaveSuccess(`Contagem salva no Supabase.${msgCadastroEanDun}`)
       }
       setFinalizeProgress(
         planilhaGravada
