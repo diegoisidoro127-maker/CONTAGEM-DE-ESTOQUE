@@ -194,13 +194,13 @@ export default function App() {
             <RelatorioContagem
               key="relatorio"
               mode="periodo"
-              listColumnPrefsInventario={readLastListWasInventario()}
+              listColumnPrefsInventario
             />
           ) : (
             <RelatorioContagem
               key="todas"
               mode="dia"
-              listColumnPrefsInventario={readLastListWasInventario()}
+              listColumnPrefsInventario
             />
           )}
         </>

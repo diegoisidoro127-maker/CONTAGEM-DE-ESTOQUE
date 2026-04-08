@@ -244,7 +244,7 @@ type RelatorioContagemProps = {
 
 export default function RelatorioContagem({
   mode = 'periodo',
-  listColumnPrefsInventario = false,
+  listColumnPrefsInventario = true,
 }: RelatorioContagemProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string>('')
@@ -398,6 +398,11 @@ export default function RelatorioContagem({
     }
     prevLoadingRef.current = loading
   }, [loading])
+
+  /** Em contagem diária o filtro de rodada não se aplica; evita valor antigo ao voltar ao modo inventário. */
+  useEffect(() => {
+    if (!useInventarioCols) setNumeroContagemFilter('todas')
+  }, [useInventarioCols])
 
   async function fetchRelatorioContagemRows(opts?: {
     /** Força busca só neste dia civil (ex.: “Ver contagem” no histórico). */
@@ -1679,32 +1684,29 @@ export default function RelatorioContagem({
             />
           </div>
 
-          <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13 }}>
-            Nº contagem (inventário)
-            <select
-              value={numeroContagemFilter}
-              onChange={(e) => setNumeroContagemFilter(e.target.value as typeof numeroContagemFilter)}
-              disabled={!useInventarioCols}
-              style={{
-                padding: '10px 10px',
-                border: '1px solid #ccc',
-                borderRadius: 8,
-                minWidth: 160,
-                opacity: useInventarioCols ? 1 : 0.55,
-              }}
-              title={
-                useInventarioCols
-                  ? 'Filtra pela rodada do inventário (1ª a 4ª).'
-                  : 'Ative “colunas de Inventário” acima para filtrar pela rodada (1ª–4ª).'
-              }
-            >
-              <option value="todas">Todas</option>
-              <option value="1">1ª contagem</option>
-              <option value="2">2ª contagem</option>
-              <option value="3">3ª contagem</option>
-              <option value="4">4ª contagem</option>
-            </select>
-          </label>
+          {/* Relatório completo e Todas as contagens compartilham este formulário (mode periodo | dia). */}
+          {useInventarioCols ? (
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13 }}>
+              Nº contagem (inventário)
+              <select
+                value={numeroContagemFilter}
+                onChange={(e) => setNumeroContagemFilter(e.target.value as typeof numeroContagemFilter)}
+                style={{
+                  padding: '10px 10px',
+                  border: '1px solid #ccc',
+                  borderRadius: 8,
+                  minWidth: 160,
+                }}
+                title="Filtra pela rodada do inventário (1ª a 4ª)."
+              >
+                <option value="todas">Todas</option>
+                <option value="1">1ª contagem</option>
+                <option value="2">2ª contagem</option>
+                <option value="3">3ª contagem</option>
+                <option value="4">4ª contagem</option>
+              </select>
+            </label>
+          ) : null}
 
           <button
             type="button"
@@ -1829,8 +1831,9 @@ export default function RelatorioContagem({
             style={{ marginTop: 3 }}
           />
           <span>
-            Usar colunas salvas na tela <strong>Inventário</strong> (desmarcado = <strong>Contagem diária</strong>). Por
-            padrão, usa a última lista que você abriu no painel (Contagem ou Inventário).
+            Usar colunas salvas na tela <strong>Inventário</strong> (desmarcado = <strong>Contagem diária</strong>). Em{' '}
+            <strong>Relatório completo</strong> e <strong>Todas as contagens</strong> o modo inicial é Inventário; o
+            campo «Nº contagem (inventário)» só aparece neste modo (some na contagem diária).
           </span>
         </label>
         <p style={{ fontSize: 13, color: 'var(--text, #666)', marginTop: 8, maxWidth: 720, lineHeight: 1.45 }}>
