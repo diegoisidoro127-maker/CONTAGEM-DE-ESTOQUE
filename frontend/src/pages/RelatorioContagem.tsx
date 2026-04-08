@@ -7,7 +7,7 @@ import { enrichContagemRowsWithPlanilhaLinhas } from '../lib/enrichContagemRowsW
 import { enrichContagemRowsEanDunFromTodosOsProdutos } from '../lib/enrichContagemRowsEanDunFromTodosOsProdutos'
 import { fetchConferentesNomesPorIds } from '../lib/conferentesNomesBatch'
 import {
-  consolidarUltimaContagemDiariaPorCodigo,
+  agruparContagemDiariaComoPrevia,
   consolidarUltimaContagemDiariaPorCodigoEConferente,
   fetchPlanilhaContagemIdsParaIntervalo,
   filterContagensPorModoListagem,
@@ -878,7 +878,7 @@ export default function RelatorioContagem({
     return { modo, filtered }
   }
 
-  /** Regra do relatório: inventário ordenado como prévia; contagem diária consolidada pela última gravação por código. */
+  /** Regra do relatório: inventário ordenado como prévia; contagem diária agrupada como a prévia (total + detalhe por conferente). */
   async function aplicarMesmaRegraDaPreviaAsync(
     data: ContagemRow[],
     origemAusenteNoResultado: boolean,
@@ -892,7 +892,12 @@ export default function RelatorioContagem({
       }
       return inv
     }
-    return consolidarUltimaContagemDiariaPorCodigo(filtered) as ContagemRow[]
+    const grouped = agruparContagemDiariaComoPrevia(filtered as ContagemRow[]) as ContagemRow[]
+    return grouped.sort((a, b) => {
+      const c = a.codigo_interno.localeCompare(b.codigo_interno, 'pt-BR')
+      if (c !== 0) return c
+      return a.descricao.localeCompare(b.descricao, 'pt-BR')
+    })
   }
 
   async function fetchHistoricoRawRows(): Promise<{ rows: ContagemRow[]; origemAusenteNoResultado: boolean }> {

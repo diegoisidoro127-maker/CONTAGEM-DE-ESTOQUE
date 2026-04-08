@@ -1841,9 +1841,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         const grouped = new Map<string, ContagemPreviewRow>()
         for (const row of rawPreviewLinhas) {
           const day = dayKey
-          const sess = String(row.finalizacao_sessao_id ?? '').trim()
-          const sessKey = sess || '__legacy__'
-          const key = `${day}|${normalizeCodigoInternoCompareKey(row.codigo_interno).toLowerCase()}|${row.descricao.trim().toLowerCase()}|${sessKey}`
+          const key = `${day}|${normalizeCodigoInternoCompareKey(row.codigo_interno).toLowerCase()}|${row.descricao.trim().toLowerCase()}`
           const existing = grouped.get(key)
           if (!existing) {
             grouped.set(key, {
