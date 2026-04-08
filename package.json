@@ -1,6 +1,9 @@
 {
   "name": "contagem-de-estoque",
   "private": true,
+  "engines": {
+    "node": ">=20.19.0"
+  },
   "scripts": {
     "build": "npm ci --prefix frontend && npm run build --prefix frontend"
   }
