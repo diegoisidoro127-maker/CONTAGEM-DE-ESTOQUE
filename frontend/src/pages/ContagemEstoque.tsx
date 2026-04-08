@@ -825,14 +825,15 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
 
   // Prévia do banco: acompanha automaticamente o dia ativo da tela (sessão aberta ou dia civil atual da contagem).
   useEffect(() => {
+    const todayYmd = toISODateLocal(new Date())
     const y =
       offlineSession?.status === 'aberta' && /^\d{4}-\d{2}-\d{2}$/.test(offlineSession.data_contagem_ymd)
         ? offlineSession.data_contagem_ymd
-        : contagemDiaYmd
+        : todayYmd
     if (y && /^\d{4}-\d{2}-\d{2}$/.test(y) && y !== previewConsultaDiaYmd) {
       setPreviewConsultaDiaYmd(y)
     }
-  }, [offlineSession?.status, offlineSession?.data_contagem_ymd, contagemDiaYmd, previewConsultaDiaYmd])
+  }, [offlineSession?.status, offlineSession?.data_contagem_ymd, previewConsultaDiaYmd])
 
   // Mantém conferente_id da sessão alinhado ao seletor.
   useEffect(() => {
@@ -1882,7 +1883,8 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     return outFiltrado
   }
 
-  async function handleCarregarListaPlanilha() {
+  async function handleCarregarListaPlanilha(opts?: { forceZero?: boolean }) {
+    const forceZero = Boolean(opts?.forceZero)
     setChecklistError('')
     if (!conferenteId) {
       setChecklistError('Selecione um conferente antes de carregar a lista.')
@@ -1898,6 +1900,17 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     setChecklistLoading(true)
     try {
       const listModeEfetivo: ChecklistListMode = checklistListMode
+      if (!inventario) {
+        const finalizadosHoje = await fetchResumoFinalizadosContagemDiariaDia(contagemDiaYmd)
+        if (finalizadosHoje.size >= 2 && !forceZero) {
+          const aviso =
+            'A contagem diária deste dia já foi finalizada por 2 conferentes. A edição está bloqueada. ' +
+            'Se quiser contar novamente no mesmo dia, use o botão "Iniciar contagem do dia do zero".'
+          setChecklistError(aviso)
+          window.alert(aviso)
+          return
+        }
+      }
 
       if (listModeEfetivo === 'planilha' && inventario) {
         setArmazemMissingCodes([])
@@ -2005,7 +2018,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         })
       })
       let preenchidosDoBanco = 0
-      if (!inventario) {
+      if (!inventario && !forceZero) {
         const merged = await mergeContagensDiariasDoDiaParaItems(contagemDiaYmd, items)
         items = merged.items
         preenchidosDoBanco = merged.preenchidos
@@ -2038,6 +2051,13 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                 : ''
             } Preencha as quantidades e finalize quando terminar.`,
       )
+      if (!inventario && forceZero) {
+        setStartFreshNotice(
+          `Nova contagem iniciada do zero para ${formatDateBRFromYmd(contagemDiaYmd)}. A lista foi aberta em branco.`,
+        )
+      } else {
+        setStartFreshNotice('')
+      }
       setSaveError('')
     } catch (e: any) {
       setChecklistError(e?.message ? String(e.message) : 'Erro ao carregar lista.')
@@ -2058,6 +2078,20 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     setOfflineSession(null)
     setChecklistError('')
     setChecklistListMode('todos')
+  }
+
+  function handleIniciarContagemDiaDoZero() {
+    if (inventario) return
+    if (!conferenteId) {
+      setChecklistError('Selecione um conferente antes de iniciar a contagem do zero.')
+      return
+    }
+    const ok = window.confirm(
+      `Iniciar nova contagem do zero para ${formatDateBRFromYmd(contagemDiaYmd)}?\n\n` +
+        'A lista será aberta em branco (sem copiar quantidades do banco).',
+    )
+    if (!ok) return
+    void handleCarregarListaPlanilha({ forceZero: true })
   }
 
   function updateOfflineItemQty(key: string, quantidade: string) {
@@ -4152,6 +4186,20 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
               </span>
               {checklistLoading ? 'Carregando lista…' : 'Carregar lista de produtos'}
             </button>
+            {!inventario ? (
+              <button
+                type="button"
+                style={{ ...buttonStyle, background: '#7a2', opacity: finalizing ? 0.55 : 1 }}
+                disabled={finalizing || checklistLoading}
+                onClick={() => handleIniciarContagemDiaDoZero()}
+                title="Abre uma nova checklist em branco para contar novamente no mesmo dia"
+              >
+                <span className="app-nav-icon app-nav-icon--pulse" aria-hidden>
+                  ♻️
+                </span>
+                Iniciar contagem do dia do zero
+              </button>
+            ) : null}
             <button
               type="button"
               style={{ ...buttonStyle, ...checklistActionBtnAtualizar }}
