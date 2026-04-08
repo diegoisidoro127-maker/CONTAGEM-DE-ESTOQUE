@@ -2255,7 +2255,8 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       up_adicional = u
     }
     const produtoId = catalog?.id != null && isUuid(String(catalog.id)) ? String(catalog.id) : null
-    const dataHoraIso = toISOStringFromDatetimeLocal(dataHoraContagemRef.current)
+    /** Sempre o instante do salvamento — evita empate com outras linhas do dia (merge “última por código” e prévia). */
+    const dataHoraIso = new Date().toISOString()
 
     let rowPayload: Record<string, unknown> = {
       data_contagem: ymd,
@@ -2320,7 +2321,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       if (import.meta.env.DEV) console.warn('[contagem rascunho] insert', ins.error)
       return
     }
-    checklistContagemBancoDirtyKeysRef.current.delete(itemKey)
+    /** Não remover a chave “dirty”: o merge usa a última linha global por código; limpar aqui fazia a UI voltar para quantidade antiga. */
   }
 
   function updateOfflineItemQty(key: string, quantidade: string, opts?: { skipBloqueioGuard?: boolean }) {

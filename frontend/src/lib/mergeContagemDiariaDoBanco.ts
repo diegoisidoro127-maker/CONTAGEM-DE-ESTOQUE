@@ -20,6 +20,8 @@ function formatQtyFromNumber(n: number): string {
 }
 
 type RowSnapshot = {
+  /** `contagens_estoque.id` — desempate quando `data_hora_contagem` é igual (insert mais recente). */
+  contagensRowId: string
   conferente_id: string
   quantidade_up: number
   up_adicional: number | null
@@ -37,6 +39,23 @@ function parseDataHoraMs(dh: string): number {
   return Number.isFinite(t) ? t : -1
 }
 
+/** Desempate alinhado à prévia: maior `id` quando o horário é o mesmo (ids numéricos = mais novo). */
+function rowWinsOverSnapshot(a: RowSnapshot, b: RowSnapshot): boolean {
+  const ta = parseDataHoraMs(a.data_hora_contagem)
+  const tb = parseDataHoraMs(b.data_hora_contagem)
+  if (ta !== tb) return ta > tb
+  const ida = String(a.contagensRowId ?? '')
+  const idb = String(b.contagensRowId ?? '')
+  if (/^\d+$/.test(ida) && /^\d+$/.test(idb)) {
+    try {
+      return BigInt(ida) > BigInt(idb)
+    } catch {
+      /* fall through */
+    }
+  }
+  return ida.localeCompare(idb, 'en') > 0
+}
+
 /**
  * Busca registros em `contagens_estoque` do dia civil (todos os conferentes), só contagem diária,
  * e devolve a linha mais recente por código (`data_hora_contagem`).
@@ -47,7 +66,7 @@ async function fetchUltimasPorCodigo(dataContagemYmd: string): Promise<Map<strin
   if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return map
 
   const sel =
-    'conferente_id,codigo_interno,quantidade_up,up_adicional,lote,observacao,data_fabricacao,data_validade,ean,dun,data_hora_contagem,origem,inventario_repeticao,inventario_numero_contagem'
+    'id,conferente_id,codigo_interno,quantidade_up,up_adicional,lote,observacao,data_fabricacao,data_validade,ean,dun,data_hora_contagem,origem,inventario_repeticao,inventario_numero_contagem'
 
   const acc: Record<string, unknown>[] = []
   let from = 0
@@ -88,7 +107,11 @@ async function fetchUltimasPorCodigo(dataContagemYmd: string): Promise<Map<strin
       if (Number.isFinite(u) && u >= 0) up_adicional = u
     }
 
+    const rowId = r.id != null ? String(r.id) : ''
+    if (!rowId) continue
+
     const snap: RowSnapshot = {
+      contagensRowId: rowId,
       conferente_id: cidRow,
       quantidade_up: q,
       up_adicional,
@@ -102,7 +125,7 @@ async function fetchUltimasPorCodigo(dataContagemYmd: string): Promise<Map<strin
     }
 
     const prev = map.get(key)
-    if (!prev || parseDataHoraMs(snap.data_hora_contagem) > parseDataHoraMs(prev.data_hora_contagem)) {
+    if (!prev || rowWinsOverSnapshot(snap, prev)) {
       map.set(key, snap)
     }
   }
