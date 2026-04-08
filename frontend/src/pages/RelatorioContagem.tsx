@@ -7,11 +7,10 @@ import { enrichContagemRowsWithPlanilhaLinhas } from '../lib/enrichContagemRowsW
 import { enrichContagemRowsEanDunFromTodosOsProdutos } from '../lib/enrichContagemRowsEanDunFromTodosOsProdutos'
 import { fetchConferentesNomesPorIds } from '../lib/conferentesNomesBatch'
 import {
-  consolidarUltimaContagemDiariaPorCodigoEConferente,
   fetchPlanilhaContagemIdsParaIntervalo,
   filterContagensPorModoListagem,
   ordenarLinhasInventarioComoPrevia,
-  prepararContagemDiariaOficialComoListaSeparada,
+  prepararContagemDiariaOficialListaUnicaPorProduto,
   type ConferenteDetalheGrupo,
 } from '../lib/contagemListagemCompat'
 import { formatContagemLabel, inventarioCamaraLabelFromGrupo } from '../components/inventario/inventarioPlanilhaModel'
@@ -100,36 +99,6 @@ function formatHistoricoHorarioInput(minTs: number | null, maxTs: number | null)
   if (a != null && b != null && a !== b) return `${fmt(a)} – ${fmt(b)}`
   const t = a ?? b
   return t != null ? fmt(t) : '—'
-}
-
-/** Nome de aba Excel (máx. 31 caracteres; caracteres inválidos removidos). */
-function excelSheetNameUnica(base: string, used: Set<string>): string {
-  const invalid = /[:\\/?*[\]]/g
-  const tidy = (s: string) =>
-    s
-      .replace(invalid, ' ')
-      .replace(/\s+/g, ' ')
-      .trim()
-      .slice(0, 31)
-  const name = tidy(base) || 'Conferente'
-  if (!used.has(name)) {
-    used.add(name)
-    return name
-  }
-  let n = 2
-  while (n < 500) {
-    const suffix = ` (${n})`
-    const head = tidy(base).slice(0, Math.max(1, 31 - suffix.length))
-    const cand = (head + suffix).slice(0, 31)
-    if (!used.has(cand)) {
-      used.add(cand)
-      return cand
-    }
-    n += 1
-  }
-  const fallback = `Aba_${used.size}`.slice(0, 31)
-  used.add(fallback)
-  return fallback
 }
 
 function isColumnMissingErrorRel(e: unknown): boolean {
@@ -878,7 +847,7 @@ export default function RelatorioContagem({
     return { modo, filtered }
   }
 
-  /** Regra do relatório: inventário ordenado como prévia; contagem diária = uma linha por conferente e produto (sem somar conferentes na mesma linha). */
+  /** Regra do relatório: inventário ordenado como prévia; contagem diária = uma linha por produto (último lançamento; sem somar conferentes). */
   async function aplicarMesmaRegraDaPreviaAsync(
     data: ContagemRow[],
     origemAusenteNoResultado: boolean,
@@ -892,10 +861,8 @@ export default function RelatorioContagem({
       }
       return inv
     }
-    const grouped = prepararContagemDiariaOficialComoListaSeparada(filtered as ContagemRow[]) as ContagemRow[]
+    const grouped = prepararContagemDiariaOficialListaUnicaPorProduto(filtered as ContagemRow[]) as ContagemRow[]
     return grouped.sort((a, b) => {
-      const cn = conferenteNomeRelatorio(a).localeCompare(conferenteNomeRelatorio(b), 'pt-BR')
-      if (cn !== 0) return cn
       const c = a.codigo_interno.localeCompare(b.codigo_interno, 'pt-BR')
       if (c !== 0) return c
       return a.descricao.localeCompare(b.descricao, 'pt-BR')
@@ -1293,29 +1260,15 @@ export default function RelatorioContagem({
           setError('Nenhum registro no dia para exportar.')
           return
         }
-        const byConf = new Map<string, ContagemRow[]>()
-        for (const r of filtered) {
-          const k = String(r.conferente_id ?? '').trim() || '__sem_id__'
-          const arr = byConf.get(k)
-          if (arr) arr.push(r)
-          else byConf.set(k, [r])
-        }
-        const sorted = [...byConf.entries()].sort((a, b) => {
-          const na = conferenteNomeRelatorio(a[1][0]!)
-          const nb = conferenteNomeRelatorio(b[1][0]!)
-          return na.localeCompare(nb, 'pt-BR')
+        const grouped = prepararContagemDiariaOficialListaUnicaPorProduto(filtered as ContagemRow[]) as ContagemRow[]
+        const sorted = grouped.sort((a, b) => {
+          const c = a.codigo_interno.localeCompare(b.codigo_interno, 'pt-BR')
+          if (c !== 0) return c
+          return a.descricao.localeCompare(b.descricao, 'pt-BR')
         })
+        const ws = XLSX.utils.aoa_to_sheet(buildRelatorioExcelAoa(sorted))
         const wb = XLSX.utils.book_new()
-        const usedSheetNames = new Set<string>()
-        for (const [, list] of sorted) {
-          const grouped = consolidarUltimaContagemDiariaPorCodigoEConferente(list)
-          const ws = XLSX.utils.aoa_to_sheet(buildRelatorioExcelAoa(grouped))
-          const first = list[0]!
-          const nome = conferenteNomeRelatorio(first)
-          const label = nome !== '—' ? nome : String(first.conferente_id ?? '').trim() || 'Sem_conferente'
-          const sheetTitle = excelSheetNameUnica(label, usedSheetNames)
-          XLSX.utils.book_append_sheet(wb, ws, sheetTitle)
-        }
+        XLSX.utils.book_append_sheet(wb, ws, 'Contagens')
         const safeFile = dateRangeText.replace(/[/\\?*[\]:]/g, '-').replace(/\s+/g, '_')
         XLSX.writeFile(wb, `relatorio-contagem_${safeFile}.xlsx`)
         return

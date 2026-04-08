@@ -67,7 +67,7 @@ import {
 } from '../lib/contagemDiariaPresenca'
 import {
   agruparContagemDiariaComoPrevia,
-  prepararContagemDiariaOficialComoListaSeparada,
+  prepararContagemDiariaOficialListaUnicaPorProduto,
 } from '../lib/contagemListagemCompat'
 import { mergeContagensDiariasDoDiaParaItems } from '../lib/mergeContagemDiariaDoBanco'
 import { subscribeContagensEstoqueDia } from '../lib/subscribeContagensEstoqueRealtime'
@@ -1882,18 +1882,16 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         const linhasRascunho = rawPreviewLinhas.filter((r) => r.contagem_rascunho === true)
         const linhasOficiais = rawPreviewLinhas.filter((r) => r.contagem_rascunho !== true)
         const draftMerged = agruparContagemDiariaComoPrevia(linhasRascunho) as ContagemPreviewRow[]
-        const oficialSeparado = prepararContagemDiariaOficialComoListaSeparada(
+        /** Finalizados: uma linha por produto — último registro vence; mostra só o conferente e o valor daquele lançamento (sem somar). */
+        const oficialUnica = prepararContagemDiariaOficialListaUnicaPorProduto(
           linhasOficiais,
         ) as ContagemPreviewRow[]
-        /** Finalizados: lista “fechada” por conferente (agrupa todos os itens do mesmo nome antes de misturar com outro). */
         const sortPreviaContagemDiaria = (a: ContagemPreviewRow, b: ContagemPreviewRow) => {
-          const conf = a.conferente_nome.localeCompare(b.conferente_nome, 'pt-BR')
-          if (conf !== 0) return conf
           const c = a.codigo_interno.localeCompare(b.codigo_interno, 'pt-BR')
           if (c !== 0) return c
           return a.descricao.localeCompare(b.descricao, 'pt-BR')
         }
-        previewList = [...draftMerged.sort(sortPreviaContagemDiaria), ...oficialSeparado.sort(sortPreviaContagemDiaria)]
+        previewList = [...draftMerged.sort(sortPreviaContagemDiaria), ...oficialUnica.sort(sortPreviaContagemDiaria)]
       }
 
       setPreviewQueryDayYmd(dayKey)
