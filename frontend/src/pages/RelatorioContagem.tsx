@@ -105,7 +105,7 @@ function excelSheetNameUnica(base: string, used: Set<string>): string {
       .replace(/\s+/g, ' ')
       .trim()
       .slice(0, 31)
-  let name = tidy(base) || 'Conferente'
+  const name = tidy(base) || 'Conferente'
   if (!used.has(name)) {
     used.add(name)
     return name
@@ -214,13 +214,6 @@ type HistoricoContagemItem = {
   totalItens: number
 }
 
-function civilDayYmdFromRow(r: Pick<ContagemRow, 'data_contagem' | 'data_hora_contagem'>): string {
-  const d = r.data_contagem != null ? String(r.data_contagem).slice(0, 10) : ''
-  if (/^\d{4}-\d{2}-\d{2}$/.test(d)) return d
-  const h = r.data_hora_contagem ? String(r.data_hora_contagem).slice(0, 10) : ''
-  return /^\d{4}-\d{2}-\d{2}$/.test(h) ? h : ''
-}
-
 /**
  * Só `data_contagem` (YMD) — mesmo critério da prévia em ContagemEstoque (`.eq('data_contagem', dia)`).
  * Evita que o histórico / lista de um dia mostrem registros só com `data_hora` que a exclusão por dia não apaga.
@@ -228,19 +221,6 @@ function civilDayYmdFromRow(r: Pick<ContagemRow, 'data_contagem' | 'data_hora_co
 function diaYmdSoDataContagemRow(r: Pick<ContagemRow, 'data_contagem'>): string | null {
   const d = r.data_contagem != null ? String(r.data_contagem).slice(0, 10) : ''
   return /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null
-}
-
-function computeMinMaxYmdFromRows(rows: ContagemRow[]): { minY: string; maxY: string } {
-  let minY = '9999-12-31'
-  let maxY = '1970-01-01'
-  for (const r of rows) {
-    const day = civilDayYmdFromRow(r)
-    if (!day) continue
-    if (day < minY) minY = day
-    if (day > maxY) maxY = day
-  }
-  if (minY === '9999-12-31') return { minY: '1970-01-01', maxY: '2100-12-31' }
-  return { minY, maxY }
 }
 
 function computeMinMaxYmdDataContagemOnly(rows: ContagemRow[]): { minY: string; maxY: string } {
@@ -652,10 +632,7 @@ export default function RelatorioContagem({
     `
     const selectSemColunasInventarioCompact = selectSemColunasInventario.replace(/\s+/g, '')
 
-    const applyNumeroInventario = (
-      q: ReturnType<typeof supabase.from<'contagens_estoque'>>,
-      withNumeroFilter: boolean,
-    ) => {
+    const applyNumeroInventario = (q: any, withNumeroFilter: boolean) => {
       /** Só filtra no servidor no modo inventário; em “contagem diária” o filtro esvaziaria o resultado. */
       if (!withNumeroFilter || !useInventarioCols || numeroContagemFilter === 'todas') return q
       return q.eq('inventario_numero_contagem', Number(numeroContagemFilter))

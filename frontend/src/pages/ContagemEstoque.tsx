@@ -283,20 +283,6 @@ function toDateInputValue(v?: string | null) {
   return m ? m[0] : ''
 }
 
-function formatDateBRFromIso(isoLike: string) {
-  const dt = new Date(isoLike)
-  if (Number.isNaN(dt.getTime())) return isoLike
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${pad(dt.getDate())}/${pad(dt.getMonth() + 1)}/${dt.getFullYear()}`
-}
-
-function formatDateTimeBRFromIso(isoLike: string) {
-  const dt = new Date(isoLike)
-  if (Number.isNaN(dt.getTime())) return isoLike
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${pad(dt.getDate())}/${pad(dt.getMonth() + 1)}/${dt.getFullYear()} ${pad(dt.getHours())}:${pad(dt.getMinutes())}`
-}
-
 function formatDateBRFromYmd(ymd: string) {
   const [y, m, d] = String(ymd).split('-')
   if (!y || !m || !d) return ymd
@@ -501,7 +487,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     descricao: string
     quantidade_contada: string
   } | null>(null)
-  const [armazemMissingCodes, setArmazemMissingCodes] = useState<string[]>([])
+  const [, setArmazemMissingCodes] = useState<string[]>([])
   const [confirmFinalizeMissingOpen, setConfirmFinalizeMissingOpen] = useState(false)
   const [missingItemsForFinalize, setMissingItemsForFinalize] = useState<OfflineChecklistItem[]>([])
   /** Contagem diária: ao finalizar com sucesso, abre modal com resumo (ref: itens preenchidos com 0 antes do envio). */
@@ -1592,8 +1578,6 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     const previewSelectFlatFullLegacy =
       'id,data_hora_contagem,data_contagem,conferente_id,codigo_interno,descricao,unidade_medida,quantidade_up,up_adicional,lote,observacao,data_fabricacao,data_validade,ean,dun,foto_base64,origem,inventario_repeticao,inventario_numero_contagem'
     const previewSelectFlatFull = `${previewSelectFlatFullLegacy},finalizacao_sessao_id`
-    const previewSelectFlatSemOrigem =
-      'id,data_hora_contagem,data_contagem,conferente_id,codigo_interno,descricao,unidade_medida,quantidade_up,up_adicional,lote,observacao,data_fabricacao,data_validade,ean,dun,foto_base64,inventario_repeticao,inventario_numero_contagem'
     const previewSelectFlatSemNc =
       'id,data_hora_contagem,data_contagem,conferente_id,codigo_interno,descricao,unidade_medida,quantidade_up,up_adicional,lote,observacao,data_fabricacao,data_validade,ean,dun,foto_base64,origem,inventario_repeticao'
     const previewSelectFlatSemOrigemSemNc =
@@ -1876,7 +1860,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       throw new Error(`Erro ao carregar "${TABELA_PRODUTOS}": ${error.message}`)
     }
     const opts = (data ?? [])
-      .map((row) => mapRowToProductOption(row as Record<string, any>))
+      .map((row: Record<string, unknown>) => mapRowToProductOption(row as Record<string, any>))
       .filter(Boolean) as ProductOption[]
     opts.sort((a, b) => a.codigo.localeCompare(b.codigo, 'pt-BR'))
     const out = opts.map((r) => ({
@@ -2864,7 +2848,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
               .or('inventario_repeticao.not.is.null,inventario_numero_contagem.not.is.null')
               .limit(5000)
             const idList = (rFetch.data ?? [])
-              .map((row) => String((row as { id?: string }).id ?? ''))
+              .map((row: { id?: string }) => String(row.id ?? ''))
               .filter(Boolean)
             if (idList.length === 0) {
               throw new Error(
@@ -5068,7 +5052,6 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                           }
                           const it = item as OfflineChecklistItem
                           const hasPhoto = Boolean(String(it.foto_base64 ?? '').trim())
-                          const pend = String(it.quantidade_contada ?? '').trim() === ''
                           const isEditing = checklistEditingKey === it.key && checklistEditDraft
                           const datasOrdemInvalida = isVencimentoAntesFabricacao(it.data_fabricacao, it.data_validade)
                           return (
