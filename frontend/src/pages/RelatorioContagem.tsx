@@ -273,8 +273,8 @@ export default function RelatorioContagem({
   const prevLoadingRef = useRef(false)
   const [baseExportLoading, setBaseExportLoading] = useState(false)
   const [exportExcelLoading, setExportExcelLoading] = useState(false)
-  /** Contagem diária: conferente exibido em todas as linhas agrupadas — `total` (soma) ou `conferente_id` (igual à prévia). */
-  const [relatorioConferenteModoGlobal, setRelatorioConferenteModoGlobal] = useState<'total' | string>('total')
+  /** Contagem diária: filtra a tabela por conferente (`__todos__` = sem filtro). */
+  const [relatorioConferenteFiltroLista, setRelatorioConferenteFiltroLista] = useState<string>('__todos__')
 
   /** Só em “Todas as contagens”: histórico agregado + filtro vindo de “Ver contagem”. */
   const [historicoItems, setHistoricoItems] = useState<HistoricoContagemItem[]>([])
@@ -299,18 +299,16 @@ export default function RelatorioContagem({
     [allTime, useSingleDay, startDate, endDate],
   )
 
-  const relatorioQuantidadeExibida = useCallback(
-    (r: ContagemRow) => {
-      if (useInventarioCols || !r.preview_conferentes_detalhe || r.preview_conferentes_detalhe.length <= 1) {
-        return r.quantidade_up
-      }
-      const modo = relatorioConferenteModoGlobal
-      if (modo === 'total') return r.quantidade_up
-      const part = r.preview_conferentes_detalhe.find((d) => d.conferente_id === modo)
-      return part ? part.quantidade_up : r.quantidade_up
-    },
-    [useInventarioCols, relatorioConferenteModoGlobal],
-  )
+  const relatorioQuantidadeExibida = useCallback((r: ContagemRow) => {
+    if (useInventarioCols || !r.preview_conferentes_detalhe || r.preview_conferentes_detalhe.length <= 1) {
+      return r.quantidade_up
+    }
+    const part = r.preview_conferentes_detalhe.find(
+      (d) => d.conferente_id === relatorioConferenteFiltroLista,
+    )
+    if (relatorioConferenteFiltroLista !== '__todos__' && part) return part.quantidade_up
+    return r.quantidade_up
+  }, [useInventarioCols, relatorioConferenteFiltroLista])
 
   const relatorioSourceIdsParaAcao = useCallback(
     (r: ContagemRow) => {
@@ -318,12 +316,11 @@ export default function RelatorioContagem({
       if (useInventarioCols || !r.preview_conferentes_detalhe || r.preview_conferentes_detalhe.length <= 1) {
         return ids
       }
-      const modo = relatorioConferenteModoGlobal
-      if (modo === 'total') return ids
-      const part = r.preview_conferentes_detalhe.find((d) => d.conferente_id === modo)
+      if (relatorioConferenteFiltroLista === '__todos__') return ids
+      const part = r.preview_conferentes_detalhe.find((d) => d.conferente_id === relatorioConferenteFiltroLista)
       return part?.source_ids?.length ? part.source_ids : ids
     },
-    [useInventarioCols, relatorioConferenteModoGlobal],
+    [useInventarioCols, relatorioConferenteFiltroLista],
   )
 
   const relatorioPodeEditarQuantidade = useCallback(
@@ -331,9 +328,9 @@ export default function RelatorioContagem({
       if (useInventarioCols) return true
       const det = r.preview_conferentes_detalhe
       if (!det || det.length <= 1) return true
-      return relatorioConferenteModoGlobal !== 'total'
+      return relatorioConferenteFiltroLista !== '__todos__'
     },
-    [useInventarioCols, relatorioConferenteModoGlobal],
+    [useInventarioCols, relatorioConferenteFiltroLista],
   )
 
   const conferentesRelatorioOpcoes = useMemo(() => {
@@ -341,9 +338,13 @@ export default function RelatorioContagem({
     const map = new Map<string, string>()
     for (const r of rows) {
       const det = r.preview_conferentes_detalhe
-      if (!det?.length) continue
-      for (const d of det) {
-        if (d.conferente_id) map.set(d.conferente_id, String(d.conferente_nome ?? '').trim() || d.conferente_id)
+      if (det?.length) {
+        for (const d of det) {
+          if (d.conferente_id) map.set(d.conferente_id, String(d.conferente_nome ?? '').trim() || d.conferente_id)
+        }
+      } else {
+        const cid = String(r.conferente_id ?? '').trim()
+        if (cid) map.set(cid, conferenteNomeRelatorio(r))
       }
     }
     return Array.from(map.entries())
@@ -352,19 +353,29 @@ export default function RelatorioContagem({
   }, [rows, useInventarioCols])
 
   useEffect(() => {
-    if (relatorioConferenteModoGlobal === 'total') return
-    if (!conferentesRelatorioOpcoes.some((o) => o.id === relatorioConferenteModoGlobal)) {
-      setRelatorioConferenteModoGlobal('total')
+    if (relatorioConferenteFiltroLista === '__todos__') return
+    if (!conferentesRelatorioOpcoes.some((o) => o.id === relatorioConferenteFiltroLista)) {
+      setRelatorioConferenteFiltroLista('__todos__')
     }
-  }, [conferentesRelatorioOpcoes, relatorioConferenteModoGlobal])
+  }, [conferentesRelatorioOpcoes, relatorioConferenteFiltroLista])
 
-  const relatorioTotalPages = Math.max(1, Math.ceil(rows.length / RELATORIO_PAGE_SIZE))
+  const rowsFiltradosLista = useMemo(() => {
+    if (useInventarioCols || relatorioConferenteFiltroLista === '__todos__') return rows
+    const fid = String(relatorioConferenteFiltroLista).trim()
+    return rows.filter((r) => String(r.conferente_id ?? '').trim() === fid)
+  }, [rows, useInventarioCols, relatorioConferenteFiltroLista])
+
+  useEffect(() => {
+    setRelatorioPage(1)
+  }, [relatorioConferenteFiltroLista])
+
+  const relatorioTotalPages = Math.max(1, Math.ceil(rowsFiltradosLista.length / RELATORIO_PAGE_SIZE))
   const relatorioPageSafe = Math.min(relatorioPage, relatorioTotalPages)
   const displayRows = useMemo(() => {
-    if (relatorioShowAll) return rows
+    if (relatorioShowAll) return rowsFiltradosLista
     const start = (relatorioPageSafe - 1) * RELATORIO_PAGE_SIZE
-    return rows.slice(start, start + RELATORIO_PAGE_SIZE)
-  }, [rows, relatorioPageSafe, relatorioShowAll])
+    return rowsFiltradosLista.slice(start, start + RELATORIO_PAGE_SIZE)
+  }, [rowsFiltradosLista, relatorioPageSafe, relatorioShowAll])
 
   useEffect(() => {
     if (prevLoadingRef.current && !loading) {
@@ -1017,7 +1028,7 @@ export default function RelatorioContagem({
     setSingleDay(item.dataYmd)
     setUseInventarioCols(false)
     setConferenteFiltroHistorico(item.conferenteId == null ? '__sem__' : item.conferenteId)
-    setRelatorioConferenteModoGlobal('total')
+    setRelatorioConferenteFiltroLista('__todos__')
     setLoading(true)
     setError('')
     setSuccess('')
@@ -1062,7 +1073,7 @@ export default function RelatorioContagem({
     setError('')
     setSuccess('')
     setRows([])
-    setRelatorioConferenteModoGlobal('total')
+    setRelatorioConferenteFiltroLista('__todos__')
     try {
       const { rows: data, successMessage, origemAusenteNoResultado } = await fetchRelatorioContagemRows()
       let dataForPrevia = data
@@ -1090,7 +1101,7 @@ export default function RelatorioContagem({
       row &&
       row.preview_conferentes_detalhe &&
       row.preview_conferentes_detalhe.length > 1 &&
-      relatorioConferenteModoGlobal !== 'total'
+      relatorioConferenteFiltroLista !== '__todos__'
     const msg = excluiSoUmConferente
       ? `Excluir ${idsToDelete.length} registro(s) deste conferente no banco?`
       : idsToDelete.length > 1
@@ -1372,7 +1383,7 @@ export default function RelatorioContagem({
     }
   }
 
-  const totalRel = rows.length
+  const totalRel = rowsFiltradosLista.length
   const rangeFrom =
     totalRel === 0 ? 0 : relatorioShowAll ? 1 : (relatorioPageSafe - 1) * RELATORIO_PAGE_SIZE + 1
   const rangeTo =
@@ -1469,8 +1480,8 @@ export default function RelatorioContagem({
         </label>
         <select
           id="relatorio-conferente-global"
-          value={relatorioConferenteModoGlobal}
-          onChange={(e) => setRelatorioConferenteModoGlobal(e.target.value)}
+          value={relatorioConferenteFiltroLista}
+          onChange={(e) => setRelatorioConferenteFiltroLista(e.target.value)}
           style={{
             padding: '8px 10px',
             border: '1px solid #ccc',
@@ -1479,9 +1490,9 @@ export default function RelatorioContagem({
             flex: '1 1 200px',
             maxWidth: '100%',
           }}
-          aria-label="Conferente na lista para todas as linhas"
+          aria-label="Filtrar linhas da lista por conferente"
         >
-          <option value="total">Soma (todos os conferentes)</option>
+          <option value="__todos__">Todos os conferentes</option>
           {conferentesRelatorioOpcoes.map((o) => (
             <option key={o.id} value={o.id}>
               {o.nome}
@@ -1814,6 +1825,12 @@ export default function RelatorioContagem({
           <div style={{ overflowX: 'auto' }}>
             {relatorioConferenteGlobalBar}
             {relatorioPagination}
+            {rows.length > 0 && rowsFiltradosLista.length === 0 ? (
+              <p style={{ marginTop: 12, fontSize: 14, color: 'var(--text-muted, #666)' }}>
+                Nenhuma linha para o conferente selecionado. Escolha outro ou &quot;Todos os conferentes&quot;.
+              </p>
+            ) : null}
+            {rowsFiltradosLista.length > 0 ? (
             <table
               style={{
                 borderCollapse: 'collapse',
@@ -1886,13 +1903,12 @@ export default function RelatorioContagem({
                       </>
                     ) : null}
                     <td style={{ ...tdStyle, whiteSpace: 'normal', maxWidth: 260 }}>
-                      {!useInventarioCols && r.preview_conferentes_detalhe && r.preview_conferentes_detalhe.length > 1 ? (
-                        relatorioConferenteModoGlobal === 'total' ? (
-                          conferenteNomeRelatorio(r)
-                        ) : (
-                          r.preview_conferentes_detalhe.find((d) => d.conferente_id === relatorioConferenteModoGlobal)
-                            ?.conferente_nome ?? '—'
-                        )
+                      {!useInventarioCols &&
+                      r.preview_conferentes_detalhe &&
+                      r.preview_conferentes_detalhe.length > 1 &&
+                      relatorioConferenteFiltroLista !== '__todos__' ? (
+                        r.preview_conferentes_detalhe.find((d) => d.conferente_id === relatorioConferenteFiltroLista)
+                          ?.conferente_nome ?? '—'
                       ) : (
                         conferenteNomeRelatorio(r)
                       )}
@@ -1998,6 +2014,7 @@ export default function RelatorioContagem({
                 })}
               </tbody>
             </table>
+            ) : null}
             {totalRel > 0 ? relatorioPagination : null}
           </div>
         ) : (
