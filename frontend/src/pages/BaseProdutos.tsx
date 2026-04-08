@@ -353,11 +353,12 @@ export default function BaseProdutos() {
         { descricao, ean, dun },
       ]
 
-      let data: { id: unknown; codigo_interno: unknown }[] | null = null
+      type IdCodRow = { id: unknown; codigo_interno: unknown }
+      let data: IdCodRow[] | null = null
       let uErr: { message?: string; code?: string } | null = null
       for (const payload of updateTries) {
         const res = await tryUpdate(payload)
-        data = res.data as typeof data
+        data = res.data as IdCodRow[] | null
         uErr = res.error
         if (!uErr) break
         if (!isColumnMissingError(uErr)) break
@@ -410,9 +411,10 @@ export default function BaseProdutos() {
         if (!delExact?.length) {
           const { data: all, error: lErr } = await supabase.from(TABELA_PRODUTOS).select('id,codigo_interno').limit(20000)
           if (lErr) throw lErr
+          type CodRow = { codigo_interno?: unknown }
           const exactValues = [
             ...new Set(
-              (all ?? [])
+              ((all ?? []) as CodRow[])
                 .filter((row) => String(row.codigo_interno ?? '').trim() === trimmedCod)
                 .map((row) => String(row.codigo_interno ?? '')),
             ),
@@ -487,11 +489,12 @@ export default function BaseProdutos() {
         { codigo_interno: cod, descricao: desc, ean, dun },
       ]
 
-      let data: { id: unknown; codigo_interno: unknown }[] | null = null
+      type IdCodRowIns = { id: unknown; codigo_interno: unknown }
+      let data: IdCodRowIns[] | null = null
       let insErr: { message?: string; code?: string } | null = null
       for (const p of insertTries) {
         const res = await tryInsert(p)
-        data = res.data as typeof data
+        data = res.data as IdCodRowIns[] | null
         insErr = res.error
         if (!insErr) break
         if (!isColumnMissingError(insErr)) break

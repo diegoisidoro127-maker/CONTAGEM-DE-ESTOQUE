@@ -90,11 +90,21 @@ type RowMergeContagemDiaria = Record<string, unknown> & {
   codigo_interno?: string
   descricao?: string
   data_contagem?: string | null
+  data_hora_contagem?: string
   /** Mesma finalização (lote) no mesmo dia — separa relançamentos do mesmo conferente. */
   finalizacao_sessao_id?: string | null
   conferente_id?: string
+  conferentes?: { nome?: string } | Array<{ nome?: string }> | null
   quantidade_up?: number
   up_adicional?: number | null
+  lote?: string | null
+  observacao?: string | null
+  unidade_medida?: string | null
+  data_fabricacao?: string | null
+  data_validade?: string | null
+  ean?: string | null
+  dun?: string | null
+  foto_base64?: string | null
   source_ids?: string[]
   preview_conferentes_detalhe?: ConferenteDetalheGrupo[]
 }
@@ -175,10 +185,11 @@ export function agruparContagemDiariaComoPrevia<T extends RowMergeContagemDiaria
       det.sort((a, b) => a.conferente_nome.localeCompare(b.conferente_nome, 'pt-BR'))
     }
     const av = row.up_adicional
-    if (av != null && av !== '' && Number.isFinite(Number(av))) {
+    if (av != null && Number.isFinite(Number(av))) {
+      const nAv = Number(av)
       const ev = existing.up_adicional
       existing.up_adicional =
-        ev != null && ev !== '' && Number.isFinite(Number(ev)) ? Number(ev) + Number(av) : Number(av)
+        ev != null && Number.isFinite(Number(ev)) ? Number(ev) + nAv : nAv
     }
     if (!existing.lote && row.lote) existing.lote = row.lote
     if (!existing.observacao && row.observacao) existing.observacao = row.observacao

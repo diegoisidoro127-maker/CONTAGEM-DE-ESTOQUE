@@ -94,9 +94,10 @@ export function handleChecklistFieldNavKeyDown(e: KeyboardEvent<HTMLElement>): v
     if (!target.matches(`input[${CHECKLIST_QTY_NAV_ATTR}]`)) return
     if (e.altKey || e.metaKey || e.ctrlKey) return
     e.preventDefault()
-    const root =
+    const rootEl =
       (e.currentTarget as HTMLElement).closest(`[${CHECKLIST_NAV_ROOT_ATTR}]`) ??
       (e.currentTarget as HTMLElement)
+    const root = rootEl instanceof HTMLElement ? rootEl : null
     focusAdjacentQtyField(root, target, e.key === 'ArrowDown' ? 1 : -1)
     return
   }
@@ -110,8 +111,9 @@ export function handleChecklistFieldNavKeyDown(e: KeyboardEvent<HTMLElement>): v
   if (shouldLetArrowMoveCursorInsideField(target, key)) return
 
   e.preventDefault()
-  const root =
+  const rootEl =
     (e.currentTarget as HTMLElement).closest(`[${CHECKLIST_NAV_ROOT_ATTR}]`) ??
     (e.currentTarget as HTMLElement)
+  const root = rootEl instanceof HTMLElement ? rootEl : null
   focusAdjacentChecklistField(root, target, key === 'ArrowRight' ? 1 : -1)
 }

@@ -31,7 +31,7 @@ export function subscribeContagensEstoqueDia(dataContagemYmd: string, onChange: 
       },
       () => schedule(),
     )
-    .subscribe((status) => {
+    .subscribe((status: string) => {
       if (import.meta.env.DEV && status === 'CHANNEL_ERROR') {
         console.warn('[subscribeContagensEstoqueDia] realtime indisponível — verifique publication supabase_realtime.')
       }
