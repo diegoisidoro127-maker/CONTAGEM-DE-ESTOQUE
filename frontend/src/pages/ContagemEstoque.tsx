@@ -66,7 +66,6 @@ import {
   upsertContagemDiariaPresenca,
 } from '../lib/contagemDiariaPresenca'
 import {
-  agruparContagemDiariaComoPrevia,
   prepararContagemDiariaOficialListaUnicaPorProduto,
 } from '../lib/contagemListagemCompat'
 import { mergeContagensDiariasDoDiaParaItems } from '../lib/mergeContagemDiariaDoBanco'
@@ -1859,7 +1858,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         return nome ? { ...r, conferente_nome: nome } : r
       })
 
-      // Contagem diária: rascunho agrupa por produto (tempo real entre conferentes); finalizados = lista separada por conferente.
+      // Contagem diária: uma linha por produto — sempre o lançamento com maior data_hora_contagem (rascunho ou oficial).
       // Inventário: uma linha por registro em `contagens_estoque` (mesma lógica da planilha: mesmo código em POS/Níveis diferentes não pode virar uma linha só).
       let previewList: ContagemPreviewRow[]
       if (inventario) {
@@ -1879,19 +1878,14 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
           return String(a.id).localeCompare(String(b.id), 'pt-BR')
         })
       } else {
-        const linhasRascunho = rawPreviewLinhas.filter((r) => r.contagem_rascunho === true)
-        const linhasOficiais = rawPreviewLinhas.filter((r) => r.contagem_rascunho !== true)
-        const draftMerged = agruparContagemDiariaComoPrevia(linhasRascunho) as ContagemPreviewRow[]
-        /** Finalizados: uma linha por produto — último registro vence; mostra só o conferente e o valor daquele lançamento (sem somar). */
-        const oficialUnica = prepararContagemDiariaOficialListaUnicaPorProduto(
-          linhasOficiais,
-        ) as ContagemPreviewRow[]
         const sortPreviaContagemDiaria = (a: ContagemPreviewRow, b: ContagemPreviewRow) => {
           const c = a.codigo_interno.localeCompare(b.codigo_interno, 'pt-BR')
           if (c !== 0) return c
           return a.descricao.localeCompare(b.descricao, 'pt-BR')
         }
-        previewList = [...draftMerged.sort(sortPreviaContagemDiaria), ...oficialUnica.sort(sortPreviaContagemDiaria)]
+        previewList = prepararContagemDiariaOficialListaUnicaPorProduto(
+          rawPreviewLinhas,
+        ).sort(sortPreviaContagemDiaria) as ContagemPreviewRow[]
       }
 
       setPreviewQueryDayYmd(dayKey)
