@@ -4415,38 +4415,16 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         <h3 style={{ margin: '0 0 10px', fontSize: 18 }}>
           {inventario ? 'Inventário (offline → banco)' : 'Contagem diária (offline → banco)'}
         </h3>
-        <p style={{ margin: '0 0 12px', fontSize: 13, color: 'inherit', opacity: 0.95 }}>
-          {inventario ? (
-            <>
-              <strong>Inventário:</strong> cada produto aparece <strong>três vezes</strong> na lista (1ª, 2ª e 3ª contagem).
-              Você pode usar o mesmo <strong>tipo de lista</strong> da contagem diária: ordem do cadastro ou{' '}
-              <strong>Armazém</strong> (dividida em grupos 1ª–4ª contagem). Carregue a lista a partir de{' '}
-              <strong>Todos os Produtos</strong>, preencha as quantidades e use <strong>Finalizar inventário</strong> para gravar
-              em <code style={{ fontSize: 12 }}>contagens_estoque</code> (campos{' '}
-              <code style={{ fontSize: 12 }}>origem=inventario</code> e repetição) e uma linha correspondente em{' '}
-              <code style={{ fontSize: 12 }}>inventario_planilha_linhas</code> (formato planilha: RUA, POS, NIVEL, etc.). SQL:{' '}
-              <code style={{ fontSize: 12 }}>alter_contagens_estoque_origem_inventario.sql</code> e{' '}
-              <code style={{ fontSize: 12 }}>create_inventario_planilha_linhas.sql</code>.
-            </>
-          ) : (
-            <>
-              Carregue a lista a partir da tabela <strong>public.&quot;Todos os Produtos&quot;</strong> (codigo_interno + descricao), preencha as quantidades no app
-              (salvo no navegador) e clique em <strong>Finalizar contagem diária</strong> para gravar em{' '}
-              <strong>contagens_estoque</strong>.
-            </>
-          )}
-        </p>
-
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: isMobile ? '1fr' : 'repeat(12, 1fr)',
+            gridTemplateColumns: isMobile ? '1fr' : 'repeat(12, minmax(0, 1fr))',
             gap: 12,
             alignItems: 'end',
             marginBottom: 4,
           }}
         >
-          <label style={{ ...labelStyle, gridColumn: isMobile ? 'auto' : 'span 6' }}>
+          <label style={{ ...labelStyle, gridColumn: isMobile ? 'auto' : 'span 8' }}>
             Conferente
             <select
               value={conferenteId}
@@ -4463,7 +4441,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
             </select>
           </label>
 
-          <div style={{ gridColumn: isMobile ? 'auto' : 'span 6', display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div style={{ gridColumn: isMobile ? 'auto' : 'span 4', display: 'flex', flexDirection: 'column', gap: 6 }}>
             <button
               type="button"
               onClick={() => setShowAddConferente((v) => !v)}
@@ -4482,7 +4460,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                 <div
                   style={{
                     display: 'grid',
-                    gridTemplateColumns: isMobile ? '1fr' : '1fr auto',
+                    gridTemplateColumns: isMobile ? '1fr' : 'minmax(0, 1fr) auto',
                     gap: 8,
                     alignItems: 'end',
                   }}
@@ -4542,12 +4520,12 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: isMobile ? '1fr' : 'repeat(12, 1fr)',
+            gridTemplateColumns: isMobile ? '1fr' : 'repeat(12, minmax(0, 1fr))',
             gap: 12,
             alignItems: 'end',
           }}
         >
-          <label style={{ ...labelStyle, gridColumn: isMobile ? 'auto' : 'span 3' }}>
+          <label style={{ ...labelStyle, gridColumn: isMobile ? 'auto' : 'span 4' }}>
             Data e hora do registro
             <input
               type="datetime-local"
@@ -4563,30 +4541,45 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
               style={inputStyle}
             />
           </label>
-          <div style={{ gridColumn: isMobile ? 'auto' : 'span 9', display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-            <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13, minWidth: 260 }}>
-              Tipo de lista
-              <select
-                value={checklistListMode}
-                onChange={(e) => setChecklistListMode(e.target.value as ChecklistListMode)}
-                style={inputStyle}
-                disabled={!!offlineSession && offlineSession.status === 'aberta'}
-              >
-                <option value="todos">Todos os Produtos (cadastro)</option>
-                {!inventario ? (
-                  <option value="armazem">Armazém (dividida em grupos 1ª–4ª contagem)</option>
-                ) : null}
-                {inventario ? (
-                  <option value="planilha">Inventário — formato planilha (CAMARA/RUA, abas)</option>
-                ) : null}
-              </select>
-            </label>
+          <label
+            style={{
+              ...labelStyle,
+              gridColumn: isMobile ? 'auto' : 'span 4',
+              minWidth: 0,
+            }}
+          >
+            Tipo de lista
+            <select
+              value={checklistListMode}
+              onChange={(e) => setChecklistListMode(e.target.value as ChecklistListMode)}
+              style={inputStyle}
+              disabled={!!offlineSession && offlineSession.status === 'aberta'}
+            >
+              <option value="todos">Todos os Produtos (cadastro)</option>
+              {!inventario ? (
+                <option value="armazem">Armazém (dividida em grupos 1ª–4ª contagem)</option>
+              ) : null}
+              {inventario ? (
+                <option value="planilha">Inventário — formato planilha (CAMARA/RUA, abas)</option>
+              ) : null}
+            </select>
+          </label>
+          <div
+            style={{
+              gridColumn: isMobile ? 'auto' : 'span 4',
+              display: 'grid',
+              gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, minmax(170px, 1fr))',
+              gap: 8,
+              alignItems: 'stretch',
+            }}
+          >
             <button
               type="button"
               style={{
                 ...buttonStyle,
                 ...checklistActionBtnCarregar,
                 ...(carregarListaDisabled ? { opacity: 0.45, cursor: 'not-allowed' } : {}),
+                width: '100%',
               }}
               disabled={carregarListaDisabled}
               onClick={() => void handleCarregarListaPlanilha()}
@@ -4594,12 +4587,12 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
               <span className="app-nav-icon app-nav-icon--bounce" aria-hidden>
                 📥
               </span>
-              {checklistLoading ? 'Carregando lista…' : 'Carregar lista de produtos'}
+              {checklistLoading ? 'Carregando lista…' : 'Carregar lista'}
             </button>
             {!inventario ? (
               <button
                 type="button"
-                style={{ ...buttonStyle, background: '#7a2', opacity: finalizing ? 0.55 : 1 }}
+                style={{ ...buttonStyle, background: '#7a2', opacity: finalizing ? 0.55 : 1, width: '100%' }}
                 disabled={finalizing || checklistLoading}
                 onClick={() => handleIniciarContagemDiaDoZero()}
                 title="Abre uma nova checklist em branco para contar novamente no mesmo dia"
@@ -4607,12 +4600,12 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                 <span className="app-nav-icon app-nav-icon--pulse" aria-hidden>
                   ♻️
                 </span>
-                Iniciar contagem do dia do zero
+                Iniciar do zero
               </button>
             ) : null}
             <button
               type="button"
-              style={{ ...buttonStyle, ...checklistActionBtnAtualizar }}
+              style={{ ...buttonStyle, ...checklistActionBtnAtualizar, width: '100%' }}
               disabled={productOptionsLoading || finalizing}
               title="Recarrega a tabela Todos os Produtos e reaplica descrição/unidade nas linhas da planilha já preenchidas"
               onClick={() => void handleAtualizarCadastroProdutos()}
@@ -4620,24 +4613,26 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
               <span className="app-nav-icon app-nav-icon--pulse" aria-hidden>
                 🔄
               </span>
-              {productOptionsLoading ? 'Atualizando cadastro…' : 'Atualizar cadastro'}
+              {productOptionsLoading ? 'Atualizando…' : 'Atualizar cadastro'}
             </button>
             <button
               type="button"
-              style={{ ...buttonStyle, ...checklistActionBtnLimpar }}
+              style={{ ...buttonStyle, ...checklistActionBtnLimpar, width: '100%' }}
               disabled={finalizing}
               onClick={() => handleDescartarSessaoLocal()}
             >
               <span className="app-nav-icon app-nav-icon--float" aria-hidden>
                 🧹
               </span>
-              Limpar sessão local
+              Limpar sessão
             </button>
             <button
               type="button"
               style={{
                 ...buttonStyle,
                 ...checklistActionBtnFinalizar(finalizarListaDisabled, checklistPending),
+                width: '100%',
+                gridColumn: isMobile ? 'auto' : '1 / -1',
               }}
               disabled={finalizarListaDisabled}
               onClick={() => void handleFinalizarContagemDiaria()}
@@ -6593,16 +6588,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
               produto quando as três contagens foram gravadas. A tabela da prévia usa as <strong>mesmas colunas</strong>{' '}
               que a lista acima (controle em <strong>Ocultar/mostrar colunas</strong>).
             </>
-          ) : (
-            <>
-              A lista da contagem diária fica <strong>só no navegador</strong> até você clicar em{' '}
-              <strong>Finalizar contagem diária</strong> — aí os registros são enviados para a tabela{' '}
-              <code style={{ fontSize: 12 }}>contagens_estoque</code>. Esta prévia mostra exatamente o que já foi gravado
-              no banco (por dia civil). Colunas iguais à lista acima (<strong>Ocultar/mostrar colunas</strong>). Após
-              finalizar, a prévia é atualizada automaticamente no <strong>dia atual</strong>; use{' '}
-              <strong>Atualizar prévia</strong> para buscar de novo depois de editar no banco.
-            </>
-          )}
+          ) : null}
         </div>
         <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginTop: 10, flexWrap: 'wrap' }}>
           <label style={{ ...labelStyle, marginBottom: 0, fontSize: 13 }}>
