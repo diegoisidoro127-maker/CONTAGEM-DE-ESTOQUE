@@ -320,15 +320,6 @@ export default function RelatorioContagem({
       .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
   }, [rows, useInventarioCols])
 
-  const relatorioConferenteFiltroEfetivo = useMemo(() => {
-    if (useInventarioCols) return ''
-    if (conferentesRelatorioOpcoes.length === 0) return ''
-    if (conferentesRelatorioOpcoes.some((o) => o.id === relatorioConferenteFiltroLista)) {
-      return relatorioConferenteFiltroLista
-    }
-    return conferentesRelatorioOpcoes[0].id
-  }, [useInventarioCols, conferentesRelatorioOpcoes, relatorioConferenteFiltroLista])
-
   useEffect(() => {
     if (useInventarioCols) return
     if (conferentesRelatorioOpcoes.length === 0) return
@@ -345,7 +336,7 @@ export default function RelatorioContagem({
     [],
   )
 
-  const relatorioPodeEditarQuantidade = useCallback(() => true, [])
+  const relatorioPodeEditarQuantidade = useCallback((_r: ContagemRow) => true, [])
 
   const rowsFiltradosLista = useMemo(() => rows, [rows])
 
