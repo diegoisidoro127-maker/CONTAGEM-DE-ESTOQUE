@@ -528,23 +528,6 @@ export default function BaseProdutos() {
   return (
     <div style={{ padding: 16, maxWidth: 1200, margin: '0 auto' }}>
       <h2 style={{ margin: '0 0 8px' }}>Base de dados — Todos os Produtos</h2>
-      <p style={{ margin: '0 0 16px', fontSize: 13, color: 'var(--text, #666)', maxWidth: 720 }}>
-        Lista da tabela <code style={{ fontSize: 12 }}>public.&quot;{TABELA_PRODUTOS}&quot;</code>. Use{' '}
-        <strong>Editar</strong> para alterar descrição, unidade, EAN e DUN e depois <strong>Salvar</strong> — a gravação é
-        confirmada no banco (se o Supabase retornar 0 linhas, aparece aviso de RLS). As colunas{' '}
-        <strong>Alteração EAN</strong> e <strong>Alteração DUN</strong> mostram o dia da última alteração de cada código
-        (execute <code style={{ fontSize: 12 }}>supabase/sql/alter_todos_os_produtos_ean_dun_alterado_em.sql</code> no
-        Supabase se necessário).         <strong>Excluir</strong> remove a linha. No painel Supabase (Table Editor), a exclusão exige{' '}
-        <strong>chave primária</strong> em <code style={{ fontSize: 12 }}>id</code> e linhas sem{' '}
-        <code style={{ fontSize: 12 }}>id</code> não podem ser apagadas pela UI — rode{' '}
-        <code style={{ fontSize: 12 }}>supabase/sql/alter_todos_os_produtos_primary_key.sql</code>. Se o DELETE no
-        SQL com <code style={{ fontSize: 12 }}>where codigo_interno = &apos;…&apos;</code> afetar 0 linhas, o código
-        no banco pode ter espaços — use <code style={{ fontSize: 12 }}>trim(both from codigo_interno)</code> ou rode{' '}
-        <code style={{ fontSize: 12 }}>supabase/sql/normalize_todos_os_produtos_codigo_trim.sql</code>. Permissões
-        INSERT/UPDATE/DELETE via RLS. Se aparecer <strong>0 linhas</strong> ao salvar, execute no SQL Editor o arquivo{' '}
-        <code style={{ fontSize: 12 }}>supabase/sql/rls_todos_os_produtos_crud.sql</code>.
-      </p>
-
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end', marginBottom: 16 }}>
         <button
           type="button"

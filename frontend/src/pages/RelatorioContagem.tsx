@@ -1476,18 +1476,6 @@ export default function RelatorioContagem({
     <div style={{ padding: 16, maxWidth: 1400, margin: '0 auto' }}>
       <h2>{isDiaMode ? 'Todas as contagens' : 'Relatório completo por data de contagem'}</h2>
 
-      <p style={{ margin: '8px 0 0', fontSize: 13, color: 'var(--text-muted, #888)', lineHeight: 1.45 }}>
-        Com <strong>filtrar por um dia</strong>, a lista e o <strong>histórico</strong> consideram só linhas com{' '}
-        <strong>data da contagem</strong> naquele dia — o mesmo critério da prévia e da exclusão por dia. Em um{' '}
-        <strong>intervalo de datas</strong> (relatório por período), registros antigos sem &quot;data da contagem&quot;
-        podem aparecer pela data/hora do registro.
-      </p>
-      <p style={{ margin: '8px 0 0', fontSize: 13, color: 'var(--text-muted, #888)', lineHeight: 1.45 }}>
-        A lista abaixo usa a <strong>mesma regra da prévia</strong> em Contagem/Inventário: colunas &quot;Inventário
-        físico&quot; mostram só inventário (e a mesma ordem); &quot;Contagem diária&quot; agrupa por dia+código como na
-        prévia. IDs em <code style={{ fontSize: 12 }}>inventario_planilha_linhas</code> entram no filtro como na prévia.
-      </p>
-
       {isDiaMode ? (
         <section
           style={{
