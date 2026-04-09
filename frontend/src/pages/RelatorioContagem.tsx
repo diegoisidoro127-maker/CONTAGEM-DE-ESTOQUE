@@ -409,7 +409,7 @@ export default function RelatorioContagem({
     [],
   )
 
-  const relatorioPodeEditarQuantidade = useCallback((_r: ContagemRow) => true, [])
+  const relatorioPodeEditarQuantidade = useCallback(() => true, []) as (r: ContagemRow) => boolean
 
   const rowsFiltradosLista = useMemo(() => rows, [rows])
 
@@ -675,14 +675,21 @@ export default function RelatorioContagem({
     `
     const selectSemColunasInventarioCompact = selectSemColunasInventario.replace(/\s+/g, '')
 
-    const applyNumeroInventario = (q: any, withNumeroFilter: boolean) => {
+    type ContagensRangeable = {
+      range(from: number, to: number): Promise<{ data: unknown; error: unknown }>
+    }
+
+    function applyNumeroInventario<Q>(q: Q, withNumeroFilter: boolean): Q {
       /** Só filtra no servidor no modo inventário; em “contagem diária” o filtro esvaziaria o resultado. */
       if (!withNumeroFilter || !useInventarioCols || numeroContagemFilter === 'todas') return q
-      return q.eq('inventario_numero_contagem', Number(numeroContagemFilter))
+      return (q as Q & { eq: (column: string, value: number) => Q }).eq(
+        'inventario_numero_contagem',
+        Number(numeroContagemFilter),
+      )
     }
 
     /** Nova query a cada fatia — evita reaproveitar builder com `.range()` mutado. */
-    async function fetchAllPaged(buildQ: () => any): Promise<ContagemRow[]> {
+    async function fetchAllPaged(buildQ: () => ContagensRangeable): Promise<ContagemRow[]> {
       const out: ContagemRow[] = []
       let from = 0
       while (true) {
