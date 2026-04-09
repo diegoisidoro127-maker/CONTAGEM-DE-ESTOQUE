@@ -280,6 +280,8 @@ export default function RelatorioContagem({
   const [historicoItems, setHistoricoItems] = useState<HistoricoContagemItem[]>([])
   const [historicoLoading, setHistoricoLoading] = useState(false)
   const [historicoError, setHistoricoError] = useState('')
+  /** Evita request 400 repetido quando `finalizacao_sessao_id` não existe no banco. */
+  const contagensHasFinalizacaoSessaoIdRef = useRef(true)
   /**
    * Quando definido, o Carregar aplica só linhas deste conferente (contagem diária).
    * `'__sem__'` = sem conferente no registro.
@@ -697,10 +699,17 @@ export default function RelatorioContagem({
 
     try {
       let data: ContagemRow[]
+      const selectCompletoPrefer = contagensHasFinalizacaoSessaoIdRef.current
+        ? selectCompletoCompact
+        : selectCompletoSemSessaoCompact
+      const selectFlatCompletoPrefer = contagensHasFinalizacaoSessaoIdRef.current
+        ? selectFlatCompletoCompact
+        : selectFlatCompletoSemSessaoCompact
       try {
-        data = await fetchRowsComFallbackEmbed(selectCompletoCompact, selectFlatCompletoCompact, true)
+        data = await fetchRowsComFallbackEmbed(selectCompletoPrefer, selectFlatCompletoPrefer, true)
       } catch (e0: unknown) {
         if (!isColumnMissingErrorRel(e0)) throw e0
+        contagensHasFinalizacaoSessaoIdRef.current = false
         data = await fetchRowsComFallbackEmbed(selectCompletoSemSessaoCompact, selectFlatCompletoSemSessaoCompact, true)
       }
       return {
@@ -893,9 +902,11 @@ export default function RelatorioContagem({
       return semLinhasRascunhoRelatorio(acc)
     }
     try {
-      return { rows: await pull(cand1), origemAusenteNoResultado: false }
+      const sel = contagensHasFinalizacaoSessaoIdRef.current ? cand1 : cand1SemSess
+      return { rows: await pull(sel), origemAusenteNoResultado: false }
     } catch {
       try {
+        contagensHasFinalizacaoSessaoIdRef.current = false
         return { rows: await pull(cand1SemSess), origemAusenteNoResultado: false }
       } catch {
         return { rows: await pull(cand2), origemAusenteNoResultado: true }

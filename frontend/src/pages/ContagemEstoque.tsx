@@ -475,6 +475,8 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
   const [offlineSession, setOfflineSession] = useState<OfflineSession | null>(null)
   const offlineSessionRef = useRef<OfflineSession | null>(null)
   const loadPreviewRef = useRef<(dayOverride?: string, opts?: { silent?: boolean }) => Promise<void>>(async () => {})
+  /** Evita repetir request 400 por coluna ausente em bancos sem a migração `finalizacao_sessao_id`. */
+  const contagensHasFinalizacaoSessaoIdRef = useRef(true)
   useEffect(() => {
     offlineSessionRef.current = offlineSession
   }, [offlineSession])
@@ -1704,9 +1706,11 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         .order('data_hora_contagem', { ascending: false })
         .limit(2000)
 
-    let { data, error } = await queryPreview(previewSelectFull)
+    const previewSelectInitial = contagensHasFinalizacaoSessaoIdRef.current ? previewSelectFull : previewSelectFullLegacy
+    let { data, error } = await queryPreview(previewSelectInitial)
 
     if (error && isMissingDbColumnError(error, 'finalizacao_sessao_id')) {
+      contagensHasFinalizacaoSessaoIdRef.current = false
       const rSess = await queryPreview(previewSelectFullLegacy)
       data = rSess.data
       error = rSess.error
@@ -1749,8 +1753,11 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
 
     /** Falha comum: embed `conferentes(nome)` bloqueado por RLS — tenta colunas planas (sem join). */
     if (error) {
-      let rFlat = await queryPreview(previewSelectFlatFull)
+      let rFlat = await queryPreview(
+        contagensHasFinalizacaoSessaoIdRef.current ? previewSelectFlatFull : previewSelectFlatFullLegacy,
+      )
       if (rFlat.error && isMissingDbColumnError(rFlat.error, 'finalizacao_sessao_id')) {
+        contagensHasFinalizacaoSessaoIdRef.current = false
         rFlat = await queryPreview(previewSelectFlatFullLegacy)
       } else if (rFlat.error && isMissingDbColumnError(rFlat.error, 'contagem_rascunho')) {
         rFlat = await queryPreview(previewSelectFlatFullBase)
