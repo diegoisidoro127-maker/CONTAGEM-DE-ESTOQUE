@@ -4532,7 +4532,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
             alignItems: 'end',
           }}
         >
-          <label style={{ ...labelStyle, gridColumn: isMobile ? 'auto' : 'span 3' }}>
+          <label style={{ ...labelStyle, gridColumn: isMobile ? 'auto' : 'span 6' }}>
             Data e hora do registro
             <input
               type="datetime-local"
@@ -4551,7 +4551,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
           <label
             style={{
               ...labelStyle,
-              gridColumn: isMobile ? 'auto' : 'span 4',
+              gridColumn: isMobile ? 'auto' : 'span 6',
               minWidth: 0,
             }}
           >
@@ -4571,89 +4571,97 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
               ) : null}
             </select>
           </label>
-          <div
+        </div>
+
+        <div
+          style={{
+            marginTop: 10,
+            display: 'grid',
+            gridTemplateColumns: isMobile ? '1fr' : inventario ? 'repeat(4, minmax(170px, 1fr))' : 'repeat(5, minmax(150px, 1fr))',
+            gap: 10,
+            alignItems: 'stretch',
+            padding: isMobile ? 0 : '10px 12px',
+            borderRadius: 10,
+            border: isMobile ? 'none' : '1px solid var(--border, #4b4b4b)',
+            background: isMobile ? 'transparent' : 'rgba(255,255,255,0.03)',
+          }}
+        >
+          <button
+            type="button"
             style={{
-              gridColumn: isMobile ? 'auto' : 'span 5',
-              display: 'grid',
-              gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, minmax(180px, 1fr))',
-              gap: 10,
-              alignItems: 'stretch',
-              padding: isMobile ? 0 : '8px 10px',
-              borderRadius: 10,
-              border: isMobile ? 'none' : '1px solid var(--border, #4b4b4b)',
-              background: isMobile ? 'transparent' : 'rgba(255,255,255,0.03)',
+              ...buttonStyle,
+              ...checklistActionBtnCarregar,
+              ...(carregarListaDisabled ? { opacity: 0.8, cursor: 'not-allowed', filter: 'grayscale(20%)' } : {}),
+              width: '100%',
+              minHeight: 44,
             }}
+            disabled={carregarListaDisabled}
+            onClick={() => void handleCarregarListaPlanilha()}
           >
+            <span className="app-nav-icon app-nav-icon--bounce" aria-hidden>
+              📥
+            </span>
+            {checklistLoading ? 'Carregando…' : 'Carregar lista'}
+          </button>
+          {!inventario ? (
             <button
               type="button"
               style={{
                 ...buttonStyle,
-                ...checklistActionBtnCarregar,
-                ...(carregarListaDisabled ? { opacity: 0.45, cursor: 'not-allowed' } : {}),
+                background: '#7a2',
+                opacity: finalizing ? 0.75 : 1,
                 width: '100%',
+                minHeight: 44,
               }}
-              disabled={carregarListaDisabled}
-              onClick={() => void handleCarregarListaPlanilha()}
-            >
-              <span className="app-nav-icon app-nav-icon--bounce" aria-hidden>
-                📥
-              </span>
-              {checklistLoading ? 'Carregando lista…' : 'Carregar lista'}
-            </button>
-            {!inventario ? (
-              <button
-                type="button"
-                style={{ ...buttonStyle, background: '#7a2', opacity: finalizing ? 0.55 : 1, width: '100%' }}
-                disabled={finalizing || checklistLoading}
-                onClick={() => handleIniciarContagemDiaDoZero()}
-                title="Abre uma nova checklist em branco para contar novamente no mesmo dia"
-              >
-                <span className="app-nav-icon app-nav-icon--pulse" aria-hidden>
-                  ♻️
-                </span>
-                Iniciar do zero
-              </button>
-            ) : null}
-            <button
-              type="button"
-              style={{ ...buttonStyle, ...checklistActionBtnAtualizar, width: '100%' }}
-              disabled={productOptionsLoading || finalizing}
-              title="Recarrega a tabela Todos os Produtos e reaplica descrição/unidade nas linhas da planilha já preenchidas"
-              onClick={() => void handleAtualizarCadastroProdutos()}
+              disabled={finalizing || checklistLoading}
+              onClick={() => handleIniciarContagemDiaDoZero()}
+              title="Abre uma nova checklist em branco para contar novamente no mesmo dia"
             >
               <span className="app-nav-icon app-nav-icon--pulse" aria-hidden>
-                🔄
+                ♻️
               </span>
-              {productOptionsLoading ? 'Atualizando…' : 'Atualizar cadastro'}
+              Iniciar do zero
             </button>
-            <button
-              type="button"
-              style={{ ...buttonStyle, ...checklistActionBtnLimpar, width: '100%' }}
-              disabled={finalizing}
-              onClick={() => handleDescartarSessaoLocal()}
-            >
-              <span className="app-nav-icon app-nav-icon--float" aria-hidden>
-                🧹
-              </span>
-              Limpar sessão
-            </button>
-            <button
-              type="button"
-              style={{
-                ...buttonStyle,
-                ...checklistActionBtnFinalizar(finalizarListaDisabled, checklistPending),
-                width: '100%',
-                gridColumn: isMobile ? 'auto' : '1 / -1',
-              }}
-              disabled={finalizarListaDisabled}
-              onClick={() => void handleFinalizarContagemDiaria()}
-            >
-              <span className="app-nav-icon app-nav-icon--glow" aria-hidden>
-                {finalizarListaDisabled ? '🔒' : checklistPending > 0 ? '⏳' : '✅'}
-              </span>
-              {finalizing ? 'Finalizando…' : inventario ? 'Finalizar inventário' : 'Finalizar contagem diária'}
-            </button>
-          </div>
+          ) : null}
+          <button
+            type="button"
+            style={{ ...buttonStyle, ...checklistActionBtnAtualizar, width: '100%', minHeight: 44 }}
+            disabled={productOptionsLoading || finalizing}
+            title="Recarrega a tabela Todos os Produtos e reaplica descrição/unidade nas linhas da planilha já preenchidas"
+            onClick={() => void handleAtualizarCadastroProdutos()}
+          >
+            <span className="app-nav-icon app-nav-icon--pulse" aria-hidden>
+              🔄
+            </span>
+            {productOptionsLoading ? 'Atualizando…' : 'Atualizar cadastro'}
+          </button>
+          <button
+            type="button"
+            style={{ ...buttonStyle, ...checklistActionBtnLimpar, width: '100%', minHeight: 44 }}
+            disabled={finalizing}
+            onClick={() => handleDescartarSessaoLocal()}
+          >
+            <span className="app-nav-icon app-nav-icon--float" aria-hidden>
+              🧹
+            </span>
+            Limpar sessão
+          </button>
+          <button
+            type="button"
+            style={{
+              ...buttonStyle,
+              ...checklistActionBtnFinalizar(finalizarListaDisabled, checklistPending),
+              width: '100%',
+              minHeight: 44,
+            }}
+            disabled={finalizarListaDisabled}
+            onClick={() => void handleFinalizarContagemDiaria()}
+          >
+            <span className="app-nav-icon app-nav-icon--glow" aria-hidden>
+              {finalizarListaDisabled ? '🔒' : checklistPending > 0 ? '⏳' : '✅'}
+            </span>
+            {finalizing ? 'Finalizando…' : inventario ? 'Finalizar inventário' : 'Finalizar contagem diária'}
+          </button>
         </div>
 
         {finalizeProgress ? (
