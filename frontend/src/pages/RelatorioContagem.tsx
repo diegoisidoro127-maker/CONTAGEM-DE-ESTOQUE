@@ -217,6 +217,70 @@ type RelatorioContagemProps = {
   listColumnPrefsInventario?: boolean
 }
 
+const relPanelStyle: React.CSSProperties = {
+  marginTop: 16,
+  padding: 16,
+  border: '1px solid var(--border, #ccc)',
+  borderRadius: 10,
+  background: 'var(--panel-bg, rgba(0,0,0,.04))',
+}
+
+const relToolbarLabelStyle: React.CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 6,
+  fontSize: 13,
+}
+
+const relToolbarInputStyle: React.CSSProperties = {
+  padding: '10px 10px',
+  border: '1px solid #ccc',
+  borderRadius: 8,
+  width: '100%',
+  boxSizing: 'border-box',
+}
+
+const relToolbarBtnRow: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  gap: 8,
+}
+
+const relBtnCarregar: React.CSSProperties = {
+  ...relToolbarBtnRow,
+  background: 'linear-gradient(180deg, #4f8eff 0%, #2f6fdf 100%)',
+  border: '1px solid #7fb0ff',
+  color: '#f4f9ff',
+  fontWeight: 700,
+}
+
+const relBtnExcel: React.CSSProperties = {
+  ...relToolbarBtnRow,
+  background: 'linear-gradient(180deg, #66bb6a 0%, #2e7d32 100%)',
+  border: '1px solid #a5d6a7',
+  color: '#fff',
+  fontWeight: 700,
+}
+
+const relBtnBaseExport: React.CSSProperties = {
+  ...relToolbarBtnRow,
+  background: 'linear-gradient(180deg, #42a5f5 0%, #1976d2 100%)',
+  border: '1px solid #90caf9',
+  color: '#fff',
+  fontWeight: 700,
+}
+
+const relBtnDark: React.CSSProperties = {
+  padding: '10px 14px',
+  borderRadius: 8,
+  border: '1px solid #222',
+  background: '#111',
+  color: 'white',
+  cursor: 'pointer',
+  minHeight: 40,
+}
+
 export default function RelatorioContagem({
   mode = 'periodo',
   listColumnPrefsInventario = false,
@@ -227,6 +291,15 @@ export default function RelatorioContagem({
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editingQuantidade, setEditingQuantidade] = useState<string>('')
   const [rowActionLoading, setRowActionLoading] = useState(false)
+
+  const [isMobile, setIsMobile] = useState(
+    () => typeof window !== 'undefined' && window.innerWidth <= 900,
+  )
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth <= 900)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
 
   /** Preferências de colunas: inventário vs contagem diária (toggle ou valor vindo do App). */
   const [useInventarioCols, setUseInventarioCols] = useState(listColumnPrefsInventario)
@@ -1479,15 +1552,7 @@ export default function RelatorioContagem({
       <h2>{isDiaMode ? 'Todas as contagens' : 'Relatório completo por data de contagem'}</h2>
 
       {isDiaMode ? (
-        <section
-          style={{
-            marginTop: 16,
-            padding: 14,
-            borderRadius: 10,
-            border: '1px solid var(--border, #ddd)',
-            background: 'var(--surface, #f9f9f9)',
-          }}
-        >
+        <section style={relPanelStyle}>
           <div
             style={{
               display: 'flex',
@@ -1495,31 +1560,23 @@ export default function RelatorioContagem({
               alignItems: 'center',
               justifyContent: 'space-between',
               gap: 10,
-              marginBottom: 10,
+              marginBottom: 12,
             }}
           >
-            <h3 style={{ margin: 0, fontSize: 16 }}>Histórico de contagens</h3>
+            <h3 style={{ margin: 0, fontSize: 18 }}>Histórico de contagens</h3>
             <button
               type="button"
               onClick={() => void loadHistoricoContagens()}
               disabled={historicoLoading}
               style={{
-                padding: '6px 12px',
-                borderRadius: 8,
-                border: '1px solid #ccc',
-                background: '#fff',
+                ...relBtnDark,
                 cursor: historicoLoading ? 'wait' : 'pointer',
-                fontSize: 12,
+                opacity: historicoLoading ? 0.85 : 1,
               }}
             >
               {historicoLoading ? 'Atualizando…' : 'Atualizar histórico'}
             </button>
           </div>
-          <p style={{ margin: '0 0 12px', fontSize: 12, color: 'var(--text-muted, #888)', lineHeight: 1.45 }}>
-            Contagens diárias agrupadas por conferente, dia civil e cada finalização (o mesmo conferente pode aparecer
-            mais de uma vez no mesmo dia). A coluna «Hora do registro» usa o horário gravado em cada lançamento (primeiro
-            ao último do dia, se houver vários). Use «Ver contagem» para abrir o detalhe filtrado.
-          </p>
           {historicoError ? <div style={{ color: '#b00020', marginBottom: 8 }}>{historicoError}</div> : null}
           {historicoLoading && historicoItems.length === 0 ? (
             <div style={{ fontSize: 13, color: '#666' }}>Carregando histórico…</div>
@@ -1568,177 +1625,238 @@ export default function RelatorioContagem({
       ) : null}
 
       <div ref={listaRelatorioRef} style={{ display: 'grid', gap: 12, marginTop: 12 }}>
-        <label
-          style={{
-            display: 'flex',
-            alignItems: 'flex-start',
-            gap: 10,
-            fontSize: 13,
-            cursor: 'pointer',
-            maxWidth: 720,
-            lineHeight: 1.45,
-          }}
-        >
-          <input
-            type="checkbox"
-            checked={useInventarioCols}
-            onChange={(e) => setUseInventarioCols(e.target.checked)}
-            style={{ marginTop: 3 }}
-          />
-          <span>
-            Usar colunas da tela <strong>Inventário</strong> (Câmara, Rua, POS, Nível, rodada). Desmarcado ={' '}
-            <strong>Contagem diária</strong> (sem «Nº contagem (inventário)» nesta linha de filtros).
-          </span>
-        </label>
-        <p style={{ fontSize: 13, color: 'var(--text, #666)', marginTop: 0, maxWidth: 720, lineHeight: 1.45 }}>
-          Mesmas colunas que a lista — controle em <strong>Ocultar/mostrar colunas</strong> na tela correspondente.
-        </p>
+        <section style={{ ...relPanelStyle, marginTop: 0 }}>
+          <h3 style={{ margin: '0 0 10px', fontSize: 18 }}>
+            {isDiaMode ? 'Filtros da lista' : 'Relatório — filtros e exportação'}
+          </h3>
 
-        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-          <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13 }}>
-            Início
-            <input
-              type="date"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              disabled={allTime || useSingleDay}
-              style={{ padding: '10px 10px', border: '1px solid #ccc', borderRadius: 8 }}
-            />
-          </label>
-
-          <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13 }}>
-            Fim
-            <input
-              type="date"
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-              disabled={allTime || useSingleDay}
-              style={{ padding: '10px 10px', border: '1px solid #ccc', borderRadius: 8 }}
-            />
-          </label>
-
-          <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13 }}>
-            <input
-              type="checkbox"
-              checked={allTime}
-              disabled={useSingleDay}
-              onChange={(e) => {
-                const v = e.target.checked
-                setAllTime(v)
-                if (v) setUseSingleDay(false)
-              }}
-            />
-            Carregar todas as datas
-          </label>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13 }}>
-              <input
-                type="checkbox"
-                checked={useSingleDay}
-                onChange={(e) => {
-                  const v = e.target.checked
-                  setUseSingleDay(v)
-                  if (v) setAllTime(false)
-                }}
-              />
-              Filtrar por dia
-            </div>
-            <input
-              type="date"
-              value={singleDay}
-              onChange={(e) => setSingleDay(e.target.value)}
-              disabled={!useSingleDay}
-              style={{ padding: '10px 10px', border: '1px solid #ccc', borderRadius: 8 }}
-            />
-          </div>
-
-          {/* Relatório completo e Todas as contagens compartilham este formulário (mode periodo | dia). */}
-          {useInventarioCols ? (
-            <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13 }}>
-              Nº contagem (inventário)
-              <select
-                value={numeroContagemFilter}
-                onChange={(e) => setNumeroContagemFilter(e.target.value as typeof numeroContagemFilter)}
-                style={{
-                  padding: '10px 10px',
-                  border: '1px solid #ccc',
-                  borderRadius: 8,
-                  minWidth: 160,
-                }}
-                title="Filtra pela rodada do inventário (1ª a 4ª)."
-              >
-                <option value="todas">Todas</option>
-                <option value="1">1ª contagem</option>
-                <option value="2">2ª contagem</option>
-                <option value="3">3ª contagem</option>
-                <option value="4">4ª contagem</option>
-              </select>
-            </label>
-          ) : null}
-
-          <button
-            type="button"
-            onClick={load}
-            disabled={loading}
+          <label
             style={{
-              padding: '10px 14px',
-              borderRadius: 8,
-              border: '1px solid #222',
-              background: '#111',
-              color: 'white',
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: 10,
+              fontSize: 13,
               cursor: 'pointer',
-              height: 40,
+              maxWidth: 900,
+              lineHeight: 1.45,
+              marginBottom: 12,
             }}
           >
-            {loading ? 'Carregando...' : `Carregar (${dateRangeText})`}
-          </button>
+            <input
+              type="checkbox"
+              checked={useInventarioCols}
+              onChange={(e) => setUseInventarioCols(e.target.checked)}
+              style={{ marginTop: 3 }}
+            />
+            <span>
+              Usar colunas da tela <strong>Inventário</strong> (Câmara, Rua, POS, Nível, rodada). Desmarcado ={' '}
+              <strong>Contagem diária</strong>.
+            </span>
+          </label>
 
-          {showExportExcel ? (
-            <>
-              <button
-                type="button"
-                onClick={() => void exportToExcel()}
-                disabled={loading || exportExcelLoading}
-                style={{
-                  padding: '10px 14px',
-                  borderRadius: 8,
-                  border: '1px solid #1b5e20',
-                  background: '#2e7d32',
-                  color: 'white',
-                  cursor: loading || exportExcelLoading ? 'not-allowed' : 'pointer',
-                  height: 40,
-                  opacity: loading || exportExcelLoading ? 0.5 : 1,
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: isMobile ? '1fr' : 'repeat(12, minmax(0, 1fr))',
+              gap: 12,
+              alignItems: 'end',
+              marginBottom: 12,
+            }}
+          >
+            <label
+              style={{
+                ...relToolbarLabelStyle,
+                gridColumn: isMobile ? 'auto' : useInventarioCols ? 'span 4' : 'span 6',
+              }}
+            >
+              Início
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                disabled={allTime || useSingleDay}
+                style={relToolbarInputStyle}
+              />
+            </label>
+
+            <label
+              style={{
+                ...relToolbarLabelStyle,
+                gridColumn: isMobile ? 'auto' : useInventarioCols ? 'span 4' : 'span 6',
+              }}
+            >
+              Fim
+              <input
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                disabled={allTime || useSingleDay}
+                style={relToolbarInputStyle}
+              />
+            </label>
+
+            {useInventarioCols ? (
+              <label style={{ ...relToolbarLabelStyle, gridColumn: isMobile ? 'auto' : 'span 4' }}>
+                Nº contagem (inventário)
+                <select
+                  value={numeroContagemFilter}
+                  onChange={(e) => setNumeroContagemFilter(e.target.value as typeof numeroContagemFilter)}
+                  style={relToolbarInputStyle}
+                  title="Filtra pela rodada do inventário (1ª a 4ª)."
+                >
+                  <option value="todas">Todas</option>
+                  <option value="1">1ª contagem</option>
+                  <option value="2">2ª contagem</option>
+                  <option value="3">3ª contagem</option>
+                  <option value="4">4ª contagem</option>
+                </select>
+              </label>
+            ) : null}
+          </div>
+
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: isMobile ? '1fr' : 'repeat(12, minmax(0, 1fr))',
+              gap: 12,
+              alignItems: 'end',
+              marginBottom: 12,
+            }}
+          >
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                fontSize: 13,
+                gridColumn: isMobile ? 'auto' : 'span 4',
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={allTime}
+                disabled={useSingleDay}
+                onChange={(e) => {
+                  const v = e.target.checked
+                  setAllTime(v)
+                  if (v) setUseSingleDay(false)
                 }}
-                title={
-                  !useInventarioCols && isExportUmDiaCivil
-                    ? 'Exporta o dia com uma aba por conferente (contagem diária). Períodos com vários dias ou modo Inventário: uma aba «Contagens».'
-                    : 'Busca de novo no banco todos os registros do filtro (data, nº contagem, etc.) e gera o .xlsx completo — não só a página visível na tela.'
-                }
-              >
-                {exportExcelLoading ? 'Exportando…' : 'Exportar Excel'}
-              </button>
-              <button
-                type="button"
-                onClick={() => void exportProdutosBaseExcel()}
-                disabled={baseExportLoading}
-                style={{
-                  padding: '10px 14px',
-                  borderRadius: 8,
-                  border: '1px solid #1565c0',
-                  background: '#1976d2',
-                  color: 'white',
-                  cursor: baseExportLoading ? 'wait' : 'pointer',
-                  height: 40,
-                  opacity: baseExportLoading ? 0.7 : 1,
-                }}
-                title="Baixar planilha .xlsx da base Todos os Produtos (códigos, EAN, DUN e datas de alteração), sem filtro de data"
-              >
-                {baseExportLoading ? 'Exportando…' : 'Exportar Relatorio Alteração DUN/EAN'}
-              </button>
-            </>
-          ) : null}
-        </div>
+              />
+              Carregar todas as datas
+            </label>
+
+            <div
+              style={{
+                gridColumn: isMobile ? 'auto' : 'span 8',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 6,
+                fontSize: 13,
+              }}
+            >
+              <label style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <input
+                  type="checkbox"
+                  checked={useSingleDay}
+                  onChange={(e) => {
+                    const v = e.target.checked
+                    setUseSingleDay(v)
+                    if (v) setAllTime(false)
+                  }}
+                />
+                Filtrar por dia
+              </label>
+              <input
+                type="date"
+                value={singleDay}
+                onChange={(e) => setSingleDay(e.target.value)}
+                disabled={!useSingleDay}
+                style={relToolbarInputStyle}
+              />
+            </div>
+          </div>
+
+          <div
+            style={{
+              marginTop: 10,
+              display: 'grid',
+              gridTemplateColumns: isMobile
+                ? '1fr'
+                : showExportExcel
+                  ? 'repeat(3, minmax(150px, 1fr))'
+                  : 'repeat(1, minmax(200px, 1fr))',
+              gap: 10,
+              alignItems: 'stretch',
+              padding: isMobile ? 0 : '10px 12px',
+              borderRadius: 10,
+              border: isMobile ? 'none' : '1px solid var(--border, #4b4b4b)',
+              background: isMobile ? 'transparent' : 'rgba(255,255,255,0.03)',
+            }}
+          >
+            <button
+              type="button"
+              onClick={load}
+              disabled={loading}
+              style={{
+                ...relBtnCarregar,
+                width: '100%',
+                minHeight: 44,
+                cursor: loading ? 'wait' : 'pointer',
+                opacity: loading ? 0.85 : 1,
+              }}
+            >
+              <span className="app-nav-icon app-nav-icon--bounce" aria-hidden>
+                📥
+              </span>
+              {loading ? 'Carregando...' : `Carregar (${dateRangeText})`}
+            </button>
+
+            {showExportExcel ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => void exportToExcel()}
+                  disabled={loading || exportExcelLoading}
+                  style={{
+                    ...relBtnExcel,
+                    width: '100%',
+                    minHeight: 44,
+                    cursor: loading || exportExcelLoading ? 'not-allowed' : 'pointer',
+                    opacity: loading || exportExcelLoading ? 0.5 : 1,
+                  }}
+                  title={
+                    !useInventarioCols && isExportUmDiaCivil
+                      ? 'Exporta o dia com uma aba por conferente (contagem diária). Períodos com vários dias ou modo Inventário: uma aba «Contagens».'
+                      : 'Busca de novo no banco todos os registros do filtro (data, nº contagem, etc.) e gera o .xlsx completo — não só a página visível na tela.'
+                  }
+                >
+                  <span className="app-nav-icon app-nav-icon--pulse" aria-hidden>
+                    📊
+                  </span>
+                  {exportExcelLoading ? 'Exportando…' : 'Exportar Excel'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void exportProdutosBaseExcel()}
+                  disabled={baseExportLoading}
+                  style={{
+                    ...relBtnBaseExport,
+                    width: '100%',
+                    minHeight: 44,
+                    cursor: baseExportLoading ? 'wait' : 'pointer',
+                    opacity: baseExportLoading ? 0.7 : 1,
+                  }}
+                  title="Baixar planilha .xlsx da base Todos os Produtos (códigos, EAN, DUN e datas de alteração), sem filtro de data"
+                >
+                  <span className="app-nav-icon app-nav-icon--pulse" aria-hidden>
+                    📄
+                  </span>
+                  {baseExportLoading ? 'Exportando…' : 'Exportar Relatorio Alteração DUN/EAN'}
+                </button>
+              </>
+            ) : null}
+          </div>
+        </section>
 
         {error ? <div style={{ color: '#b00020' }}>{error}</div> : null}
         {success ? <div style={{ color: '#0f7a0f' }}>{success}</div> : null}

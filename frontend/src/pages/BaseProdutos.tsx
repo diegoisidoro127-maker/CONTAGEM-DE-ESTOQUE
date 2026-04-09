@@ -63,6 +63,68 @@ function matchesBarcode(stored: string | null | undefined, scanned: string): boo
   return false
 }
 
+const basePanelStyle: React.CSSProperties = {
+  marginTop: 16,
+  padding: 16,
+  border: '1px solid var(--border, #ccc)',
+  borderRadius: 10,
+  background: 'var(--panel-bg, rgba(0,0,0,.04))',
+}
+
+const baseToolbarLabelStyle: React.CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 6,
+  fontSize: 13,
+}
+
+const baseToolbarInputStyle: React.CSSProperties = {
+  padding: '10px 10px',
+  border: '1px solid #ccc',
+  borderRadius: 8,
+  width: '100%',
+  boxSizing: 'border-box',
+}
+
+const baseToolbarBtnRow: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  gap: 8,
+}
+
+const baseBtnCarregar: React.CSSProperties = {
+  ...baseToolbarBtnRow,
+  background: 'linear-gradient(180deg, #4f8eff 0%, #2f6fdf 100%)',
+  border: '1px solid #7fb0ff',
+  color: '#f4f9ff',
+  fontWeight: 700,
+}
+
+const baseBtnCadastrar: React.CSSProperties = {
+  ...baseToolbarBtnRow,
+  background: 'linear-gradient(180deg, #66bb6a 0%, #2e7d32 100%)',
+  border: '1px solid #a5d6a7',
+  color: '#fff',
+  fontWeight: 700,
+}
+
+const baseBtnBuscar: React.CSSProperties = {
+  ...baseToolbarBtnRow,
+  background: 'linear-gradient(180deg, #42a5f5 0%, #1976d2 100%)',
+  border: '1px solid #90caf9',
+  color: '#fff',
+  fontWeight: 700,
+}
+
+const baseBtnLimparBip: React.CSSProperties = {
+  ...baseToolbarBtnRow,
+  background: 'linear-gradient(180deg, #ffb74d 0%, #ef6c00 100%)',
+  border: '1px solid #ffcc80',
+  color: '#1f1200',
+  fontWeight: 700,
+}
+
 function isColumnMissingError(e: unknown): boolean {
   const code =
     e && typeof e === 'object' && 'code' in e ? String((e as { code: unknown }).code) : ''
@@ -528,76 +590,65 @@ export default function BaseProdutos() {
   return (
     <div style={{ padding: 16, maxWidth: 1200, margin: '0 auto' }}>
       <h2 style={{ margin: '0 0 8px' }}>Base de dados — Todos os Produtos</h2>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end', marginBottom: 16 }}>
-        <button
-          type="button"
-          onClick={() => void load()}
-          disabled={loading}
-          style={{
-            padding: '10px 16px',
-            borderRadius: 8,
-            border: '1px solid #222',
-            background: '#111',
-            color: '#fff',
-            cursor: loading ? 'wait' : 'pointer',
-          }}
-        >
-          {loading ? 'Carregando…' : 'Carregar / atualizar lista'}
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            setCadastroOpen((v) => !v)
-            setError('')
-          }}
-          style={{
-            padding: '10px 16px',
-            borderRadius: 8,
-            border: '1px solid #1b5e20',
-            background: '#2e7d32',
-            color: '#fff',
-            cursor: 'pointer',
-          }}
-        >
-          {cadastroOpen ? 'Fechar cadastro' : 'Cadastrar produtos'}
-        </button>
-        <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 13 }}>
-          Filtrar código
-          <input
-            value={filterCodigo}
-            onChange={(e) => {
-              setFilterCodigo(e.target.value)
-              setBipSoloKey(null)
-              setPage(1)
-              setShowAll(false)
-            }}
-            style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid #ccc', minWidth: 160 }}
-            placeholder="código"
-          />
-        </label>
-        <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 13, flex: '1 1 200px' }}>
-          Filtrar descrição
-          <input
-            value={filterDescricao}
-            onChange={(e) => {
-              setFilterDescricao(e.target.value)
-              setBipSoloKey(null)
-              setPage(1)
-              setShowAll(false)
-            }}
-            style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid #ccc', width: '100%' }}
-            placeholder="descrição"
-          />
-        </label>
-      </div>
 
-      <div style={{ width: '100%', marginBottom: 16 }}>
-        <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13 }}>
-          <span style={{ color: 'var(--text, #ccc)' }}>
-            <strong>Bipar EAN ou DUN</strong> — mostra só esse produto na lista e abre para edição.{' '}
-            <strong>Limpar</strong> ou campo vazio: lista completa de novo.
-          </span>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+      <section style={{ ...basePanelStyle, marginTop: 0 }}>
+        <h3 style={{ margin: '0 0 10px', fontSize: 18 }}>Consulta, filtros e bip</h3>
+
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: isMobile ? '1fr' : 'repeat(12, minmax(0, 1fr))',
+            gap: 12,
+            alignItems: 'end',
+            marginBottom: 12,
+          }}
+        >
+          <label style={{ ...baseToolbarLabelStyle, gridColumn: isMobile ? 'auto' : 'span 4' }}>
+            Filtrar código
+            <input
+              value={filterCodigo}
+              onChange={(e) => {
+                setFilterCodigo(e.target.value)
+                setBipSoloKey(null)
+                setPage(1)
+                setShowAll(false)
+              }}
+              style={{ ...baseToolbarInputStyle, minWidth: 0 }}
+              placeholder="código"
+            />
+          </label>
+          <label style={{ ...baseToolbarLabelStyle, gridColumn: isMobile ? 'auto' : 'span 8' }}>
+            Filtrar descrição
+            <input
+              value={filterDescricao}
+              onChange={(e) => {
+                setFilterDescricao(e.target.value)
+                setBipSoloKey(null)
+                setPage(1)
+                setShowAll(false)
+              }}
+              style={baseToolbarInputStyle}
+              placeholder="descrição"
+            />
+          </label>
+        </div>
+
+        <div style={{ marginBottom: 12 }}>
+          <label style={{ ...baseToolbarLabelStyle, marginBottom: 6 }}>
+            Bipar EAN ou DUN
+            <span style={{ fontSize: 12, fontWeight: 400, color: 'var(--text-muted, #888)' }}>
+              {' '}
+              — mostra só esse produto e abre para edição; limpar volta à lista completa.
+            </span>
+          </label>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: isMobile ? '1fr' : 'minmax(0, 1fr) auto auto',
+              gap: 10,
+              alignItems: 'stretch',
+            }}
+          >
             <input
               ref={bipInputRef}
               value={bipCodigoBarras}
@@ -619,16 +670,14 @@ export default function BaseProdutos() {
               autoComplete="off"
               placeholder="Aponte o leitor aqui e bip — ou digite e Enter"
               style={{
+                ...baseToolbarInputStyle,
                 padding: '10px 12px',
-                borderRadius: 8,
                 border: '1px solid var(--border, #555)',
-                flex: '1 1 260px',
-                minWidth: 200,
-                maxWidth: 480,
                 fontSize: 15,
                 fontFamily: 'monospace',
                 background: 'var(--input-bg, #1a1a1a)',
                 color: 'var(--text, #eee)',
+                minHeight: 44,
               }}
               aria-label="Buscar produto por código EAN ou DUN"
             />
@@ -637,13 +686,11 @@ export default function BaseProdutos() {
               onClick={() => buscarPorBipEanDun()}
               disabled={loading}
               style={{
-                padding: '10px 18px',
-                borderRadius: 8,
-                border: '1px solid #1565c0',
-                background: '#1976d2',
-                color: '#fff',
+                ...baseBtnBuscar,
+                minHeight: 44,
                 cursor: loading ? 'wait' : 'pointer',
-                fontSize: 13,
+                opacity: loading ? 0.85 : 1,
+                padding: '0 14px',
               }}
             >
               Buscar
@@ -653,21 +700,68 @@ export default function BaseProdutos() {
               onClick={() => limparBipEFiltroSolo()}
               disabled={loading}
               style={{
-                padding: '10px 18px',
-                borderRadius: 8,
-                border: '1px solid #666',
-                background: 'transparent',
-                color: 'var(--text, #eee)',
+                ...baseBtnLimparBip,
+                minHeight: 44,
                 cursor: loading ? 'wait' : 'pointer',
-                fontSize: 13,
+                opacity: loading ? 0.85 : 1,
+                padding: '0 14px',
               }}
               title="Mostrar todos os produtos de novo"
             >
               Limpar
             </button>
           </div>
-        </label>
-      </div>
+        </div>
+
+        <div
+          style={{
+            marginTop: 10,
+            display: 'grid',
+            gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, minmax(150px, 1fr))',
+            gap: 10,
+            alignItems: 'stretch',
+            padding: isMobile ? 0 : '10px 12px',
+            borderRadius: 10,
+            border: isMobile ? 'none' : '1px solid var(--border, #4b4b4b)',
+            background: isMobile ? 'transparent' : 'rgba(255,255,255,0.03)',
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => void load()}
+            disabled={loading}
+            style={{
+              ...baseBtnCarregar,
+              width: '100%',
+              minHeight: 44,
+              cursor: loading ? 'wait' : 'pointer',
+              opacity: loading ? 0.85 : 1,
+            }}
+          >
+            <span className="app-nav-icon app-nav-icon--bounce" aria-hidden>
+              📥
+            </span>
+            {loading ? 'Carregando…' : 'Carregar / atualizar lista'}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setCadastroOpen((v) => !v)
+              setError('')
+            }}
+            style={{
+              ...baseBtnCadastrar,
+              width: '100%',
+              minHeight: 44,
+            }}
+          >
+            <span className="app-nav-icon app-nav-icon--pulse" aria-hidden>
+              ➕
+            </span>
+            {cadastroOpen ? 'Fechar cadastro' : 'Cadastrar produtos'}
+          </button>
+        </div>
+      </section>
 
       {cadastroOpen ? (
         <div
