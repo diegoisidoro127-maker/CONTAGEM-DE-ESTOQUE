@@ -273,8 +273,8 @@ export default function RelatorioContagem({
   const prevLoadingRef = useRef(false)
   const [baseExportLoading, setBaseExportLoading] = useState(false)
   const [exportExcelLoading, setExportExcelLoading] = useState(false)
-  /** Contagem diária: filtra a tabela por conferente (`__todos__` = sem filtro). */
-  const [relatorioConferenteFiltroLista, setRelatorioConferenteFiltroLista] = useState<string>('__todos__')
+  /** Contagem diária: qual conferente exibir na coluna quantidade/nome (mesma ideia da prévia em Contagem). */
+  const [relatorioConferenteFiltroLista, setRelatorioConferenteFiltroLista] = useState<string>('')
 
   /** Só em “Todas as contagens”: histórico agregado + filtro vindo de “Ver contagem”. */
   const [historicoItems, setHistoricoItems] = useState<HistoricoContagemItem[]>([])
@@ -299,40 +299,6 @@ export default function RelatorioContagem({
     [allTime, useSingleDay, startDate, endDate],
   )
 
-  const relatorioQuantidadeExibida = useCallback((r: ContagemRow) => {
-    if (useInventarioCols || !r.preview_conferentes_detalhe || r.preview_conferentes_detalhe.length <= 1) {
-      return r.quantidade_up
-    }
-    const part = r.preview_conferentes_detalhe.find(
-      (d) => d.conferente_id === relatorioConferenteFiltroLista,
-    )
-    if (relatorioConferenteFiltroLista !== '__todos__' && part) return part.quantidade_up
-    return r.quantidade_up
-  }, [useInventarioCols, relatorioConferenteFiltroLista])
-
-  const relatorioSourceIdsParaAcao = useCallback(
-    (r: ContagemRow) => {
-      const ids = r.source_ids?.length ? r.source_ids : [r.id]
-      if (useInventarioCols || !r.preview_conferentes_detalhe || r.preview_conferentes_detalhe.length <= 1) {
-        return ids
-      }
-      if (relatorioConferenteFiltroLista === '__todos__') return ids
-      const part = r.preview_conferentes_detalhe.find((d) => d.conferente_id === relatorioConferenteFiltroLista)
-      return part?.source_ids?.length ? part.source_ids : ids
-    },
-    [useInventarioCols, relatorioConferenteFiltroLista],
-  )
-
-  const relatorioPodeEditarQuantidade = useCallback(
-    (r: ContagemRow) => {
-      if (useInventarioCols) return true
-      const det = r.preview_conferentes_detalhe
-      if (!det || det.length <= 1) return true
-      return relatorioConferenteFiltroLista !== '__todos__'
-    },
-    [useInventarioCols, relatorioConferenteFiltroLista],
-  )
-
   const conferentesRelatorioOpcoes = useMemo(() => {
     if (useInventarioCols) return [] as Array<{ id: string; nome: string }>
     const map = new Map<string, string>()
@@ -352,18 +318,63 @@ export default function RelatorioContagem({
       .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
   }, [rows, useInventarioCols])
 
-  useEffect(() => {
-    if (relatorioConferenteFiltroLista === '__todos__') return
-    if (!conferentesRelatorioOpcoes.some((o) => o.id === relatorioConferenteFiltroLista)) {
-      setRelatorioConferenteFiltroLista('__todos__')
+  const relatorioConferenteFiltroEfetivo = useMemo(() => {
+    if (useInventarioCols) return ''
+    if (conferentesRelatorioOpcoes.length === 0) return ''
+    if (conferentesRelatorioOpcoes.some((o) => o.id === relatorioConferenteFiltroLista)) {
+      return relatorioConferenteFiltroLista
     }
-  }, [conferentesRelatorioOpcoes, relatorioConferenteFiltroLista])
+    return conferentesRelatorioOpcoes[0].id
+  }, [useInventarioCols, conferentesRelatorioOpcoes, relatorioConferenteFiltroLista])
 
-  const rowsFiltradosLista = useMemo(() => {
-    if (useInventarioCols || relatorioConferenteFiltroLista === '__todos__') return rows
-    const fid = String(relatorioConferenteFiltroLista).trim()
-    return rows.filter((r) => String(r.conferente_id ?? '').trim() === fid)
-  }, [rows, useInventarioCols, relatorioConferenteFiltroLista])
+  useEffect(() => {
+    if (useInventarioCols) return
+    if (conferentesRelatorioOpcoes.length === 0) return
+    const want = conferentesRelatorioOpcoes.some((o) => o.id === relatorioConferenteFiltroLista)
+      ? relatorioConferenteFiltroLista
+      : conferentesRelatorioOpcoes[0].id
+    if (relatorioConferenteFiltroLista !== want) setRelatorioConferenteFiltroLista(want)
+  }, [useInventarioCols, conferentesRelatorioOpcoes, relatorioConferenteFiltroLista])
+
+  const relatorioQuantidadeExibida = useCallback(
+    (r: ContagemRow) => {
+      if (useInventarioCols || !r.preview_conferentes_detalhe || r.preview_conferentes_detalhe.length <= 1) {
+        return r.quantidade_up
+      }
+      const fid = relatorioConferenteFiltroEfetivo
+      if (!fid) return r.quantidade_up
+      const part = r.preview_conferentes_detalhe.find((d) => d.conferente_id === fid)
+      return part ? part.quantidade_up : r.quantidade_up
+    },
+    [useInventarioCols, relatorioConferenteFiltroEfetivo],
+  )
+
+  const relatorioSourceIdsParaAcao = useCallback(
+    (r: ContagemRow) => {
+      const ids = r.source_ids?.length ? r.source_ids : [r.id]
+      if (useInventarioCols || !r.preview_conferentes_detalhe || r.preview_conferentes_detalhe.length <= 1) {
+        return ids
+      }
+      const fid = relatorioConferenteFiltroEfetivo
+      if (!fid) return ids
+      const part = r.preview_conferentes_detalhe.find((d) => d.conferente_id === fid)
+      return part?.source_ids?.length ? part.source_ids : ids
+    },
+    [useInventarioCols, relatorioConferenteFiltroEfetivo],
+  )
+
+  const relatorioPodeEditarQuantidade = useCallback(
+    (r: ContagemRow) => {
+      if (useInventarioCols) return true
+      const det = r.preview_conferentes_detalhe
+      if (!det || det.length <= 1) return true
+      const fid = relatorioConferenteFiltroEfetivo
+      return Boolean(fid && det.some((d) => d.conferente_id === fid))
+    },
+    [useInventarioCols, relatorioConferenteFiltroEfetivo],
+  )
+
+  const rowsFiltradosLista = useMemo(() => rows, [rows])
 
   useEffect(() => {
     setRelatorioPage(1)
@@ -1028,7 +1039,7 @@ export default function RelatorioContagem({
     setSingleDay(item.dataYmd)
     setUseInventarioCols(false)
     setConferenteFiltroHistorico(item.conferenteId == null ? '__sem__' : item.conferenteId)
-    setRelatorioConferenteFiltroLista('__todos__')
+    setRelatorioConferenteFiltroLista(item.conferenteId != null ? String(item.conferenteId) : '')
     setLoading(true)
     setError('')
     setSuccess('')
@@ -1073,7 +1084,6 @@ export default function RelatorioContagem({
     setError('')
     setSuccess('')
     setRows([])
-    setRelatorioConferenteFiltroLista('__todos__')
     try {
       const { rows: data, successMessage, origemAusenteNoResultado } = await fetchRelatorioContagemRows()
       let dataForPrevia = data
@@ -1101,7 +1111,10 @@ export default function RelatorioContagem({
       row &&
       row.preview_conferentes_detalhe &&
       row.preview_conferentes_detalhe.length > 1 &&
-      relatorioConferenteFiltroLista !== '__todos__'
+      Boolean(
+        relatorioConferenteFiltroEfetivo &&
+          row.preview_conferentes_detalhe.some((d) => d.conferente_id === relatorioConferenteFiltroEfetivo),
+      )
     const msg = excluiSoUmConferente
       ? `Excluir ${idsToDelete.length} registro(s) deste conferente no banco?`
       : idsToDelete.length > 1
@@ -1237,13 +1250,17 @@ export default function RelatorioContagem({
         row.push(formatRodadaRelatorioCell(r.inventario_numero_contagem))
       }
       {
-        const nome = conferenteNomeRelatorio(r)
+        let nome = conferenteNomeRelatorio(r)
+        if (!useInventarioCols && r.preview_conferentes_detalhe && r.preview_conferentes_detalhe.length > 1) {
+          const p = r.preview_conferentes_detalhe.find((d) => d.conferente_id === relatorioConferenteFiltroEfetivo)
+          if (p?.conferente_nome) nome = p.conferente_nome
+        }
         row.push(nome === '—' ? '' : nome)
       }
       if (prevCol('codigo')) row.push(r.codigo_interno)
       if (prevCol('descricao')) row.push(r.descricao)
       if (prevCol('unidade')) row.push(r.unidade_medida ?? '')
-      if (prevCol('quantidade')) row.push(r.quantidade_up)
+      if (prevCol('quantidade')) row.push(relatorioQuantidadeExibida(r))
       if (prevCol('data_fabricacao'))
         row.push(r.data_fabricacao ? formatDateBR(String(r.data_fabricacao).slice(0, 10)) : '')
       if (prevCol('data_validade'))
@@ -1463,8 +1480,8 @@ export default function RelatorioContagem({
         style={{
           display: 'flex',
           flexWrap: 'wrap',
-          alignItems: 'center',
-          gap: 10,
+          alignItems: 'flex-start',
+          gap: 12,
           marginBottom: 8,
           padding: '10px 12px',
           borderRadius: 8,
@@ -1472,33 +1489,50 @@ export default function RelatorioContagem({
           background: 'rgba(25, 118, 210, 0.08)',
         }}
       >
-        <label
-          htmlFor="relatorio-conferente-global"
-          style={{ fontSize: 13, fontWeight: 600, color: 'var(--text, #333)' }}
-        >
-          Conferente na lista (todas as linhas)
-        </label>
-        <select
-          id="relatorio-conferente-global"
-          value={relatorioConferenteFiltroLista}
-          onChange={(e) => setRelatorioConferenteFiltroLista(e.target.value)}
+        <div style={{ flex: '1 1 240px', minWidth: 0 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted, #555)', marginBottom: 6 }}>
+            Conferentes com contagem nesta lista
+          </div>
+          <div style={{ fontSize: 13, lineHeight: 1.45, color: 'var(--text, #222)' }}>
+            {conferentesRelatorioOpcoes.map((o) => o.nome).join(' · ')}
+          </div>
+        </div>
+        <div
           style={{
-            padding: '8px 10px',
-            border: '1px solid #ccc',
-            borderRadius: 8,
-            minWidth: 240,
+            display: 'flex',
+            flexWrap: 'wrap',
+            alignItems: 'center',
+            gap: 8,
             flex: '1 1 200px',
-            maxWidth: '100%',
           }}
-          aria-label="Filtrar linhas da lista por conferente"
         >
-          <option value="__todos__">Todos os conferentes</option>
-          {conferentesRelatorioOpcoes.map((o) => (
-            <option key={o.id} value={o.id}>
-              {o.nome}
-            </option>
-          ))}
-        </select>
+          <label
+            htmlFor="relatorio-conferente-global"
+            style={{ fontSize: 13, fontWeight: 600, color: 'var(--text, #333)' }}
+          >
+            Quantidade por conferente
+          </label>
+          <select
+            id="relatorio-conferente-global"
+            value={relatorioConferenteFiltroEfetivo}
+            onChange={(e) => setRelatorioConferenteFiltroLista(e.target.value)}
+            style={{
+              padding: '8px 10px',
+              border: '1px solid #ccc',
+              borderRadius: 8,
+              minWidth: 200,
+              flex: '1 1 180px',
+              maxWidth: '100%',
+            }}
+            aria-label="Conferente para exibir quantidade na lista"
+          >
+            {conferentesRelatorioOpcoes.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.nome}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
     ) : null
 
@@ -1825,11 +1859,6 @@ export default function RelatorioContagem({
           <div style={{ overflowX: 'auto' }}>
             {relatorioConferenteGlobalBar}
             {relatorioPagination}
-            {rows.length > 0 && rowsFiltradosLista.length === 0 ? (
-              <p style={{ marginTop: 12, fontSize: 14, color: 'var(--text-muted, #666)' }}>
-                Nenhuma linha para o conferente selecionado. Escolha outro ou &quot;Todos os conferentes&quot;.
-              </p>
-            ) : null}
             {rowsFiltradosLista.length > 0 ? (
             <table
               style={{
@@ -1903,12 +1932,10 @@ export default function RelatorioContagem({
                       </>
                     ) : null}
                     <td style={{ ...tdStyle, whiteSpace: 'normal', maxWidth: 260 }}>
-                      {!useInventarioCols &&
-                      r.preview_conferentes_detalhe &&
-                      r.preview_conferentes_detalhe.length > 1 &&
-                      relatorioConferenteFiltroLista !== '__todos__' ? (
-                        r.preview_conferentes_detalhe.find((d) => d.conferente_id === relatorioConferenteFiltroLista)
-                          ?.conferente_nome ?? '—'
+                      {!useInventarioCols && r.preview_conferentes_detalhe && r.preview_conferentes_detalhe.length > 1 ? (
+                        r.preview_conferentes_detalhe.find((d) => d.conferente_id === relatorioConferenteFiltroEfetivo)
+                          ?.conferente_nome ??
+                        conferenteNomeRelatorio(r)
                       ) : (
                         conferenteNomeRelatorio(r)
                       )}
@@ -1985,7 +2012,7 @@ export default function RelatorioContagem({
                               type="button"
                               title={
                                 !relatorioPodeEditarQuantidade(r)
-                                  ? 'Selecione um conferente no seletor “Conferente na lista” acima para editar a quantidade'
+                                  ? 'Selecione um conferente no seletor “Quantidade por conferente” acima que corresponda a esta linha para editar a quantidade'
                                   : undefined
                               }
                               onClick={() => {

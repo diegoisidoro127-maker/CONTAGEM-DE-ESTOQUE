@@ -465,8 +465,8 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
 
   const [previewLoading, setPreviewLoading] = useState(false)
   const [previewRows, setPreviewRows] = useState<ContagemPreviewRow[]>([])
-  /** Contagem diária: conferente na prévia — `null` = padrão (conferente da sessão nos dados do dia), `total` = soma, ou id. */
-  const [previewConferenteModoGlobal, setPreviewConferenteModoGlobal] = useState<'total' | string | null>(null)
+  /** Contagem diária: conferente na prévia — `null` = automático (sessão ou primeiro com contagem), ou id para filtrar quantidade. */
+  const [previewConferenteModoGlobal, setPreviewConferenteModoGlobal] = useState<string | null>(null)
   /** Dia consultado em `contagens_estoque.data_contagem` (alinha sessão / planilha; não só “hoje”). */
   const [previewConsultaDiaYmd, setPreviewConsultaDiaYmd] = useState<string>(() => toISODateLocal(new Date()))
 
@@ -600,14 +600,14 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
   }, [previewRows, inventario])
 
-  /** Modo efetivo na prévia: com `previewConferenteModoGlobal === null`, prioriza o conferente selecionado na sessão. */
+  /** Modo efetivo na prévia: sem “soma”; prioriza seleção manual, depois o conferente da sessão, depois o primeiro com contagem no dia. */
   const previewConferenteModoEffective = useMemo(() => {
     if (inventario) return 'total'
     const manual = previewConferenteModoGlobal
-    if (manual !== null) return manual
+    if (manual != null && conferentesPreviaOpcoes.some((o) => o.id === manual)) return manual
     const cid = String(conferenteId ?? '').trim()
     if (cid && conferentesPreviaOpcoes.some((o) => o.id === cid)) return cid
-    return 'total'
+    return conferentesPreviaOpcoes[0]?.id ?? ''
   }, [inventario, previewConferenteModoGlobal, conferenteId, conferentesPreviaOpcoes])
 
   const previewQuantidadeExibidaPrevia = useCallback(
@@ -616,7 +616,6 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         return r.quantidade_up
       }
       const modo = previewConferenteModoEffective
-      if (modo === 'total') return r.quantidade_up
       const part = r.preview_conferentes_detalhe.find((d) => d.conferente_id === modo)
       return part ? part.quantidade_up : r.quantidade_up
     },
@@ -630,20 +629,22 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         return ids
       }
       const modo = previewConferenteModoEffective
-      if (modo === 'total') return ids
       const part = r.preview_conferentes_detalhe.find((d) => d.conferente_id === modo)
       return part?.source_ids?.length ? part.source_ids : ids
     },
     [inventario, previewConferenteModoEffective],
   )
 
-  /** Com vários conferentes na mesma linha agrupada, edição de quantidade só faz sentido por conferente (não na soma). */
+  /** Com vários conferentes na mesma linha agrupada, edição só por conferente selecionado no seletor. */
   const previewPodeEditarQuantidadePrevia = useCallback(
     (r: ContagemPreviewRow) => {
       if (inventario) return true
       const det = r.preview_conferentes_detalhe
       if (!det || det.length <= 1) return true
-      return previewConferenteModoEffective !== 'total'
+      return (
+        previewConferenteModoEffective !== '' &&
+        det.some((d) => d.conferente_id === previewConferenteModoEffective)
+      )
     },
     [inventario, previewConferenteModoEffective],
   )
@@ -3026,7 +3027,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
   ])
 
   useEffect(() => {
-    if (previewConferenteModoGlobal === null || previewConferenteModoGlobal === 'total') return
+    if (previewConferenteModoGlobal === null) return
     if (!conferentesPreviaOpcoes.some((o) => o.id === previewConferenteModoGlobal)) {
       setPreviewConferenteModoGlobal(null)
     }
@@ -3216,7 +3217,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       }
       if (!previewPodeEditarQuantidadePrevia(row)) {
         setPreviewRowError(
-          'Selecione um conferente específico no seletor “Conferente na prévia” acima para editar a quantidade; não é possível editar a soma de todos.',
+          'Selecione um conferente no seletor “Quantidade por conferente” acima que corresponda a esta linha para editar a quantidade.',
         )
         return
       }
@@ -3273,8 +3274,8 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
           style={{
             display: 'flex',
             flexWrap: 'wrap',
-            alignItems: 'center',
-            gap: 10,
+            alignItems: 'flex-start',
+            gap: 12,
             marginTop: 0,
             marginBottom: 8,
             padding: '10px 12px',
@@ -3283,36 +3284,50 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
             background: 'rgba(255,255,255,0.04)',
           }}
         >
-          <label
-            htmlFor="preview-conferente-global"
-            style={{ fontSize: 13, color: 'var(--text, #ccc)', fontWeight: 600 }}
-          >
-            Conferente na prévia (todas as linhas)
-          </label>
-          <select
-            id="preview-conferente-global"
-            value={previewConferenteModoEffective}
-            onChange={(e) => {
-              const v = e.target.value
-              setPreviewConferenteModoGlobal(v === 'total' ? 'total' : v)
-            }}
+          <div style={{ flex: '1 1 240px', minWidth: 0 }}>
+            <div style={{ fontSize: 12, color: 'var(--text, #888)', fontWeight: 600, marginBottom: 6 }}>
+              Conferentes com contagem neste dia
+            </div>
+            <div style={{ fontSize: 13, lineHeight: 1.45, color: 'var(--text, #ddd)' }}>
+              {conferentesPreviaOpcoes.map((o) => o.nome).join(' · ')}
+            </div>
+          </div>
+          <div
             style={{
-              padding: '8px 10px',
-              border: '1px solid #ccc',
-              borderRadius: 8,
-              minWidth: 220,
+              display: 'flex',
+              flexWrap: 'wrap',
+              alignItems: 'center',
+              gap: 8,
               flex: '1 1 200px',
-              maxWidth: '100%',
             }}
-            aria-label="Conferente na prévia para todas as linhas"
           >
-            <option value="total">Soma (todos os conferentes)</option>
-            {conferentesPreviaOpcoes.map((o) => (
-              <option key={o.id} value={o.id}>
-                {o.nome}
-              </option>
-            ))}
-          </select>
+            <label
+              htmlFor="preview-conferente-global"
+              style={{ fontSize: 13, color: 'var(--text, #ccc)', fontWeight: 600 }}
+            >
+              Quantidade por conferente
+            </label>
+            <select
+              id="preview-conferente-global"
+              value={previewConferenteModoEffective}
+              onChange={(e) => setPreviewConferenteModoGlobal(e.target.value)}
+              style={{
+                padding: '8px 10px',
+                border: '1px solid #ccc',
+                borderRadius: 8,
+                minWidth: 200,
+                flex: '1 1 180px',
+                maxWidth: '100%',
+              }}
+              aria-label="Conferente para exibir quantidade na prévia"
+            >
+              {conferentesPreviaOpcoes.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.nome}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
       ) : null
 
@@ -3493,12 +3508,10 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                     <div style={{ fontSize: 12, color: 'var(--text, #888)', marginTop: 8 }}>Conferente</div>
                     <div style={{ fontSize: 13 }}>
                       {!inventario && r.preview_conferentes_detalhe && r.preview_conferentes_detalhe.length > 1 ? (
-                        previewConferenteModoEffective === 'total' ? (
-                          r.conferente_nome
-                        ) : (
-                          r.preview_conferentes_detalhe.find((d) => d.conferente_id === previewConferenteModoEffective)
-                            ?.conferente_nome ?? '—'
-                        )
+                        r.preview_conferentes_detalhe.find((d) => d.conferente_id === previewConferenteModoEffective)
+                          ?.conferente_nome ??
+                        r.conferente_nome ??
+                        '—'
                       ) : String(r.conferente_nome ?? '').trim() !== '' ? (
                         r.conferente_nome
                       ) : (
@@ -3625,7 +3638,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                           style={buttonStyle}
                           title={
                             !previewPodeEditarQuantidadePrevia(r)
-                              ? 'Selecione um conferente no seletor “Conferente na prévia” acima para editar a quantidade'
+                              ? 'Selecione um conferente no seletor “Quantidade por conferente” acima para editar a quantidade'
                               : undefined
                           }
                           onClick={() => {
@@ -3739,12 +3752,10 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                   ) : null}
                   <td style={{ ...tdStyle, whiteSpace: 'normal', maxWidth: 240 }}>
                     {!inventario && r.preview_conferentes_detalhe && r.preview_conferentes_detalhe.length > 1 ? (
-                      previewConferenteModoEffective === 'total' ? (
-                        r.conferente_nome
-                      ) : (
-                        r.preview_conferentes_detalhe.find((d) => d.conferente_id === previewConferenteModoEffective)
-                          ?.conferente_nome ?? '—'
-                      )
+                      r.preview_conferentes_detalhe.find((d) => d.conferente_id === previewConferenteModoEffective)
+                        ?.conferente_nome ??
+                      r.conferente_nome ??
+                      '—'
                     ) : String(r.conferente_nome ?? '').trim() !== '' ? (
                       r.conferente_nome
                     ) : (
@@ -3829,7 +3840,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                               style={buttonStyle}
                               title={
                                 !previewPodeEditarQuantidadePrevia(r)
-                                  ? 'Selecione um conferente no seletor “Conferente na prévia” acima para editar a quantidade'
+                                  ? 'Selecione um conferente no seletor “Quantidade por conferente” acima para editar a quantidade'
                                   : undefined
                               }
                               onClick={() => {
