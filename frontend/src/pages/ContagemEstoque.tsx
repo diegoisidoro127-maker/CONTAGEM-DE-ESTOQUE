@@ -841,7 +841,10 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       const s = offlineSessionRef.current
       if (!s || s.status !== 'aberta' || cancelled) return
       if (s.items.length === 0) return
-      const skip = checklistContagemBancoDirtyKeysRef.current
+      const skip = new Set<string>(checklistContagemBancoDirtyKeysRef.current)
+      for (const it of s.items) {
+        if (it.quantidade_local_dirty) skip.add(it.key)
+      }
       const cidSess = String(s.conferente_id ?? '').trim()
       const nomeEdicaoLocal =
         cidSess === ''
@@ -2009,6 +2012,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
               ean: null,
               dun: null,
               inventario_repeticao: undefined,
+              quantidade_local_dirty: false,
             })
           }
         }
@@ -2078,6 +2082,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
             descricao: row.descricao,
             inventario_repeticao: inventario ? rep : undefined,
             quantidade_contada: '',
+            quantidade_local_dirty: false,
             foto_base64: '',
             up_quantidade: '',
             lote: '',
@@ -2351,9 +2356,18 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     }
     setOfflineSession((prev) => {
       if (!prev || prev.status !== 'aberta') return prev
+      const trimmed = String(quantidade ?? '').trim()
       const next = {
         ...prev,
-        items: prev.items.map((it) => (it.key === key ? { ...it, quantidade_contada: quantidade } : it)),
+        items: prev.items.map((it) =>
+          it.key === key
+            ? {
+                ...it,
+                quantidade_contada: quantidade,
+                quantidade_local_dirty: trimmed !== '',
+              }
+            : it,
+        ),
       }
       saveOfflineSession(next, sessionMode)
       return next
@@ -2400,9 +2414,17 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     }
     setOfflineSession((prev) => {
       if (!prev || prev.status !== 'aberta') return prev
+      const nextQtyDirty =
+        'quantidade_contada' in patch ? String(patch.quantidade_contada ?? '').trim() !== '' : undefined
       const next = {
         ...prev,
-        items: prev.items.map((it) => (it.key === key ? { ...it, ...patch } : it)),
+        items: prev.items.map((it) =>
+          it.key === key
+            ? nextQtyDirty === undefined
+              ? { ...it, ...patch }
+              : { ...it, ...patch, quantidade_local_dirty: nextQtyDirty }
+            : it,
+        ),
       }
       saveOfflineSession(next, sessionMode)
       return next

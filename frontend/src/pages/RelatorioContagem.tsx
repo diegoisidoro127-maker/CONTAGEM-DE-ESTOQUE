@@ -336,43 +336,14 @@ export default function RelatorioContagem({
     if (relatorioConferenteFiltroLista !== want) setRelatorioConferenteFiltroLista(want)
   }, [useInventarioCols, conferentesRelatorioOpcoes, relatorioConferenteFiltroLista])
 
-  const relatorioQuantidadeExibida = useCallback(
-    (r: ContagemRow) => {
-      if (useInventarioCols || !r.preview_conferentes_detalhe || r.preview_conferentes_detalhe.length <= 1) {
-        return r.quantidade_up
-      }
-      const fid = relatorioConferenteFiltroEfetivo
-      if (!fid) return r.quantidade_up
-      const part = r.preview_conferentes_detalhe.find((d) => d.conferente_id === fid)
-      return part ? part.quantidade_up : r.quantidade_up
-    },
-    [useInventarioCols, relatorioConferenteFiltroEfetivo],
-  )
+  const relatorioQuantidadeExibida = useCallback((r: ContagemRow) => r.quantidade_up, [])
 
   const relatorioSourceIdsParaAcao = useCallback(
-    (r: ContagemRow) => {
-      const ids = r.source_ids?.length ? r.source_ids : [r.id]
-      if (useInventarioCols || !r.preview_conferentes_detalhe || r.preview_conferentes_detalhe.length <= 1) {
-        return ids
-      }
-      const fid = relatorioConferenteFiltroEfetivo
-      if (!fid) return ids
-      const part = r.preview_conferentes_detalhe.find((d) => d.conferente_id === fid)
-      return part?.source_ids?.length ? part.source_ids : ids
-    },
-    [useInventarioCols, relatorioConferenteFiltroEfetivo],
+    (r: ContagemRow) => (r.source_ids?.length ? r.source_ids : [r.id]),
+    [],
   )
 
-  const relatorioPodeEditarQuantidade = useCallback(
-    (r: ContagemRow) => {
-      if (useInventarioCols) return true
-      const det = r.preview_conferentes_detalhe
-      if (!det || det.length <= 1) return true
-      const fid = relatorioConferenteFiltroEfetivo
-      return Boolean(fid && det.some((d) => d.conferente_id === fid))
-    },
-    [useInventarioCols, relatorioConferenteFiltroEfetivo],
-  )
+  const relatorioPodeEditarQuantidade = useCallback(() => true, [])
 
   const rowsFiltradosLista = useMemo(() => rows, [rows])
 
@@ -1039,7 +1010,6 @@ export default function RelatorioContagem({
     setSingleDay(item.dataYmd)
     setUseInventarioCols(false)
     setConferenteFiltroHistorico(item.conferenteId == null ? '__sem__' : item.conferenteId)
-    setRelatorioConferenteFiltroLista(item.conferenteId != null ? String(item.conferenteId) : '')
     setLoading(true)
     setError('')
     setSuccess('')
@@ -1107,14 +1077,7 @@ export default function RelatorioContagem({
   async function handleDeleteRow(id: string) {
     const row = rows.find((r) => r.id === id)
     const idsToDelete = row ? relatorioSourceIdsParaAcao(row) : [id]
-    const excluiSoUmConferente =
-      row &&
-      row.preview_conferentes_detalhe &&
-      row.preview_conferentes_detalhe.length > 1 &&
-      Boolean(
-        relatorioConferenteFiltroEfetivo &&
-          row.preview_conferentes_detalhe.some((d) => d.conferente_id === relatorioConferenteFiltroEfetivo),
-      )
+    const excluiSoUmConferente = false
     const msg = excluiSoUmConferente
       ? `Excluir ${idsToDelete.length} registro(s) deste conferente no banco?`
       : idsToDelete.length > 1
@@ -1250,17 +1213,13 @@ export default function RelatorioContagem({
         row.push(formatRodadaRelatorioCell(r.inventario_numero_contagem))
       }
       {
-        let nome = conferenteNomeRelatorio(r)
-        if (!useInventarioCols && r.preview_conferentes_detalhe && r.preview_conferentes_detalhe.length > 1) {
-          const p = r.preview_conferentes_detalhe.find((d) => d.conferente_id === relatorioConferenteFiltroEfetivo)
-          if (p?.conferente_nome) nome = p.conferente_nome
-        }
+        const nome = conferenteNomeRelatorio(r)
         row.push(nome === '—' ? '' : nome)
       }
       if (prevCol('codigo')) row.push(r.codigo_interno)
       if (prevCol('descricao')) row.push(r.descricao)
       if (prevCol('unidade')) row.push(r.unidade_medida ?? '')
-      if (prevCol('quantidade')) row.push(relatorioQuantidadeExibida(r))
+      if (prevCol('quantidade')) row.push(r.quantidade_up)
       if (prevCol('data_fabricacao'))
         row.push(r.data_fabricacao ? formatDateBR(String(r.data_fabricacao).slice(0, 10)) : '')
       if (prevCol('data_validade'))
@@ -1506,32 +1465,9 @@ export default function RelatorioContagem({
             flex: '1 1 200px',
           }}
         >
-          <label
-            htmlFor="relatorio-conferente-global"
-            style={{ fontSize: 13, fontWeight: 600, color: 'var(--text, #333)' }}
-          >
-            Quantidade por conferente
-          </label>
-          <select
-            id="relatorio-conferente-global"
-            value={relatorioConferenteFiltroEfetivo}
-            onChange={(e) => setRelatorioConferenteFiltroLista(e.target.value)}
-            style={{
-              padding: '8px 10px',
-              border: '1px solid #ccc',
-              borderRadius: 8,
-              minWidth: 200,
-              flex: '1 1 180px',
-              maxWidth: '100%',
-            }}
-            aria-label="Conferente para exibir quantidade na lista"
-          >
-            {conferentesRelatorioOpcoes.map((o) => (
-              <option key={o.id} value={o.id}>
-                {o.nome}
-              </option>
-            ))}
-          </select>
+          <div style={{ fontSize: 12, color: 'var(--text-muted, #555)' }}>
+            Cada linha mantém o conferente que lançou o valor exibido.
+          </div>
         </div>
       </div>
     ) : null
@@ -1931,15 +1867,7 @@ export default function RelatorioContagem({
                         </td>
                       </>
                     ) : null}
-                    <td style={{ ...tdStyle, whiteSpace: 'normal', maxWidth: 260 }}>
-                      {!useInventarioCols && r.preview_conferentes_detalhe && r.preview_conferentes_detalhe.length > 1 ? (
-                        r.preview_conferentes_detalhe.find((d) => d.conferente_id === relatorioConferenteFiltroEfetivo)
-                          ?.conferente_nome ??
-                        conferenteNomeRelatorio(r)
-                      ) : (
-                        conferenteNomeRelatorio(r)
-                      )}
-                    </td>
+                    <td style={{ ...tdStyle, whiteSpace: 'normal', maxWidth: 260 }}>{conferenteNomeRelatorio(r)}</td>
                     {prevCol('codigo') ? <td style={tdStyle}>{r.codigo_interno}</td> : null}
                     {prevCol('descricao') ? (
                       <td style={{ ...tdStyle, whiteSpace: 'normal', maxWidth: 420 }}>{r.descricao}</td>

@@ -10,6 +10,11 @@ export type OfflineChecklistItem = {
   descricao: string
   /** Texto do usuário; vazio = pendente */
   quantidade_contada: string
+  /**
+   * Contagem diária: quantidade alterada localmente nesta sessão.
+   * Enquanto true, o merge com banco não sobrescreve a linha.
+   */
+  quantidade_local_dirty?: boolean
   /** Foto anexada pelo usuário (base64). */
   foto_base64?: string
   /** Campo UP do formulário (texto para edição; vazio = sem valor). */
