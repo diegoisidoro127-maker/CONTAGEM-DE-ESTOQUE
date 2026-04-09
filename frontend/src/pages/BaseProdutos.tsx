@@ -947,14 +947,11 @@ export default function BaseProdutos() {
             </div>
           ) : (
             <div style={{ overflowX: 'auto' }}>
-              <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 1400 }}>
+              <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 1260 }}>
                 <thead>
                   <tr>
                     <th style={thStyle}>Código do produto</th>
                     <th style={thStyle}>Descrição</th>
-                    <th style={thStyle} title="Quem contou vem do relatório de contagens, não deste cadastro">
-                      Conferente
-                    </th>
                     <th style={thStyle}>Unidade de medida</th>
                     <th style={thStyle}>EAN</th>
                     <th style={thStyle}>DUN</th>
@@ -991,12 +988,6 @@ export default function BaseProdutos() {
                         ) : (
                           r.descricao
                         )}
-                      </td>
-                      <td
-                        style={{ ...tdStyle, color: 'var(--text-muted, #888)', fontSize: 12 }}
-                        title="Não armazenado no cadastro; use Relatório completo ou Todas as contagens para ver o conferente por lançamento."
-                      >
-                        —
                       </td>
                       <td style={tdStyle}>
                         {edit ? (

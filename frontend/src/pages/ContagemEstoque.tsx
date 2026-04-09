@@ -4424,7 +4424,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
             marginBottom: 4,
           }}
         >
-          <label style={{ ...labelStyle, gridColumn: isMobile ? 'auto' : 'span 8' }}>
+          <label style={{ ...labelStyle, gridColumn: isMobile ? 'auto' : 'span 7' }}>
             Conferente
             <select
               value={conferenteId}
@@ -4441,7 +4441,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
             </select>
           </label>
 
-          <div style={{ gridColumn: isMobile ? 'auto' : 'span 4', display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div style={{ gridColumn: isMobile ? 'auto' : 'span 5', display: 'flex', flexDirection: 'column', gap: 8 }}>
             <button
               type="button"
               onClick={() => setShowAddConferente((v) => !v)}
@@ -4460,7 +4460,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                 <div
                   style={{
                     display: 'grid',
-                    gridTemplateColumns: isMobile ? '1fr' : 'minmax(0, 1fr) auto',
+                    gridTemplateColumns: isMobile ? '1fr' : 'minmax(0, 1fr) minmax(120px, auto)',
                     gap: 8,
                     alignItems: 'end',
                   }}
@@ -4525,7 +4525,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
             alignItems: 'end',
           }}
         >
-          <label style={{ ...labelStyle, gridColumn: isMobile ? 'auto' : 'span 4' }}>
+          <label style={{ ...labelStyle, gridColumn: isMobile ? 'auto' : 'span 3' }}>
             Data e hora do registro
             <input
               type="datetime-local"
@@ -4566,11 +4566,15 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
           </label>
           <div
             style={{
-              gridColumn: isMobile ? 'auto' : 'span 4',
+              gridColumn: isMobile ? 'auto' : 'span 5',
               display: 'grid',
-              gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, minmax(170px, 1fr))',
-              gap: 8,
+              gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, minmax(180px, 1fr))',
+              gap: 10,
               alignItems: 'stretch',
+              padding: isMobile ? 0 : '8px 10px',
+              borderRadius: 10,
+              border: isMobile ? 'none' : '1px solid var(--border, #4b4b4b)',
+              background: isMobile ? 'transparent' : 'rgba(255,255,255,0.03)',
             }}
           >
             <button
