@@ -877,7 +877,22 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         setOfflineSession((prev) => {
           if (!prev || prev.status !== 'aberta') return prev
           if (prev.sessionId !== s.sessionId) return prev
-          return { ...prev, items: merged, updatedAt: new Date().toISOString() }
+          /**
+           * O `await` do merge pode demorar; o usuário pode digitar nesse meio-tempo.
+           * `merged` foi calculado com snapshot antigo — não substituir linhas que já estão
+           * “dirty” no estado atual (evita quantidade sumir / voltar sozinha).
+           */
+          const mergedByKey = new Map(merged.map((it) => [it.key, it]))
+          const nextItems = prev.items.map((it) => {
+            if (
+              it.quantidade_local_dirty ||
+              checklistContagemBancoDirtyKeysRef.current.has(it.key)
+            ) {
+              return it
+            }
+            return mergedByKey.get(it.key) ?? it
+          })
+          return { ...prev, items: nextItems, updatedAt: new Date().toISOString() }
         })
       } catch {
         /* rede / RLS */
