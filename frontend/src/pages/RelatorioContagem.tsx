@@ -409,7 +409,7 @@ export default function RelatorioContagem({
     [],
   )
 
-  const relatorioPodeEditarQuantidade = useCallback(() => true, []) as (r: ContagemRow) => boolean
+  const relatorioPodeEditarQuantidade = useCallback((_r: ContagemRow) => true, [])
 
   const rowsFiltradosLista = useMemo(() => rows, [rows])
 
@@ -675,21 +675,14 @@ export default function RelatorioContagem({
     `
     const selectSemColunasInventarioCompact = selectSemColunasInventario.replace(/\s+/g, '')
 
-    type ContagensRangeable = {
-      range(from: number, to: number): Promise<{ data: unknown; error: unknown }>
-    }
-
-    function applyNumeroInventario<Q>(q: Q, withNumeroFilter: boolean): Q {
+    const applyNumeroInventario = (q: any, withNumeroFilter: boolean) => {
       /** Só filtra no servidor no modo inventário; em “contagem diária” o filtro esvaziaria o resultado. */
       if (!withNumeroFilter || !useInventarioCols || numeroContagemFilter === 'todas') return q
-      return (q as Q & { eq: (column: string, value: number) => Q }).eq(
-        'inventario_numero_contagem',
-        Number(numeroContagemFilter),
-      )
+      return q.eq('inventario_numero_contagem', Number(numeroContagemFilter))
     }
 
     /** Nova query a cada fatia — evita reaproveitar builder com `.range()` mutado. */
-    async function fetchAllPaged(buildQ: () => ContagensRangeable): Promise<ContagemRow[]> {
+    async function fetchAllPaged(buildQ: () => any): Promise<ContagemRow[]> {
       const out: ContagemRow[] = []
       let from = 0
       while (true) {
@@ -1992,8 +1985,9 @@ export default function RelatorioContagem({
                       <td style={tdStyle}>
                         {editingId === r.id ? (
                           <input
-                            type="number"
-                            step="0.001"
+                            type="text"
+                            inputMode="decimal"
+                            autoComplete="off"
                             value={editingQuantidade}
                             onChange={(e) => setEditingQuantidade(e.target.value)}
                             style={{ ...inputInlineStyle }}

@@ -119,10 +119,8 @@ async function fetchUltimasPorCodigo(dataContagemYmd: string): Promise<Map<strin
 }
 
 export type MergeContagemDiariaOptions = {
-  /** Itens que o usuário alterou localmente — não sobrescreve com o banco até limpar a quantidade. */
+  /** Itens que o usuário alterou localmente — não sobrescreve quantidade/dados com o banco até limpar a quantidade. */
   skipKeys?: Set<string>
-  /** Conferente da sessão aberta: nas linhas em skip, o nome “último conferente” segue quem está editando. */
-  nomeConferenteEdicaoLocal?: string
 }
 
 /**
@@ -134,7 +132,6 @@ export async function mergeContagensDiariasDoDiaParaItems(
   options?: MergeContagemDiariaOptions,
 ): Promise<{ items: OfflineChecklistItem[]; preenchidos: number }> {
   const skipKeys = options?.skipKeys
-  const nomeLocal = options?.nomeConferenteEdicaoLocal?.trim()
   const porCodigo = await fetchUltimasPorCodigo(dataContagemYmd)
   if (porCodigo.size === 0) {
     return { items: items.map((i) => ({ ...i })), preenchidos: 0 }
@@ -146,9 +143,12 @@ export async function mergeContagensDiariasDoDiaParaItems(
   let preenchidos = 0
   const next = items.map((it) => {
     if (skipKeys?.has(it.key)) {
-      return nomeLocal
-        ? { ...it, contagem_banco_ultimo_conferente_nome: nomeLocal }
-        : { ...it }
+      const kSkip = normalizeCodigoInternoCompareKey(it.codigo_interno)
+      const snapSkip = kSkip ? porCodigo.get(kSkip) : undefined
+      if (!snapSkip) return { ...it }
+      const nomeUltimo =
+        nomesPorId.get(snapSkip.conferente_id)?.trim() || snapSkip.conferente_id
+      return { ...it, contagem_banco_ultimo_conferente_nome: nomeUltimo }
     }
     const k = normalizeCodigoInternoCompareKey(it.codigo_interno)
     const snap = k ? porCodigo.get(k) : undefined

@@ -159,6 +159,28 @@ type ContagemPreviewRow = {
   }>
 }
 
+/** Nome do conferente que gravou o valor exibido (alinha detalhe único/múltiplo com `conferente_id` do registro vencedor). */
+function conferenteNomeExibicaoPreviaRow(r: ContagemPreviewRow, modoConferenteEfetivo: string): string {
+  const det = r.preview_conferentes_detalhe
+  if (det && det.length > 1) {
+    const hit = det.find((d) => d.conferente_id === modoConferenteEfetivo)
+    if (hit) {
+      const n = String(hit.conferente_nome ?? '').trim()
+      if (n) return n
+    }
+    const fallback = String(r.conferente_nome ?? '').trim()
+    return fallback || '—'
+  }
+  if (det?.length === 1) {
+    const u = String(det[0]?.conferente_nome ?? '').trim()
+    if (u) return u
+  }
+  const n = String(r.conferente_nome ?? '').trim()
+  if (n) return n
+  const id = String(r.conferente_id ?? '').trim()
+  return id || '—'
+}
+
 type ProductOption = {
   id: string
   codigo: string
@@ -847,19 +869,9 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       for (const it of s.items) {
         if (it.quantidade_local_dirty) skip.add(it.key)
       }
-      const cidSess = String(s.conferente_id ?? '').trim()
-      const nomeEdicaoLocal =
-        cidSess === ''
-          ? undefined
-          : (() => {
-              const row = conferentes.find((c) => c.id === cidSess)
-              const n = row?.nome != null ? String(row.nome).trim() : ''
-              return n !== '' ? n : cidSess
-            })()
       try {
         const { items: merged } = await mergeContagensDiariasDoDiaParaItems(ymd, s.items, {
           skipKeys: skip,
-          nomeConferenteEdicaoLocal: nomeEdicaoLocal,
         })
         if (cancelled) return
         setOfflineSession((prev) => {
@@ -879,7 +891,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       unsubRealtime()
       window.clearInterval(id)
     }
-  }, [inventario, offlineSession?.status, offlineSession?.sessionId, offlineSession?.data_contagem_ymd, conferentes])
+  }, [inventario, offlineSession?.status, offlineSession?.sessionId, offlineSession?.data_contagem_ymd])
 
   /** Prévia do banco: atualiza quando qualquer conferente grava no mesmo dia (Realtime). */
   useEffect(() => {
@@ -1879,7 +1891,10 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       const nomePorId = await fetchConferentesNomesPorIds(rawEnrichedCatalog.map((r) => r.conferente_id))
       const rawPreviewLinhas: ContagemPreviewRow[] = rawEnrichedCatalog.map((r) => {
         const nome = nomePorId.get(r.conferente_id)?.trim()
-        return nome ? { ...r, conferente_nome: nome } : r
+        const base = String(r.conferente_nome ?? '').trim()
+        const cid = String(r.conferente_id ?? '').trim()
+        const nomeFinal = nome || base || cid
+        return nomeFinal !== r.conferente_nome ? { ...r, conferente_nome: nomeFinal } : r
       })
 
       // Contagem diária: uma linha por produto — sempre o lançamento com maior data_hora_contagem (rascunho ou oficial).
@@ -3536,16 +3551,9 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                     ) : null}
                     <div style={{ fontSize: 12, color: 'var(--text, #888)', marginTop: 8 }}>Conferente</div>
                     <div style={{ fontSize: 13 }}>
-                      {!inventario && r.preview_conferentes_detalhe && r.preview_conferentes_detalhe.length > 1 ? (
-                        r.preview_conferentes_detalhe.find((d) => d.conferente_id === previewConferenteModoEffective)
-                          ?.conferente_nome ??
-                        r.conferente_nome ??
-                        '—'
-                      ) : String(r.conferente_nome ?? '').trim() !== '' ? (
-                        r.conferente_nome
-                      ) : (
-                        '—'
-                      )}
+                      {!inventario
+                        ? conferenteNomeExibicaoPreviaRow(r, previewConferenteModoEffective)
+                        : String(r.conferente_nome ?? '').trim() || String(r.conferente_id ?? '').trim() || '—'}
                     </div>
                     {prevCol('codigo') ? (
                       <>
@@ -3575,8 +3583,9 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                         Quantidade contada:
                         {editingPreviewId === r.id ? (
                           <input
-                            type="number"
-                            step="0.001"
+                            type="text"
+                            inputMode="decimal"
+                            autoComplete="off"
                             value={editingPreviewQuantidade}
                             onChange={(e) => setEditingPreviewQuantidade(e.target.value)}
                             {...{ [CHECKLIST_QTY_NAV_ATTR]: '' }}
@@ -3780,16 +3789,9 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                     </>
                   ) : null}
                   <td style={{ ...tdStyle, whiteSpace: 'normal', maxWidth: 240 }}>
-                    {!inventario && r.preview_conferentes_detalhe && r.preview_conferentes_detalhe.length > 1 ? (
-                      r.preview_conferentes_detalhe.find((d) => d.conferente_id === previewConferenteModoEffective)
-                        ?.conferente_nome ??
-                      r.conferente_nome ??
-                      '—'
-                    ) : String(r.conferente_nome ?? '').trim() !== '' ? (
-                      r.conferente_nome
-                    ) : (
-                      '—'
-                    )}
+                    {!inventario
+                      ? conferenteNomeExibicaoPreviaRow(r, previewConferenteModoEffective)
+                      : String(r.conferente_nome ?? '').trim() || String(r.conferente_id ?? '').trim() || '—'}
                   </td>
                   {prevCol('codigo') ? <td style={tdStyle}>{r.codigo_interno}</td> : null}
                   {prevCol('descricao') ? (
@@ -3800,8 +3802,9 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                     <td style={tdStyle}>
                       {editingPreviewId === r.id ? (
                         <input
-                          type="number"
-                          step="0.001"
+                          type="text"
+                          inputMode="decimal"
+                          autoComplete="off"
                           value={editingPreviewQuantidade}
                           onChange={(e) => setEditingPreviewQuantidade(e.target.value)}
                           {...{ [CHECKLIST_QTY_NAV_ATTR]: '' }}
@@ -6478,8 +6481,9 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
           <label style={{ ...labelStyle, gridColumn: isMobile ? 'auto' : 'span 2' }}>
             Quantidade contada
             <input
-              type="number"
-              step="0.001"
+              type="text"
+              inputMode="decimal"
+              autoComplete="off"
               value={quantidadeContada}
               onChange={(e) => setQuantidadeContada(e.target.value)}
               style={inputStyle}
@@ -6529,8 +6533,9 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
           <label style={{ ...labelStyle, gridColumn: isMobile ? 'auto' : 'span 3' }}>
             UP
             <input
-              type="number"
-              step="0.001"
+              type="text"
+              inputMode="decimal"
+              autoComplete="off"
               value={quantidadeUp}
               onChange={(e) => setQuantidadeUp(e.target.value)}
               style={inputStyle}
