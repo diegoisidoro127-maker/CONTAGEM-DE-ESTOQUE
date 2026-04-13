@@ -111,7 +111,7 @@ function mapAuthError(message: string): string {
     return 'Usuário ou senha incorretos.'
   }
   if (m.includes('email not confirmed')) {
-    return 'Confirme seu e-mail (link enviado pelo sistema) antes de entrar.'
+    return 'Esta conta ainda não está liberada para entrar. Peça ao administrador para ajustar o acesso.'
   }
   if (m.includes('user already registered')) {
     return 'Este usuário já está cadastrado. Use Entrar ou recuperação de senha no Supabase.'
@@ -131,11 +131,9 @@ export default function LoginScreen() {
   const [showPasswordConfirm, setShowPasswordConfirm] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [info, setInfo] = useState<string | null>(null)
 
   const resetMessages = () => {
     setError(null)
-    setInfo(null)
   }
 
   const handleLogin = async (e: FormEvent) => {
@@ -183,7 +181,9 @@ export default function LoginScreen() {
     setLoading(true)
     try {
       const nomeUsuario = email.includes('@') ? email.trim().split('@')[0]! : email.trim()
-      const { error: err } = await supabase.auth.signUp({
+      // Com confirmação por e-mail desligada no Supabase (Authentication → Providers → Email),
+      // `data.session` vem preenchido e o cliente já autentica; não exibe aviso de “confirme o e-mail”.
+      const { data: signData, error: err } = await supabase.auth.signUp({
         email: authEmail,
         password,
         options: {
@@ -195,11 +195,13 @@ export default function LoginScreen() {
         setError(mapAuthError(err.message))
         return
       }
-      setInfo(
-        'Cadastro enviado. Se o projeto exige confirmação por e-mail, abra a caixa de entrada e clique no link antes de entrar.',
-      )
-      setMode('login')
+      setPassword('')
       setPasswordConfirm('')
+      if (signData.session) {
+        setEmail('')
+        return
+      }
+      setMode('login')
     } catch (unknownErr) {
       setError(unknownErr instanceof Error ? unknownErr.message : 'Erro ao cadastrar.')
     } finally {
@@ -257,22 +259,6 @@ export default function LoginScreen() {
             }}
           >
             {error}
-          </div>
-        ) : null}
-        {info ? (
-          <div
-            style={{
-              marginBottom: 14,
-              padding: '10px 12px',
-              borderRadius: 8,
-              background: 'rgba(22, 101, 52, 0.35)',
-              border: '1px solid #15803d',
-              color: '#bbf7d0',
-              fontSize: 13,
-              lineHeight: 1.45,
-            }}
-          >
-            {info}
           </div>
         ) : null}
 
