@@ -3,6 +3,9 @@
 --
 -- Após rodar: cada novo cadastro em Auth recebe linha em `public.usuarios` via trigger.
 -- O app pode ler/atualizar só o próprio registro (RLS com `auth.uid()`).
+--
+-- A senha de login do Supabase fica em auth.users (hash). A coluna `senha` aqui é opcional
+-- (ex.: integração legada); se usar, armazene apenas hash (pgcrypto crypt), nunca texto puro.
 
 begin;
 
@@ -13,21 +16,20 @@ create extension if not exists pgcrypto;
 -- ---------------------------------------------------------------------------
 create table if not exists public.usuarios (
   id uuid primary key references auth.users (id) on delete cascade,
-  email text,
   nome text not null default '',
+  senha text,
   ativo boolean not null default true,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
 comment on table public.usuarios is
-  'Perfil do usuário logado (1:1 com auth.users). Dados extras além do e-mail do Auth.';
+  'Perfil do usuário (1:1 com auth.users). Login/senha oficiais no Auth; coluna senha é opcional.';
 
 comment on column public.usuarios.id is 'Mesmo UUID de auth.users.';
-comment on column public.usuarios.email is 'Cópia do e-mail do Auth para consultas sem join em auth.users.';
 comment on column public.usuarios.nome is 'Nome de exibição (pode vir de raw_user_meta_data no cadastro).';
-
-create index if not exists idx_usuarios_email on public.usuarios (email);
+comment on column public.usuarios.senha is
+  'Opcional. O app pode gravar aqui a senha em texto após login/cadastro (uso interno); login oficial segue no Auth.';
 
 -- Mantém updated_at ao atualizar
 create or replace function public.touch_usuarios_updated_at()
@@ -65,10 +67,10 @@ begin
     split_part(coalesce(new.email, ''), '@', 1)
   );
 
-  insert into public.usuarios (id, email, nome)
-  values (new.id, new.email, coalesce(meta_nome, ''))
+  insert into public.usuarios (id, nome)
+  values (new.id, coalesce(meta_nome, ''))
   on conflict (id) do update
-    set email = excluded.email,
+    set nome = coalesce(nullif(excluded.nome, ''), public.usuarios.nome),
         updated_at = now();
 
   return new;
@@ -111,7 +113,6 @@ to authenticated
 using (auth.uid() = id)
 with check (auth.uid() = id);
 
--- Opcional: permitir que o próprio usuário apague o perfil (cascade já remove se auth user for apagado)
 create policy "usuarios_delete_own"
 on public.usuarios
 for delete
@@ -125,20 +126,17 @@ to service_role
 using (true)
 with check (true);
 
--- Sem políticas para `anon` — dados de usuário só com sessão.
-
 grant select, insert, update, delete on table public.usuarios to authenticated;
 grant all on table public.usuarios to service_role;
 
 commit;
 
 -- ---------------------------------------------------------------------------
--- Backfill (opcional): usuários criados antes deste script
+-- Backfill (opcional): usuários em auth.users sem linha em usuarios
 -- ---------------------------------------------------------------------------
--- insert into public.usuarios (id, email, nome)
+-- insert into public.usuarios (id, nome)
 -- select
 --   u.id,
---   u.email,
 --   coalesce(
 --     nullif(trim(u.raw_user_meta_data->>'nome'), ''),
 --     nullif(trim(u.raw_user_meta_data->>'full_name'), ''),

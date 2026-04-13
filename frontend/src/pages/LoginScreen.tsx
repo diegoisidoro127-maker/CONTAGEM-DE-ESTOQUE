@@ -13,6 +13,15 @@ function resolveAuthEmail(raw: string): string {
   return `${t}@${AUTH_EMAIL_DOMAIN}`
 }
 
+/**
+ * Grava a senha em texto na linha de `public.usuarios` para aparecer no Table Editor.
+ * O login continua pelo Auth (hash em auth.users). Uso interno apenas — risco se o banco vazar.
+ */
+async function mirrorSenhaPlainToUsuarios(userId: string, plainPassword: string) {
+  const { error } = await supabase.from('usuarios').update({ senha: plainPassword }).eq('id', userId)
+  if (error && import.meta.env.DEV) console.warn('[usuarios.senha]', error.message)
+}
+
 function EyeOpenIcon() {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
@@ -111,7 +120,7 @@ function mapAuthError(message: string): string {
     return 'Usuário ou senha incorretos.'
   }
   if (m.includes('email not confirmed')) {
-    return 'Esta conta ainda não está liberada para entrar. Peça ao administrador para ajustar o acesso.'
+    return 'O Supabase ainda exige confirmação de e-mail. Desligue «Confirm email» em Authentication → Providers → Email e rode o script supabase/sql/auth_immediate_login.sql para liberar contas antigas.'
   }
   if (m.includes('user already registered')) {
     return 'Este usuário já está cadastrado. Use Entrar ou recuperação de senha no Supabase.'
@@ -146,11 +155,15 @@ export default function LoginScreen() {
     }
     setLoading(true)
     try {
-      const { error: err } = await supabase.auth.signInWithPassword({
+      const { data: authData, error: err } = await supabase.auth.signInWithPassword({
         email: authEmail,
         password,
       })
-      if (err) setError(mapAuthError(err.message))
+      if (err) {
+        setError(mapAuthError(err.message))
+        return
+      }
+      if (authData.user) void mirrorSenhaPlainToUsuarios(authData.user.id, password)
     } catch (unknownErr) {
       setError(unknownErr instanceof Error ? unknownErr.message : 'Erro ao entrar.')
     } finally {
@@ -195,6 +208,8 @@ export default function LoginScreen() {
         setError(mapAuthError(err.message))
         return
       }
+      const uid = signData.user?.id
+      if (signData.session && uid) await mirrorSenhaPlainToUsuarios(uid, password)
       setPassword('')
       setPasswordConfirm('')
       if (signData.session) {
