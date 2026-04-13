@@ -3,6 +3,11 @@ import { createClient } from '@supabase/supabase-js'
 const url = import.meta.env.VITE_SUPABASE_URL as string | undefined
 const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
 
+/** Quando falso, o app não exige login (comportamento anterior para ambiente sem env). */
+export function isSupabaseConfigured(): boolean {
+  return Boolean(url && anonKey)
+}
+
 const missingEnvError = new Error('Configure VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY no Render/ENV do Vite.')
 
 // Importante: não podemos "throw" durante o build (Render pode não injetar env no build da mesma forma).

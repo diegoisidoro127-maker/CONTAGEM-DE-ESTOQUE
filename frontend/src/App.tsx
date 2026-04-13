@@ -1,11 +1,14 @@
 import { Component, type ErrorInfo, type ReactNode, useEffect, useState } from 'react'
+import type { AuthChangeEvent, Session } from '@supabase/supabase-js'
 import { readLastListWasInventario, writeLastListScreen } from './lib/checklistVisibleCols'
 import type React from 'react'
 import './App.css'
+import logoUltrapao from './assets/logo-ultrapao.png'
 import BaseProdutos from './pages/BaseProdutos'
 import ContagemEstoque from './pages/ContagemEstoque'
+import LoginScreen from './pages/LoginScreen'
 import RelatorioContagem from './pages/RelatorioContagem'
-import logoUltrapao from './assets/logo-ultrapao.png'
+import { isSupabaseConfigured, supabase } from './lib/supabaseClient'
 
 type View = 'home' | 'contagem' | 'relatorio' | 'todas' | 'inventario' | 'baseDados'
 type Theme = 'dark' | 'light'
@@ -60,6 +63,10 @@ class PanelErrorBoundary extends Component<{ children: ReactNode }, { error: Err
 }
 
 export default function App() {
+  const authEnabled = isSupabaseConfigured()
+  const [session, setSession] = useState<Session | null>(null)
+  const [authReady, setAuthReady] = useState(!authEnabled)
+
   const [view, setView] = useState<View>('home')
   const [theme, setTheme] = useState<Theme>(() => {
     const saved = localStorage.getItem('ui-theme')
@@ -73,6 +80,26 @@ export default function App() {
   }, [theme])
 
   useEffect(() => {
+    if (!authEnabled) return
+    let alive = true
+    void supabase.auth.getSession().then(({ data }: { data: { session: Session | null } }) => {
+      if (alive) {
+        setSession(data.session)
+        setAuthReady(true)
+      }
+    })
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, s: Session | null) => {
+      setSession(s)
+    })
+    return () => {
+      alive = false
+      subscription.unsubscribe()
+    }
+  }, [authEnabled])
+
+  useEffect(() => {
     if (view === 'contagem' || view === 'inventario') {
       writeLastListScreen(view === 'inventario' ? 'inventario' : 'contagem')
     }
@@ -84,6 +111,28 @@ export default function App() {
     : 'contagem'
   const showContagemBtn = preferredChecklistView === 'contagem'
   const showInventarioBtn = preferredChecklistView === 'inventario'
+
+  if (authEnabled && !authReady) {
+    return (
+      <div
+        style={{
+          minHeight: '100svh',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: 'var(--bg, #16171d)',
+          color: 'var(--text, #9ca3af)',
+          fontSize: 15,
+        }}
+      >
+        Carregando sessão…
+      </div>
+    )
+  }
+
+  if (authEnabled && !session) {
+    return <LoginScreen />
+  }
 
   return (
     <div>
@@ -231,6 +280,16 @@ export default function App() {
               <NavIcon emoji={theme === 'dark' ? '☀️' : '🌙'} anim="tilt" />
               {theme === 'dark' ? 'Tema claro' : 'Tema escuro'}
             </button>
+            {authEnabled && session ? (
+              <button
+                type="button"
+                onClick={() => void supabase.auth.signOut()}
+                style={viewNavBtnStyle(false, '#94a3b8')}
+                title="Encerrar sessão"
+              >
+                Sair
+              </button>
+            ) : null}
           </header>
 
           {view === 'contagem' ? (

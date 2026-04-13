@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { normalizeCodigoInternoCompareKey } from '../lib/codigoInternoCompare'
 
@@ -97,12 +97,15 @@ export function ChecklistCalculatorModal({ open, onClose, onApply, productHint, 
   const [msg, setMsg] = useState('')
   const [showHistoryPanel, setShowHistoryPanel] = useState(false)
   const [historyItems, setHistoryItems] = useState<QtyCalcHistoryItem[]>([])
+  /** Expressão completa antes do último `=`; assim o histórico mostra a conta (ex.: 500+125), não só o resultado no campo. */
+  const formulaForHistoryRef = useRef<string | null>(null)
 
   useEffect(() => {
     if (open) {
       setExpr('')
       setMsg('')
       setShowHistoryPanel(false)
+      formulaForHistoryRef.current = null
       if (historyStorageKey) {
         setHistoryItems(loadQtyCalcHistory(historyStorageKey))
       } else {
@@ -113,24 +116,32 @@ export function ChecklistCalculatorModal({ open, onClose, onApply, productHint, 
 
   if (!open) return null
 
+  const clearHistoryFormula = () => {
+    formulaForHistoryRef.current = null
+  }
+
   const append = (ch: string) => {
     setMsg('')
+    clearHistoryFormula()
     setExpr((e) => e + ch)
   }
 
   const back = () => {
     setMsg('')
+    clearHistoryFormula()
     setExpr((e) => e.slice(0, -1))
   }
 
   const clear = () => {
     setMsg('')
+    clearHistoryFormula()
     setExpr('')
   }
 
   const equals = () => {
     const r = evaluateQtyExpression(expr)
     if (r.ok) {
+      formulaForHistoryRef.current = expr.trim()
       setExpr(formatQtyForChecklist(r.value))
       setMsg('')
     } else {
@@ -145,11 +156,14 @@ export function ChecklistCalculatorModal({ open, onClose, onApply, productHint, 
       return
     }
     const valueStr = formatQtyForChecklist(r.value)
-    const rawExpr = expr.trim()
+    const savedFormula = formulaForHistoryRef.current?.trim()
+    const histExpr =
+      savedFormula && savedFormula !== '' ? savedFormula : expr.trim()
     if (historyStorageKey) {
-      pushQtyCalcHistory(historyStorageKey, rawExpr, valueStr)
+      pushQtyCalcHistory(historyStorageKey, histExpr, valueStr)
       setHistoryItems(loadQtyCalcHistory(historyStorageKey))
     }
+    formulaForHistoryRef.current = null
     onApply(valueStr)
     onClose()
   }
@@ -250,6 +264,7 @@ export function ChecklistCalculatorModal({ open, onClose, onApply, productHint, 
                           type="button"
                           onClick={() => {
                             setMsg('')
+                            clearHistoryFormula()
                             setExpr(h.expr)
                           }}
                           title="Reutilizar esta expressão no campo"
@@ -311,6 +326,7 @@ export function ChecklistCalculatorModal({ open, onClose, onApply, productHint, 
           value={expr}
           onChange={(e) => {
             setMsg('')
+            clearHistoryFormula()
             setExpr(e.target.value.replace(/,/g, '.'))
           }}
           placeholder="Ex.: 100+50*2"
