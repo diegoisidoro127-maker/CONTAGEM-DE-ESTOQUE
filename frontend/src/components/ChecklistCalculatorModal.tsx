@@ -291,7 +291,6 @@ export function ChecklistQtyCalcButton({ onClick, buttonStyle, disabled, title }
         justifyContent: 'center',
         gap: 6,
         flexShrink: 0,
-        alignSelf: 'flex-start',
         border: '1px solid #4f8eff',
         boxShadow: '0 0 0 1px rgba(79, 142, 255, 0.25)',
       }}

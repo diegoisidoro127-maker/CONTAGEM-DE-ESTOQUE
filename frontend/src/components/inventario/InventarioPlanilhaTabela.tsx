@@ -118,16 +118,17 @@ export function InventarioPlanilhaTabela(props: InventarioPlanilhaTabelaProps) {
   }
   const planilhaQtdCellWrap: CSSProperties = {
     display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'stretch',
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 8,
-    maxWidth: 220,
+    flexWrap: 'wrap',
   }
   const inputPlanilhaQtdCell: CSSProperties = {
     ...inputPlanilha,
-    width: '100%',
+    flex: '1 1 auto',
+    width: 'min(100%, 160px)',
     maxWidth: 200,
-    minWidth: 0,
+    minWidth: 72,
   }
 
   return (
@@ -466,22 +467,20 @@ export function InventarioPlanilhaTabela(props: InventarioPlanilhaTabelaProps) {
                             placeholder="—"
                             aria-label={`Quantidade ${it.codigo_interno}${it.inventario_repeticao ? ` ${it.inventario_repeticao}ª` : ''}`}
                           />
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                            {openQtyCalculator ? (
-                              <ChecklistQtyCalcButton
-                                buttonStyle={buttonStyle}
-                                onClick={() =>
-                                  openQtyCalculator(
-                                    (v) => updateOfflineItemQty(it.key, v),
-                                    `${it.codigo_interno} — ${it.descricao}`,
-                                  )
-                                }
-                              />
-                            ) : null}
-                            {checklistSavedFlashKey === it.key ? (
-                              <span style={{ fontSize: 11, color: '#0a0', fontWeight: 700 }}>Salvo</span>
-                            ) : null}
-                          </div>
+                          {openQtyCalculator ? (
+                            <ChecklistQtyCalcButton
+                              buttonStyle={buttonStyle}
+                              onClick={() =>
+                                openQtyCalculator(
+                                  (v) => updateOfflineItemQty(it.key, v),
+                                  `${it.codigo_interno} — ${it.descricao}`,
+                                )
+                              }
+                            />
+                          ) : null}
+                          {checklistSavedFlashKey === it.key ? (
+                            <span style={{ fontSize: 11, color: '#0a0', fontWeight: 700 }}>Salvo</span>
+                          ) : null}
                         </div>
                       </td>
                     ) : null}

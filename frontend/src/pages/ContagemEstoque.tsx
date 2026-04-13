@@ -5803,20 +5803,18 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                           placeholder="—"
                                           aria-label={`Quantidade ${it.codigo_interno}${it.inventario_repeticao ? ` ${it.inventario_repeticao}ª` : ''}`}
                                         />
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                                          <ChecklistQtyCalcButton
-                                            buttonStyle={buttonStyle}
-                                            onClick={() =>
-                                              openChecklistQtyCalculator(
-                                                (v) => updateOfflineItemQty(it.key, v),
-                                                `${it.codigo_interno} — ${it.descricao}`,
-                                              )
-                                            }
-                                          />
-                                          {checklistSavedFlashKey === it.key ? (
-                                            <span style={{ fontSize: 11, color: '#0a0', fontWeight: 700 }}>Salvo</span>
-                                          ) : null}
-                                        </div>
+                                        <ChecklistQtyCalcButton
+                                          buttonStyle={buttonStyle}
+                                          onClick={() =>
+                                            openChecklistQtyCalculator(
+                                              (v) => updateOfflineItemQty(it.key, v),
+                                              `${it.codigo_interno} — ${it.descricao}`,
+                                            )
+                                          }
+                                        />
+                                        {checklistSavedFlashKey === it.key ? (
+                                          <span style={{ fontSize: 11, color: '#0a0', fontWeight: 700 }}>Salvo</span>
+                                        ) : null}
                                       </div>
                                     </td>
                                   ) : null}
@@ -7234,16 +7232,17 @@ const checklistQtdTableTdStyle: React.CSSProperties = {
 
 const checklistQtdTableCellWrapStyle: React.CSSProperties = {
   display: 'flex',
-  flexDirection: 'column',
-  alignItems: 'stretch',
+  flexDirection: 'row',
+  alignItems: 'center',
   gap: 8,
-  maxWidth: 220,
+  flexWrap: 'wrap',
 }
 
 const checklistQtdInputTableCellStyle: React.CSSProperties = {
   ...checklistQtdInputStyle,
-  width: '100%',
+  flex: '1 1 auto',
+  width: 'min(100%, 160px)',
   maxWidth: 200,
-  minWidth: 0,
+  minWidth: 72,
 }
 
