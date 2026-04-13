@@ -120,7 +120,7 @@ function mapAuthError(message: string): string {
     return 'Usuário ou senha incorretos.'
   }
   if (m.includes('email not confirmed')) {
-    return 'O Supabase ainda exige confirmação de e-mail. Desligue «Confirm email» em Authentication → Providers → Email e rode o script supabase/sql/auth_immediate_login.sql para liberar contas antigas.'
+    return 'Esta conta ainda não está liberada no Auth. Rode uma vez o UPDATE do arquivo supabase/sql/auth_immediate_login.sql no SQL Editor do Supabase (contas antigas). Novos cadastros não passam por e-mail após publicar a edge function auth-register-confirmed.'
   }
   if (m.includes('user already registered') || m.includes('already been registered')) {
     return 'Este usuário já está cadastrado. Use Entrar ou recuperação de senha no Supabase.'
@@ -194,33 +194,40 @@ export default function LoginScreen() {
     setLoading(true)
     try {
       const nomeUsuario = email.includes('@') ? email.trim().split('@')[0]! : email.trim()
-      // Edge Function cria o usuário com e-mail já confirmado (admin API), sem mudar «Confirm email» no painel.
+      // Só Edge Function: cria usuário já confirmado no Auth (sem fluxo de confirmação por e-mail).
       const { data: fnData, error: fnErr } = await supabase.functions.invoke('auth-register-confirmed', {
         body: { email: authEmail, password, nome: nomeUsuario },
       })
       const fnPayload = fnData as { ok?: boolean; error?: string } | null
-      if (fnErr) {
-        setError(
-          'Cadastro pelo servidor falhou. Publique a edge function auth-register-confirmed no Supabase (veja supabase/functions/auth-register-confirmed).',
-        )
+
+      const finishAfterSession = async (userId: string) => {
+        await mirrorSenhaPlainToUsuarios(userId, password)
+        setPassword('')
+        setPasswordConfirm('')
+        setEmail('')
+      }
+
+      if (!fnErr && fnPayload?.ok) {
+        const { data: signData, error: signErr } = await supabase.auth.signInWithPassword({
+          email: authEmail,
+          password,
+        })
+        if (signErr) {
+          setError(mapAuthError(signErr.message))
+          return
+        }
+        if (signData.user) await finishAfterSession(signData.user.id)
         return
       }
-      if (!fnPayload?.ok) {
-        setError(mapAuthError(fnPayload?.error || ''))
+
+      if (!fnErr && fnPayload && fnPayload.ok === false) {
+        setError(mapAuthError(fnPayload.error || ''))
         return
       }
-      const { data: signData, error: signErr } = await supabase.auth.signInWithPassword({
-        email: authEmail,
-        password,
-      })
-      if (signErr) {
-        setError(mapAuthError(signErr.message))
-        return
-      }
-      if (signData.user) await mirrorSenhaPlainToUsuarios(signData.user.id, password)
-      setPassword('')
-      setPasswordConfirm('')
-      setEmail('')
+
+      setError(
+        'Publique a edge function auth-register-confirmed no Supabase (cadastro sem confirmação por e-mail). No projeto: supabase functions deploy auth-register-confirmed — código em supabase/functions/auth-register-confirmed.',
+      )
     } catch (unknownErr) {
       setError(unknownErr instanceof Error ? unknownErr.message : 'Erro ao cadastrar.')
     } finally {
