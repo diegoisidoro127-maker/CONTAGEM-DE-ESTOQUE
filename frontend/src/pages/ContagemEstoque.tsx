@@ -1215,10 +1215,31 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
 
   useEffect(() => {
     if (!barcodeCameraOpen) return
+    let cancelled = false
     let stream: MediaStream | null = null
+    let boundVideo: HTMLVideoElement | null = null
     let detector: any = null
-    let stopped = false
     let intervalId: number | null = null
+
+    const releaseMedia = () => {
+      if (intervalId != null) {
+        window.clearInterval(intervalId)
+        intervalId = null
+      }
+      if (boundVideo) {
+        try {
+          boundVideo.pause()
+          boundVideo.srcObject = null
+        } catch {
+          /* vídeo pode já estar desmontado pelo React */
+        }
+        boundVideo = null
+      }
+      if (stream) {
+        stream.getTracks().forEach((t) => t.stop())
+        stream = null
+      }
+    }
 
     async function start() {
       try {
@@ -1240,12 +1261,23 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
           audio: false,
         })
 
-        if (!barcodeVideoRef.current) return
-        barcodeVideoRef.current.srcObject = stream
-        await barcodeVideoRef.current.play()
+        if (cancelled) {
+          releaseMedia()
+          return
+        }
+
+        const v = barcodeVideoRef.current
+        if (!v) {
+          releaseMedia()
+          return
+        }
+
+        boundVideo = v
+        v.srcObject = stream
+        await v.play()
 
         intervalId = window.setInterval(async () => {
-          if (stopped || !detector || !barcodeVideoRef.current) return
+          if (cancelled || !detector || !barcodeVideoRef.current) return
           try {
             const barcodes = await detector.detect(barcodeVideoRef.current)
             if (barcodes && barcodes.length) {
@@ -1260,16 +1292,18 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
           }
         }, 450)
       } catch (e: any) {
-        setBarcodeCameraError(e?.message ? String(e.message) : 'Erro ao abrir câmera.')
+        if (!cancelled) {
+          setBarcodeCameraError(e?.message ? String(e.message) : 'Erro ao abrir câmera.')
+        }
+        releaseMedia()
       }
     }
 
     void start()
 
     return () => {
-      stopped = true
-      if (intervalId) window.clearInterval(intervalId)
-      if (stream) stream.getTracks().forEach((t) => t.stop())
+      cancelled = true
+      releaseMedia()
     }
   }, [barcodeCameraOpen, productByDun, productByEan, productByCode, productByCodeNoDots])
 
@@ -1286,8 +1320,25 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
 
   useEffect(() => {
     if (!photoCameraOpen) return
+    let cancelled = false
     let stream: MediaStream | null = null
-    let stopped = false
+    let boundVideo: HTMLVideoElement | null = null
+
+    const releaseMedia = () => {
+      if (boundVideo) {
+        try {
+          boundVideo.pause()
+          boundVideo.srcObject = null
+        } catch {
+          /* vídeo pode já estar desmontado pelo React */
+        }
+        boundVideo = null
+      }
+      if (stream) {
+        stream.getTracks().forEach((t) => t.stop())
+        stream = null
+      }
+    }
 
     async function start() {
       try {
@@ -1300,20 +1351,33 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
           audio: false,
         })
 
-        if (!photoVideoRef.current) return
-        photoVideoRef.current.srcObject = stream
-        await photoVideoRef.current.play()
+        if (cancelled) {
+          releaseMedia()
+          return
+        }
+
+        const v = photoVideoRef.current
+        if (!v) {
+          releaseMedia()
+          return
+        }
+
+        boundVideo = v
+        v.srcObject = stream
+        await v.play()
       } catch (e: any) {
-        if (stopped) return
-        setPhotoUiError(e?.message ? String(e.message) : 'Erro ao abrir câmera.')
+        if (!cancelled) {
+          setPhotoUiError(e?.message ? String(e.message) : 'Erro ao abrir câmera.')
+        }
+        releaseMedia()
       }
     }
 
     void start()
 
     return () => {
-      stopped = true
-      if (stream) stream.getTracks().forEach((t) => t.stop())
+      cancelled = true
+      releaseMedia()
     }
   }, [photoCameraOpen])
 
