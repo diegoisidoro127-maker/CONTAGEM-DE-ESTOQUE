@@ -122,7 +122,7 @@ function mapAuthError(message: string): string {
   if (m.includes('email not confirmed')) {
     return 'O Supabase ainda exige confirmação de e-mail. Desligue «Confirm email» em Authentication → Providers → Email e rode o script supabase/sql/auth_immediate_login.sql para liberar contas antigas.'
   }
-  if (m.includes('user already registered')) {
+  if (m.includes('user already registered') || m.includes('already been registered')) {
     return 'Este usuário já está cadastrado. Use Entrar ou recuperação de senha no Supabase.'
   }
   if (m.includes('password')) {
@@ -148,7 +148,7 @@ export default function LoginScreen() {
   const handleLogin = async (e: FormEvent) => {
     e.preventDefault()
     resetMessages()
-    const authEmail = resolveAuthEmail(email)
+    const authEmail = resolveAuthEmail(email).toLowerCase()
     if (!authEmail || !password) {
       setError('Preencha usuário e senha.')
       return
@@ -178,7 +178,7 @@ export default function LoginScreen() {
       setError('Preencha o nome de usuário e a senha.')
       return
     }
-    const authEmail = resolveAuthEmail(email)
+    const authEmail = resolveAuthEmail(email).toLowerCase()
     if (!authEmail) {
       setError('Nome de usuário inválido.')
       return
@@ -194,29 +194,33 @@ export default function LoginScreen() {
     setLoading(true)
     try {
       const nomeUsuario = email.includes('@') ? email.trim().split('@')[0]! : email.trim()
-      // Com confirmação por e-mail desligada no Supabase (Authentication → Providers → Email),
-      // `data.session` vem preenchido e o cliente já autentica; não exibe aviso de “confirme o e-mail”.
-      const { data: signData, error: err } = await supabase.auth.signUp({
+      // Edge Function cria o usuário com e-mail já confirmado (admin API), sem mudar «Confirm email» no painel.
+      const { data: fnData, error: fnErr } = await supabase.functions.invoke('auth-register-confirmed', {
+        body: { email: authEmail, password, nome: nomeUsuario },
+      })
+      const fnPayload = fnData as { ok?: boolean; error?: string } | null
+      if (fnErr) {
+        setError(
+          'Cadastro pelo servidor falhou. Publique a edge function auth-register-confirmed no Supabase (veja supabase/functions/auth-register-confirmed).',
+        )
+        return
+      }
+      if (!fnPayload?.ok) {
+        setError(mapAuthError(fnPayload?.error || ''))
+        return
+      }
+      const { data: signData, error: signErr } = await supabase.auth.signInWithPassword({
         email: authEmail,
         password,
-        options: {
-          emailRedirectTo: typeof window !== 'undefined' ? window.location.origin : undefined,
-          data: { nome: nomeUsuario },
-        },
       })
-      if (err) {
-        setError(mapAuthError(err.message))
+      if (signErr) {
+        setError(mapAuthError(signErr.message))
         return
       }
-      const uid = signData.user?.id
-      if (signData.session && uid) await mirrorSenhaPlainToUsuarios(uid, password)
+      if (signData.user) await mirrorSenhaPlainToUsuarios(signData.user.id, password)
       setPassword('')
       setPasswordConfirm('')
-      if (signData.session) {
-        setEmail('')
-        return
-      }
-      setMode('login')
+      setEmail('')
     } catch (unknownErr) {
       setError(unknownErr instanceof Error ? unknownErr.message : 'Erro ao cadastrar.')
     } finally {

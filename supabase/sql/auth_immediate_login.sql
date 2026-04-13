@@ -1,12 +1,10 @@
--- Login imediato só com usuário + senha (sem confirmação por e-mail)
+-- Libera contas antigas que foram criadas com confirmação de e-mail e nunca confirmaram.
 -- =============================================================================
--- Passo 1 — Painel Supabase (obrigatório para novos cadastros)
---   Authentication → Providers → Email
---   Desligar "Confirm email" / "Confirmar e-mail" e salvar.
---   Assim, após cadastrar, o app já recebe sessão e o usuário pode entrar na hora.
+-- Novos cadastros pelo app usam a edge function `auth-register-confirmed` (admin API com
+-- e-mail já confirmado) — não precisa desligar «Confirm email» no painel.
 --
--- Passo 2 — Contas criadas ANTES dessa mudança (ficaram sem confirmar)
---   Rode o bloco abaixo no SQL Editor (uma vez, ou só para quem precisar).
+-- Use este SQL só para usuários que já existem em auth.users com email_confirmed_at nulo
+-- (ex.: criados antes da edge function ou por outro fluxo).
 -- =============================================================================
 
 update auth.users
