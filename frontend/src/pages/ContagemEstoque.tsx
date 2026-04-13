@@ -159,26 +159,28 @@ type ContagemPreviewRow = {
   }>
 }
 
-/** Nome do conferente que gravou o valor exibido (alinha detalhe único/múltiplo com `conferente_id` do registro vencedor). */
+/** Nome do conferente alinhado à coluna de quantidade (mesma regra que `previewQuantidadeExibidaPrevia`). */
 function conferenteNomeExibicaoPreviaRow(r: ContagemPreviewRow, modoConferenteEfetivo: string): string {
   const det = r.preview_conferentes_detalhe
-  if (det && det.length > 1) {
-    const hit = det.find((d) => d.conferente_id === modoConferenteEfetivo)
-    if (hit) {
-      const n = String(hit.conferente_nome ?? '').trim()
-      if (n) return n
-    }
-    const fallback = String(r.conferente_nome ?? '').trim()
-    return fallback || '—'
+  if (!det?.length) {
+    const n = String(r.conferente_nome ?? '').trim()
+    if (n) return n
+    return String(r.conferente_id ?? '').trim() || '—'
   }
-  if (det?.length === 1) {
+  if (det.length <= 1) {
     const u = String(det[0]?.conferente_nome ?? '').trim()
     if (u) return u
+    const n = String(r.conferente_nome ?? '').trim()
+    if (n) return n
+    return String(r.conferente_id ?? '').trim() || '—'
   }
-  const n = String(r.conferente_nome ?? '').trim()
-  if (n) return n
-  const id = String(r.conferente_id ?? '').trim()
-  return id || '—'
+  const part = det.find((d) => d.conferente_id === modoConferenteEfetivo)
+  if (part) {
+    const n = String(part.conferente_nome ?? '').trim()
+    if (n) return n
+  }
+  const fallback = String(r.conferente_nome ?? '').trim()
+  return fallback || '—'
 }
 
 type ProductOption = {
@@ -908,10 +910,11 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     }
   }, [inventario, offlineSession?.status, offlineSession?.sessionId, offlineSession?.data_contagem_ymd])
 
-  /** Prévia do banco: atualiza quando qualquer conferente grava no mesmo dia (Realtime). */
+  /** Prévia do banco: carrega ao abrir/mudar o dia e atualiza via Realtime. */
   useEffect(() => {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(previewConsultaDiaYmd)) return
     const ymd = previewConsultaDiaYmd
+    void loadPreviewRef.current(ymd, { silent: true })
     const unsub = subscribeContagensEstoqueDia(ymd, () => {
       void loadPreviewRef.current(ymd, { silent: true })
     })

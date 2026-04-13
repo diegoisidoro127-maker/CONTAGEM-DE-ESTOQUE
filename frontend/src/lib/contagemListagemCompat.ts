@@ -280,28 +280,58 @@ export function consolidarUltimaContagemDiariaPorCodigoEConferente<T extends Row
  * Contagem diária na prévia: **uma linha por produto** no dia.
  * Considera **rascunho e oficiais juntos**: mantém só o registro **mais recente**
  * (`data_hora_contagem`, depois `id`) — assim um edit após a finalização do outro prevalece.
- * Conferente e quantidade são os desse registro (sem somar).
+ * Conferente e quantidade “globais” da linha são os desse registro (sem somar).
+ *
+ * `preview_conferentes_detalhe` lista **cada conferente** que tem lançamento naquele dia+código,
+ * com a **última** quantidade daquele conferente — necessário para o seletor “Quantidade por conferente”
+ * e para exibir o nome de quem gravou o valor mostrado em cada modo.
  */
 export function prepararContagemDiariaOficialListaUnicaPorProduto<T extends RowMergeContagemDiaria>(rows: T[]): T[] {
   const cons = consolidarUltimaContagemDiariaPorCodigo(rows)
   return cons.map((r) => {
-    const rowRec = r as Record<string, unknown>
-    const cid = String(r.conferente_id ?? '').trim() || '__sem__'
-    const nomeLinha = conferenteNomeParaDetalhe(rowRec)
+    const key = rowKeyCodigoBase(r)
+    const sameKeyRows = rows.filter((row) => rowKeyCodigoBase(row) === key)
+
+    const byCid = new Map<string, T>()
+    for (const row of sameKeyRows) {
+      const cid = String(row.conferente_id ?? '').trim() || '__sem__'
+      const prev = byCid.get(cid)
+      if (!prev) {
+        byCid.set(cid, row)
+        continue
+      }
+      if (
+        contagemLinhaAVenceB(
+          { data_hora_contagem: String(row.data_hora_contagem ?? ''), id: String(row.id) },
+          { data_hora_contagem: String(prev.data_hora_contagem ?? ''), id: String(prev.id) },
+        )
+      ) {
+        byCid.set(cid, row)
+      }
+    }
+
+    const det: ConferenteDetalheGrupo[] = []
+    for (const row of byCid.values()) {
+      const rowRec = row as Record<string, unknown>
+      const cid = String(row.conferente_id ?? '').trim() || '__sem__'
+      const nomeLinha = conferenteNomeParaDetalhe(rowRec)
+      const sid = row.source_ids?.length ? [...row.source_ids] : [String(row.id)]
+      det.push({
+        conferente_id: cid,
+        conferente_nome: nomeLinha,
+        quantidade_up: Number(row.quantidade_up ?? 0),
+        source_ids: sid,
+      })
+    }
+    det.sort((a, b) => a.conferente_nome.localeCompare(b.conferente_nome, 'pt-BR'))
+
     const sid = r.source_ids?.length ? [...r.source_ids] : [String(r.id)]
     const q = Number(r.quantidade_up ?? 0)
     return {
       ...r,
       quantidade_up: q,
       source_ids: sid,
-      preview_conferentes_detalhe: [
-        {
-          conferente_id: cid,
-          conferente_nome: nomeLinha,
-          quantidade_up: q,
-          source_ids: sid,
-        },
-      ],
+      preview_conferentes_detalhe: det,
     } as T
   })
 }
