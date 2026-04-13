@@ -120,10 +120,10 @@ function mapAuthError(message: string): string {
     return 'Usuário ou senha incorretos.'
   }
   if (m.includes('email not confirmed')) {
-    return 'Esta conta ainda não está liberada no Auth. Rode uma vez o UPDATE do arquivo supabase/sql/auth_immediate_login.sql no SQL Editor do Supabase (contas antigas). Novos cadastros não passam por e-mail após publicar a edge function auth-register-confirmed.'
+    return 'Não foi possível entrar com esta conta. Tente novamente mais tarde.'
   }
   if (m.includes('user already registered') || m.includes('already been registered')) {
-    return 'Este usuário já está cadastrado. Use Entrar ou recuperação de senha no Supabase.'
+    return 'Este usuário já existe. Use Entrar.'
   }
   if (m.includes('password')) {
     return 'Senha inválida. Use pelo menos 6 caracteres (regra do Supabase).'
@@ -164,8 +164,8 @@ export default function LoginScreen() {
         return
       }
       if (authData.user) void mirrorSenhaPlainToUsuarios(authData.user.id, password)
-    } catch (unknownErr) {
-      setError(unknownErr instanceof Error ? unknownErr.message : 'Erro ao entrar.')
+    } catch {
+      setError('Erro ao entrar. Tente novamente.')
     } finally {
       setLoading(false)
     }
@@ -194,7 +194,7 @@ export default function LoginScreen() {
     setLoading(true)
     try {
       const nomeUsuario = email.includes('@') ? email.trim().split('@')[0]! : email.trim()
-      // Só Edge Function: cria usuário já confirmado no Auth (sem fluxo de confirmação por e-mail).
+      // 1) Edge Function (usuário já confirmado). 2) Se indisponível, signUp (projeto sem confirmação de e-mail).
       const { data: fnData, error: fnErr } = await supabase.functions.invoke('auth-register-confirmed', {
         body: { email: authEmail, password, nome: nomeUsuario },
       })
@@ -225,11 +225,38 @@ export default function LoginScreen() {
         return
       }
 
-      setError(
-        'Publique a edge function auth-register-confirmed no Supabase (cadastro sem confirmação por e-mail). No projeto: supabase functions deploy auth-register-confirmed — código em supabase/functions/auth-register-confirmed.',
-      )
-    } catch (unknownErr) {
-      setError(unknownErr instanceof Error ? unknownErr.message : 'Erro ao cadastrar.')
+      const { data: signData, error: signErr } = await supabase.auth.signUp({
+        email: authEmail,
+        password,
+        options: {
+          emailRedirectTo: typeof window !== 'undefined' ? window.location.origin : undefined,
+          data: { nome: nomeUsuario },
+        },
+      })
+      if (signErr) {
+        setError(mapAuthError(signErr.message))
+        return
+      }
+      if (signData.session && signData.user) {
+        await finishAfterSession(signData.user.id)
+        return
+      }
+      if (signData.user) {
+        const { data: inData, error: inErr } = await supabase.auth.signInWithPassword({
+          email: authEmail,
+          password,
+        })
+        if (!inErr && inData.user) {
+          await finishAfterSession(inData.user.id)
+          return
+        }
+      }
+      setPassword('')
+      setPasswordConfirm('')
+      setMode('login')
+      setError('Não foi possível concluir o cadastro. Tente de novo em instantes.')
+    } catch {
+      setError('Erro ao cadastrar. Tente novamente.')
     } finally {
       setLoading(false)
     }
