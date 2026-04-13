@@ -143,7 +143,7 @@ export default function LoginScreen() {
     resetMessages()
     const authEmail = resolveAuthEmail(email)
     if (!authEmail || !password) {
-      setError('Preencha e-mail (ou usuário) e senha.')
+      setError('Preencha usuário e senha.')
       return
     }
     setLoading(true)
@@ -238,9 +238,7 @@ export default function LoginScreen() {
             Painel de Contagem de Estoque
           </h1>
           <p style={{ margin: '10px 0 0', fontSize: 14, color: 'var(--text, #9ca3af)', lineHeight: 1.45 }}>
-            {mode === 'login'
-              ? 'Entre com seu e-mail (ou usuário corporativo) e senha'
-              : 'Crie sua conta com nome de usuário e senha'}
+            {mode === 'login' ? 'Entre com seu usuário e senha' : 'Crie sua conta com nome de usuário e senha'}
           </p>
         </div>
 
@@ -281,15 +279,15 @@ export default function LoginScreen() {
         <form onSubmit={mode === 'login' ? handleLogin : handleRegister}>
           <label style={{ display: 'block', textAlign: 'left', marginBottom: 14 }}>
             <span style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-h, #f3f4f6)' }}>
-              {mode === 'register' ? 'Nome de usuário' : 'E-mail ou usuário'}
+              {mode === 'register' ? 'Nome de usuário' : 'Usuário'}
             </span>
             <input
-              type={mode === 'register' ? 'text' : 'email'}
-              autoComplete={mode === 'register' ? 'username' : 'email'}
+              type="text"
+              autoComplete="username"
               value={email}
               disabled={loading}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder={mode === 'register' ? 'ex.: diego.isidoro' : 'email@empresa.com ou usuário'}
+              placeholder="ex.: diego.isidoro"
               style={{
                 width: '100%',
                 boxSizing: 'border-box',
