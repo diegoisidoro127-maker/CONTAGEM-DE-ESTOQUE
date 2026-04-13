@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useState, useEffect, type FormEvent } from 'react'
 import logoUltrapao from '../assets/logo-ultrapao.png'
 import { supabase } from '../lib/supabaseClient'
 import './LoginScreen.css'
@@ -148,6 +148,11 @@ export default function LoginScreen() {
     setError(null)
   }
 
+  /** Evita mostrar erro de cadastro na tela de entrar (e o contrário). */
+  useEffect(() => {
+    setError(null)
+  }, [mode])
+
   const handleLogin = async (e: FormEvent) => {
     e.preventDefault()
     resetMessages()
@@ -256,8 +261,9 @@ export default function LoginScreen() {
       }
       setPassword('')
       setPasswordConfirm('')
-      setMode('login')
-      setError('Não foi possível concluir o cadastro. Tente de novo em instantes.')
+      setError(
+        'Não abrimos a sessão automaticamente. Se o cadastro foi aceito, use «Já tenho conta — entrar» com o mesmo usuário e senha; senão, tente de novo em instantes.',
+      )
     } catch {
       setError('Erro ao cadastrar. Tente novamente.')
     } finally {
