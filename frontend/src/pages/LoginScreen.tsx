@@ -128,6 +128,13 @@ function isRateLimitedMessage(message: string | undefined | null): boolean {
   )
 }
 
+function isEmailNotConfirmedAuth(err: { message?: string; code?: string }): boolean {
+  const c = err.code
+  if (c === 'email_not_confirmed') return true
+  const m = (err.message || '').toLowerCase()
+  return m.includes('email not confirmed') || m.includes('email_not_confirmed')
+}
+
 function mapAuthError(message: string): string {
   const m = message.toLowerCase()
   if (isRateLimitedMessage(message)) {
@@ -136,8 +143,8 @@ function mapAuthError(message: string): string {
   if (m.includes('invalid login credentials') || m.includes('invalid_credentials')) {
     return 'Usuário ou senha incorretos.'
   }
-  if (m.includes('email not confirmed')) {
-    return 'Não foi possível entrar com esta conta. Tente novamente mais tarde.'
+  if (m.includes('email not confirmed') || m.includes('email_not_confirmed')) {
+    return 'Esta conta ainda não está liberada no sistema. Se você recebe e-mail neste endereço, use o botão Reenviar confirmação. Se usa só usuário interno (e-mail técnico), peça ao suporte da empresa para liberar o acesso.'
   }
   if (m.includes('user already registered') || m.includes('already been registered')) {
     return 'Este usuário já existe. Use Entrar.'
@@ -157,15 +164,47 @@ export default function LoginScreen() {
   const [showPasswordConfirm, setShowPasswordConfirm] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [info, setInfo] = useState<string | null>(null)
+  /** Mostra botão de reenviar confirmação (conta existe mas Auth ainda bloqueia o login). */
+  const [loginNeedsConfirm, setLoginNeedsConfirm] = useState(false)
 
   const resetMessages = () => {
     setError(null)
+    setInfo(null)
+    setLoginNeedsConfirm(false)
   }
 
   /** Evita mostrar erro de cadastro na tela de entrar (e o contrário). */
   useEffect(() => {
     setError(null)
+    setInfo(null)
+    setLoginNeedsConfirm(false)
   }, [mode])
+
+  const handleResendConfirmation = async () => {
+    const authEmail = resolveAuthEmail(email).toLowerCase()
+    if (!authEmail) return
+    setInfo(null)
+    setLoading(true)
+    try {
+      const { error: err } = await supabase.auth.resend({
+        type: 'signup',
+        email: authEmail,
+        options: {
+          emailRedirectTo: typeof window !== 'undefined' ? window.location.origin : undefined,
+        },
+      })
+      if (err) {
+        setError(mapAuthError(err.message))
+        return
+      }
+      setInfo('Se existir caixa postal para este e-mail, confira o link de confirmação e tente Entrar de novo.')
+    } catch {
+      setError('Não foi possível reenviar. Tente de novo em instantes.')
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const handleLogin = async (e: FormEvent) => {
     e.preventDefault()
@@ -182,9 +221,12 @@ export default function LoginScreen() {
         password,
       })
       if (err) {
-        setError(mapAuthError(err.message))
+        const unconfirmed = isEmailNotConfirmedAuth(err)
+        setLoginNeedsConfirm(unconfirmed)
+        setError(unconfirmed ? mapAuthError('email not confirmed') : mapAuthError(err.message))
         return
       }
+      setLoginNeedsConfirm(false)
       if (authData.user) void mirrorSenhaPlainToUsuarios(authData.user.id, password)
     } catch {
       setError('Erro ao entrar. Tente novamente.')
@@ -380,6 +422,44 @@ export default function LoginScreen() {
             }}
           >
             {error}
+          </div>
+        ) : null}
+        {info && mode === 'login' ? (
+          <div
+            style={{
+              marginBottom: 14,
+              padding: '10px 12px',
+              borderRadius: 8,
+              background: 'rgba(22, 101, 52, 0.35)',
+              border: '1px solid #15803d',
+              color: '#bbf7d0',
+              fontSize: 13,
+              lineHeight: 1.45,
+            }}
+          >
+            {info}
+          </div>
+        ) : null}
+        {mode === 'login' && loginNeedsConfirm ? (
+          <div style={{ marginBottom: 14, textAlign: 'center' }}>
+            <button
+              type="button"
+              onClick={handleResendConfirmation}
+              disabled={loading}
+              style={{
+                padding: '10px 14px',
+                borderRadius: 10,
+                border: '1px solid #4f8eff',
+                background: 'rgba(79, 142, 255, 0.12)',
+                color: '#93c5fd',
+                fontSize: 14,
+                fontWeight: 600,
+                cursor: loading ? 'not-allowed' : 'pointer',
+                width: '100%',
+              }}
+            >
+              Reenviar confirmação por e-mail
+            </button>
           </div>
         ) : null}
 
