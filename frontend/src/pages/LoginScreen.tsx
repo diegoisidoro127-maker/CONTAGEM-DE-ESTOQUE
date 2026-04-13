@@ -114,9 +114,23 @@ function PasswordField({
   )
 }
 
+/** Supabase / GoTrue pode devolver vários textos para limite de taxa. */
+function isRateLimitedMessage(message: string | undefined | null): boolean {
+  if (!message) return false
+  const m = message.toLowerCase()
+  return (
+    m.includes('rate limit') ||
+    m.includes('too many') ||
+    m.includes('over_email_send') ||
+    m.includes('email rate limit') ||
+    m.includes('429') ||
+    m.includes('throttl')
+  )
+}
+
 function mapAuthError(message: string): string {
   const m = message.toLowerCase()
-  if (m.includes('rate limit')) {
+  if (isRateLimitedMessage(message)) {
     return 'Muitas tentativas em pouco tempo. Aguarde alguns minutos e tente de novo.'
   }
   if (m.includes('invalid login credentials') || m.includes('invalid_credentials')) {
@@ -202,11 +216,6 @@ export default function LoginScreen() {
     setLoading(true)
     try {
       const nomeUsuario = email.includes('@') ? email.trim().split('@')[0]! : email.trim()
-      // 1) Edge Function (usuário já confirmado). 2) Se indisponível, signUp (projeto sem confirmação de e-mail).
-      const { data: fnData, error: fnErr } = await supabase.functions.invoke('auth-register-confirmed', {
-        body: { email: authEmail, password, nome: nomeUsuario },
-      })
-      const fnPayload = fnData as { ok?: boolean; error?: string } | null
 
       const finishAfterSession = async (userId: string) => {
         await mirrorSenhaPlainToUsuarios(userId, password)
@@ -215,41 +224,24 @@ export default function LoginScreen() {
         setEmail('')
       }
 
-      if (!fnErr && fnPayload?.ok) {
-        const { data: signData, error: signErr } = await supabase.auth.signInWithPassword({
-          email: authEmail,
-          password,
-        })
-        if (signErr) {
-          setError(mapAuthError(signErr.message))
-          return
-        }
-        if (signData.user) await finishAfterSession(signData.user.id)
-        return
-      }
-
-      if (!fnErr && fnPayload && fnPayload.ok === false) {
-        setError(mapAuthError(fnPayload.error || ''))
-        return
-      }
-
-      const { data: signData, error: signErr } = await supabase.auth.signUp({
+      const signUpOptions = {
         email: authEmail,
         password,
         options: {
           emailRedirectTo: typeof window !== 'undefined' ? window.location.origin : undefined,
           data: { nome: nomeUsuario },
         },
-      })
-      if (signErr) {
-        setError(mapAuthError(signErr.message))
-        return
       }
-      if (signData.session && signData.user) {
+
+      // 1) signUp primeiro = 1 chamada ao Auth (menos estouro de limite que invoke+signUp).
+      const { data: signData, error: signErr } = await supabase.auth.signUp(signUpOptions)
+
+      if (!signErr && signData.session && signData.user) {
         await finishAfterSession(signData.user.id)
         return
       }
-      if (signData.user) {
+
+      if (!signErr && signData.user) {
         const { data: inData, error: inErr } = await supabase.auth.signInWithPassword({
           email: authEmail,
           password,
@@ -258,12 +250,79 @@ export default function LoginScreen() {
           await finishAfterSession(inData.user.id)
           return
         }
+        setPassword('')
+        setPasswordConfirm('')
+        setError(
+          'Não abrimos a sessão automaticamente. Use «Já tenho conta — entrar» com o mesmo usuário e senha, ou tente de novo em instantes.',
+        )
+        return
       }
-      setPassword('')
-      setPasswordConfirm('')
-      setError(
-        'Não abrimos a sessão automaticamente. Se o cadastro foi aceito, use «Já tenho conta — entrar» com o mesmo usuário e senha; senão, tente de novo em instantes.',
-      )
+
+      if (signErr) {
+        if (isRateLimitedMessage(signErr.message)) {
+          setError(mapAuthError(signErr.message))
+          return
+        }
+        const dup =
+          signErr.message.toLowerCase().includes('already') && signErr.message.toLowerCase().includes('registered')
+        if (dup) {
+          setError(mapAuthError(signErr.message))
+          return
+        }
+      }
+
+      // 2) Edge Function (admin): usuário confirmado sem depender do painel — só se signUp não criou sessão.
+      const { data: fnData, error: fnErr } = await supabase.functions.invoke('auth-register-confirmed', {
+        body: { email: authEmail, password, nome: nomeUsuario },
+      })
+      const fnPayload = fnData as { ok?: boolean; error?: string } | null
+
+      if (fnErr) {
+        if (isRateLimitedMessage(fnErr.message)) {
+          setError(mapAuthError(fnErr.message))
+          return
+        }
+        if (signErr) {
+          setError(mapAuthError(signErr.message))
+          return
+        }
+        setError(
+          'Não foi possível concluir o cadastro agora. Tente de novo em instantes ou use «Já tenho conta — entrar» se já criou a conta.',
+        )
+        return
+      }
+
+      if (fnPayload && fnPayload.ok === false) {
+        if (isRateLimitedMessage(fnPayload.error)) {
+          setError(mapAuthError(fnPayload.error || ''))
+          return
+        }
+        setError(mapAuthError(fnPayload.error || ''))
+        return
+      }
+
+      if (!fnPayload?.ok) {
+        if (signErr) {
+          setError(mapAuthError(signErr.message))
+          return
+        }
+        setError('Não foi possível concluir o cadastro. Tente de novo em instantes.')
+        return
+      }
+
+      const { data: signData2, error: signErr2 } = await supabase.auth.signInWithPassword({
+        email: authEmail,
+        password,
+      })
+      if (signErr2) {
+        if (isRateLimitedMessage(signErr2.message)) {
+          setError(mapAuthError(signErr2.message))
+          return
+        }
+        setError(mapAuthError(signErr2.message))
+        return
+      }
+      if (signData2.user) await finishAfterSession(signData2.user.id)
     } catch {
       setError('Erro ao cadastrar. Tente novamente.')
     } finally {
