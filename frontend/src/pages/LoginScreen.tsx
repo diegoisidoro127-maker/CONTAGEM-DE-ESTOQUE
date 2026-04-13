@@ -1,6 +1,17 @@
 import { useState, type FormEvent } from 'react'
 import logoUltrapao from '../assets/logo-ultrapao.png'
 import { supabase } from '../lib/supabaseClient'
+import './LoginScreen.css'
+
+/** Domínio usado para montar o e-mail do Auth a partir do nome de usuário no cadastro. */
+const AUTH_EMAIL_DOMAIN = 'ultrapao.com.br'
+
+function resolveAuthEmail(raw: string): string {
+  const t = raw.trim()
+  if (!t) return ''
+  if (t.includes('@')) return t
+  return `${t}@${AUTH_EMAIL_DOMAIN}`
+}
 
 function EyeOpenIcon() {
   return (
@@ -97,13 +108,13 @@ function PasswordField({
 function mapAuthError(message: string): string {
   const m = message.toLowerCase()
   if (m.includes('invalid login credentials') || m.includes('invalid_credentials')) {
-    return 'E-mail ou senha incorretos.'
+    return 'Usuário ou senha incorretos.'
   }
   if (m.includes('email not confirmed')) {
     return 'Confirme seu e-mail (link enviado pelo sistema) antes de entrar.'
   }
   if (m.includes('user already registered')) {
-    return 'Este e-mail já está cadastrado. Use Entrar ou recuperação de senha no Supabase.'
+    return 'Este usuário já está cadastrado. Use Entrar ou recuperação de senha no Supabase.'
   }
   if (m.includes('password')) {
     return 'Senha inválida. Use pelo menos 6 caracteres (regra do Supabase).'
@@ -130,14 +141,15 @@ export default function LoginScreen() {
   const handleLogin = async (e: FormEvent) => {
     e.preventDefault()
     resetMessages()
-    if (!email.trim() || !password) {
-      setError('Preencha e-mail e senha.')
+    const authEmail = resolveAuthEmail(email)
+    if (!authEmail || !password) {
+      setError('Preencha e-mail (ou usuário) e senha.')
       return
     }
     setLoading(true)
     try {
       const { error: err } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
+        email: authEmail,
         password,
       })
       if (err) setError(mapAuthError(err.message))
@@ -152,7 +164,12 @@ export default function LoginScreen() {
     e.preventDefault()
     resetMessages()
     if (!email.trim() || !password) {
-      setError('Preencha e-mail e senha.')
+      setError('Preencha o nome de usuário e a senha.')
+      return
+    }
+    const authEmail = resolveAuthEmail(email)
+    if (!authEmail) {
+      setError('Nome de usuário inválido.')
       return
     }
     if (password !== passwordConfirm) {
@@ -165,10 +182,14 @@ export default function LoginScreen() {
     }
     setLoading(true)
     try {
+      const nomeUsuario = email.includes('@') ? email.trim().split('@')[0]! : email.trim()
       const { error: err } = await supabase.auth.signUp({
-        email: email.trim(),
+        email: authEmail,
         password,
-        options: { emailRedirectTo: typeof window !== 'undefined' ? window.location.origin : undefined },
+        options: {
+          emailRedirectTo: typeof window !== 'undefined' ? window.location.origin : undefined,
+          data: { nome: nomeUsuario },
+        },
       })
       if (err) {
         setError(mapAuthError(err.message))
@@ -212,16 +233,14 @@ export default function LoginScreen() {
         }}
       >
         <div style={{ textAlign: 'center', marginBottom: 22 }}>
-          <img
-            src={logoUltrapao}
-            alt="Ultra Pão Alimentos"
-            style={{ width: 112, height: 'auto', borderRadius: 10, marginBottom: 14 }}
-          />
+          <img className="login-screen-logo" src={logoUltrapao} alt="Ultra Pão Alimentos" />
           <h1 style={{ margin: 0, fontSize: 'clamp(20px, 4vw, 24px)', color: '#ffd95c', fontWeight: 700 }}>
             Painel de Contagem de Estoque
           </h1>
           <p style={{ margin: '10px 0 0', fontSize: 14, color: 'var(--text, #9ca3af)', lineHeight: 1.45 }}>
-            {mode === 'login' ? 'Entre com seu e-mail e senha' : 'Crie sua conta com e-mail e senha'}
+            {mode === 'login'
+              ? 'Entre com seu e-mail (ou usuário corporativo) e senha'
+              : 'Crie sua conta com nome de usuário e senha'}
           </p>
         </div>
 
@@ -262,15 +281,15 @@ export default function LoginScreen() {
         <form onSubmit={mode === 'login' ? handleLogin : handleRegister}>
           <label style={{ display: 'block', textAlign: 'left', marginBottom: 14 }}>
             <span style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-h, #f3f4f6)' }}>
-              E-mail
+              {mode === 'register' ? 'Nome de usuário' : 'E-mail ou usuário'}
             </span>
             <input
-              type="email"
-              autoComplete="email"
+              type={mode === 'register' ? 'text' : 'email'}
+              autoComplete={mode === 'register' ? 'username' : 'email'}
               value={email}
               disabled={loading}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="seu@email.com"
+              placeholder={mode === 'register' ? 'ex.: diego.isidoro' : 'email@empresa.com ou usuário'}
               style={{
                 width: '100%',
                 boxSizing: 'border-box',
@@ -282,6 +301,20 @@ export default function LoginScreen() {
                 fontSize: 16,
               }}
             />
+            {mode === 'register' ? (
+              <span
+                style={{
+                  display: 'block',
+                  marginTop: 6,
+                  fontSize: 12,
+                  color: 'var(--text, #9ca3af)',
+                  lineHeight: 1.35,
+                }}
+              >
+                O acesso será registrado como <strong style={{ color: 'var(--text-h, #e5e7eb)' }}>usuário@{AUTH_EMAIL_DOMAIN}</strong>
+                .
+              </span>
+            ) : null}
           </label>
 
           <PasswordField

@@ -1,0 +1,28 @@
+@keyframes ultrapao-logo-float-glow {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+    filter: drop-shadow(0 0 8px rgba(255, 217, 92, 0.2));
+  }
+  50% {
+    transform: translateY(-7px) scale(1.04);
+    filter: drop-shadow(0 0 20px rgba(255, 217, 92, 0.55));
+  }
+}
+
+.login-screen-logo {
+  display: inline-block;
+  width: 112px;
+  height: auto;
+  border-radius: 10px;
+  margin-bottom: 14px;
+  animation: ultrapao-logo-float-glow 3.4s ease-in-out infinite;
+  will-change: transform, filter;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-screen-logo {
+    animation: none;
+    filter: drop-shadow(0 0 10px rgba(255, 217, 92, 0.3));
+  }
+}
