@@ -1,5 +1,52 @@
 import { useEffect, useState } from 'react'
 import type { CSSProperties } from 'react'
+import { normalizeCodigoInternoCompareKey } from '../lib/codigoInternoCompare'
+
+const CALC_HIST_STORAGE_PREFIX = 'checklist-qty-calc-hist:v1'
+const MAX_CALC_HIST = 30
+
+export type QtyCalcHistoryItem = { expr: string; result: string; at: string }
+
+/** Chave estável por código de produto para histórico no `localStorage`. */
+export function calcHistoryKeyForCodigo(codigo: string | null | undefined): string | undefined {
+  const raw = String(codigo ?? '').trim()
+  if (!raw) return undefined
+  const norm = normalizeCodigoInternoCompareKey(raw)
+  return norm || raw.toLowerCase()
+}
+
+function loadQtyCalcHistory(storageKey: string): QtyCalcHistoryItem[] {
+  try {
+    const s = localStorage.getItem(`${CALC_HIST_STORAGE_PREFIX}:${storageKey}`)
+    if (!s) return []
+    const p = JSON.parse(s) as { items?: QtyCalcHistoryItem[] }
+    if (!Array.isArray(p.items)) return []
+    return p.items.filter((x) => x && typeof x.expr === 'string' && typeof x.result === 'string')
+  } catch {
+    return []
+  }
+}
+
+function pushQtyCalcHistory(storageKey: string, expr: string, result: string) {
+  const e = expr.trim()
+  if (!storageKey || !e) return
+  const prev = loadQtyCalcHistory(storageKey)
+  const item: QtyCalcHistoryItem = { expr: e, result, at: new Date().toISOString() }
+  const next = [item, ...prev].slice(0, MAX_CALC_HIST)
+  try {
+    localStorage.setItem(`${CALC_HIST_STORAGE_PREFIX}:${storageKey}`, JSON.stringify({ items: next }))
+  } catch {
+    /* quota ou modo privado */
+  }
+}
+
+function clearQtyCalcHistory(storageKey: string) {
+  try {
+    localStorage.removeItem(`${CALC_HIST_STORAGE_PREFIX}:${storageKey}`)
+  } catch {
+    /* ignore */
+  }
+}
 
 export function evaluateQtyExpression(input: string): { ok: true; value: number } | { ok: false; error: string } {
   const raw = input.trim().replace(/\s/g, '').replace(/,/g, '.')
@@ -41,18 +88,28 @@ type Props = {
   onClose: () => void
   onApply: (value: string) => void
   productHint?: string
+  /** Chave do produto (ex.: `calcHistoryKeyForCodigo`) para histórico em `localStorage`. */
+  historyStorageKey?: string
 }
 
-export function ChecklistCalculatorModal({ open, onClose, onApply, productHint }: Props) {
+export function ChecklistCalculatorModal({ open, onClose, onApply, productHint, historyStorageKey }: Props) {
   const [expr, setExpr] = useState('')
   const [msg, setMsg] = useState('')
+  const [showHistoryPanel, setShowHistoryPanel] = useState(false)
+  const [historyItems, setHistoryItems] = useState<QtyCalcHistoryItem[]>([])
 
   useEffect(() => {
     if (open) {
       setExpr('')
       setMsg('')
+      setShowHistoryPanel(false)
+      if (historyStorageKey) {
+        setHistoryItems(loadQtyCalcHistory(historyStorageKey))
+      } else {
+        setHistoryItems([])
+      }
     }
-  }, [open])
+  }, [open, historyStorageKey])
 
   if (!open) return null
 
@@ -87,7 +144,13 @@ export function ChecklistCalculatorModal({ open, onClose, onApply, productHint }
       setMsg(r.error)
       return
     }
-    onApply(formatQtyForChecklist(r.value))
+    const valueStr = formatQtyForChecklist(r.value)
+    const rawExpr = expr.trim()
+    if (historyStorageKey) {
+      pushQtyCalcHistory(historyStorageKey, rawExpr, valueStr)
+      setHistoryItems(loadQtyCalcHistory(historyStorageKey))
+    }
+    onApply(valueStr)
     onClose()
   }
 
@@ -118,7 +181,7 @@ export function ChecklistCalculatorModal({ open, onClose, onApply, productHint }
       <div
         style={{
           width: '100%',
-          maxWidth: 320,
+          maxWidth: 360,
           background: 'var(--panel-bg, #1e1f26)',
           border: '1px solid var(--border, #444)',
           borderRadius: 12,
@@ -133,6 +196,114 @@ export function ChecklistCalculatorModal({ open, onClose, onApply, productHint }
         </h3>
         {productHint ? (
           <p style={{ margin: '0 0 10px', fontSize: 12, color: 'var(--text, #9ca3af)' }}>{productHint}</p>
+        ) : null}
+        {historyStorageKey ? (
+          <div style={{ marginBottom: 10 }}>
+            <button
+              type="button"
+              onClick={() => setShowHistoryPanel((v) => !v)}
+              style={{
+                ...padBtn,
+                width: '100%',
+                fontSize: 13,
+                padding: '10px 12px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 8,
+              }}
+              aria-expanded={showHistoryPanel}
+            >
+              <span>
+                Histórico de cálculos neste item
+                {historyItems.length > 0 ? (
+                  <span style={{ color: '#93c5fd', marginLeft: 6 }}>({historyItems.length})</span>
+                ) : null}
+              </span>
+              <span aria-hidden style={{ fontSize: 11, opacity: 0.85 }}>
+                {showHistoryPanel ? 'Ocultar' : 'Ver'}
+              </span>
+            </button>
+            {showHistoryPanel ? (
+              <div
+                style={{
+                  marginTop: 8,
+                  maxHeight: 160,
+                  overflowY: 'auto',
+                  borderRadius: 8,
+                  border: '1px solid var(--border, #444)',
+                  background: 'var(--bg, #12131a)',
+                  padding: '8px 10px',
+                  boxSizing: 'border-box',
+                }}
+              >
+                {historyItems.length === 0 ? (
+                  <p style={{ margin: 0, fontSize: 12, color: 'var(--text, #9ca3af)', lineHeight: 1.45 }}>
+                    Nenhum registro ainda. Ao usar <strong style={{ color: 'var(--text-h, #e5e7eb)' }}>Inserir resultado na quantidade</strong>, o
+                    cálculo fica salvo aqui neste aparelho.
+                  </p>
+                ) : (
+                  <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {historyItems.map((h, i) => (
+                      <li key={`${h.at}-${i}`}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMsg('')
+                            setExpr(h.expr)
+                          }}
+                          title="Reutilizar esta expressão no campo"
+                          style={{
+                            width: '100%',
+                            textAlign: 'left',
+                            padding: '8px 10px',
+                            borderRadius: 6,
+                            border: '1px solid rgba(79, 142, 255, 0.35)',
+                            background: 'rgba(79, 142, 255, 0.08)',
+                            color: 'var(--text-h, #f3f4f6)',
+                            cursor: 'pointer',
+                            fontSize: 13,
+                            fontFamily: 'ui-monospace, Consolas, monospace',
+                            lineHeight: 1.35,
+                            boxSizing: 'border-box',
+                          }}
+                        >
+                          <span style={{ color: '#fde68a' }}>{h.expr}</span>
+                          <span style={{ color: 'var(--text, #9ca3af)' }}> → </span>
+                          <strong style={{ color: '#86efac' }}>{h.result}</strong>
+                          <div style={{ fontSize: 10, color: 'var(--text, #6b7280)', marginTop: 4, fontFamily: 'var(--sans, system-ui)' }}>
+                            {new Date(h.at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}
+                          </div>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {historyItems.length > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      clearQtyCalcHistory(historyStorageKey)
+                      setHistoryItems([])
+                    }}
+                    style={{
+                      marginTop: 10,
+                      width: '100%',
+                      padding: '8px 10px',
+                      fontSize: 12,
+                      borderRadius: 6,
+                      border: '1px solid #7f1d1d',
+                      background: 'rgba(127, 29, 29, 0.25)',
+                      color: '#fecaca',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Apagar todo o histórico deste item
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
         ) : null}
         <input
           type="text"

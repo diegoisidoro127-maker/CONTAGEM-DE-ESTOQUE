@@ -5,7 +5,7 @@ import {
   CHECKLIST_QTY_NAV_ATTR,
   handleChecklistFieldNavKeyDown,
 } from '../../lib/checklistFieldNavigation'
-import { ChecklistQtyCalcButton } from '../ChecklistCalculatorModal'
+import { calcHistoryKeyForCodigo, ChecklistQtyCalcButton } from '../ChecklistCalculatorModal'
 import { getInventarioRuaArmazem, inventarioArmazemPosNivel } from './inventarioPlanilhaModel'
 
 export type ChecklistEditDraft = {
@@ -43,7 +43,7 @@ export type InventarioPlanilhaTabelaProps = {
   /** Rodada selecionada (1–4): preenche a coluna de quantidade quando o campo está vazio. */
   inventarioNumeroContagemRodada: 1 | 2 | 3 | 4
   /** Abre calculadora para inserir o resultado na quantidade da linha em edição / visualização. */
-  openQtyCalculator?: (onApply: (value: string) => void, productHint?: string) => void
+  openQtyCalculator?: (onApply: (value: string) => void, productHint?: string, historyStorageKey?: string) => void
 }
 
 /**
@@ -269,6 +269,7 @@ export function InventarioPlanilhaTabela(props: InventarioPlanilhaTabelaProps) {
                                   (v) =>
                                     setChecklistEditDraft((d) => (d ? { ...d, quantidade_contada: v } : d)),
                                   `${checklistEditDraft.codigo_interno} — ${checklistEditDraft.descricao}`,
+                                  calcHistoryKeyForCodigo(checklistEditDraft.codigo_interno),
                                 )
                               }
                             />
@@ -471,10 +472,11 @@ export function InventarioPlanilhaTabela(props: InventarioPlanilhaTabelaProps) {
                             <ChecklistQtyCalcButton
                               buttonStyle={buttonStyle}
                               onClick={() =>
-                                openQtyCalculator(
-                                  (v) => updateOfflineItemQty(it.key, v),
-                                  `${it.codigo_interno} — ${it.descricao}`,
-                                )
+                                  openQtyCalculator(
+                                    (v) => updateOfflineItemQty(it.key, v),
+                                    `${it.codigo_interno} — ${it.descricao}`,
+                                    calcHistoryKeyForCodigo(it.codigo_interno),
+                                  )
                               }
                             />
                           ) : null}

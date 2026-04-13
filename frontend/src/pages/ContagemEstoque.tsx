@@ -71,7 +71,11 @@ import {
 import { mergeContagensDiariasDoDiaParaItems } from '../lib/mergeContagemDiariaDoBanco'
 import { atualizarTodosOsProdutosEanDunAposFinalizacao } from '../lib/atualizarTodosOsProdutosEanDunAposFinalizacao'
 import { subscribeContagensEstoqueDia } from '../lib/subscribeContagensEstoqueRealtime'
-import { ChecklistCalculatorModal, ChecklistQtyCalcButton } from '../components/ChecklistCalculatorModal'
+import {
+  calcHistoryKeyForCodigo,
+  ChecklistCalculatorModal,
+  ChecklistQtyCalcButton,
+} from '../components/ChecklistCalculatorModal'
 
 /** Se o Realtime falhar, ainda sincroniza a checklist a cada 2 min. */
 const CONTAGEM_BANCO_MERGE_FALLBACK_MS = 120_000
@@ -575,13 +579,19 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
   const checklistQtyCalcApplyRef = useRef<((value: string) => void) | null>(null)
   const [checklistQtyCalcOpen, setChecklistQtyCalcOpen] = useState(false)
   const [checklistQtyCalcHint, setChecklistQtyCalcHint] = useState<string | undefined>(undefined)
+  const [checklistQtyCalcHistoryKey, setChecklistQtyCalcHistoryKey] = useState<string | undefined>(undefined)
   /** Ancora scroll após “Atualizar prévia” para a seção ficar visível (página longa no mobile). */
   const previewSectionRef = useRef<HTMLDivElement | null>(null)
   const checklistSectionRef = useRef<HTMLDivElement | null>(null)
 
-  function openChecklistQtyCalculator(onApply: (value: string) => void, productHint?: string) {
+  function openChecklistQtyCalculator(
+    onApply: (value: string) => void,
+    productHint?: string,
+    historyStorageKey?: string,
+  ) {
     checklistQtyCalcApplyRef.current = onApply
     setChecklistQtyCalcHint(productHint)
+    setChecklistQtyCalcHistoryKey(historyStorageKey)
     setChecklistQtyCalcOpen(true)
   }
 
@@ -3717,6 +3727,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                 openChecklistQtyCalculator(
                                   (v) => setEditingPreviewQuantidade(v),
                                   `${r.codigo_interno} — ${r.descricao}`,
+                                  calcHistoryKeyForCodigo(r.codigo_interno),
                                 )
                               }
                             />
@@ -3946,6 +3957,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                               openChecklistQtyCalculator(
                                 (v) => setEditingPreviewQuantidade(v),
                                 `${r.codigo_interno} — ${r.descricao}`,
+                                calcHistoryKeyForCodigo(r.codigo_interno),
                               )
                             }
                           />
@@ -5114,6 +5126,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                           (v) =>
                                             setChecklistEditDraft((d) => (d ? { ...d, quantidade_contada: v } : d)),
                                           `${checklistEditDraft.codigo_interno} — ${checklistEditDraft.descricao}`,
+                                          calcHistoryKeyForCodigo(checklistEditDraft.codigo_interno),
                                         )
                                       }
                                     />
@@ -5243,6 +5256,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                         openChecklistQtyCalculator(
                                           (v) => updateOfflineItemQty(it.key, v),
                                           `${it.codigo_interno} — ${it.descricao}`,
+                                          calcHistoryKeyForCodigo(it.codigo_interno),
                                         )
                                       }
                                     />
@@ -5652,6 +5666,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                               (v) =>
                                                 setChecklistEditDraft((d) => (d ? { ...d, quantidade_contada: v } : d)),
                                               `${checklistEditDraft.codigo_interno} — ${checklistEditDraft.descricao}`,
+                                              calcHistoryKeyForCodigo(checklistEditDraft.codigo_interno),
                                             )
                                           }
                                         />
@@ -5809,6 +5824,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                             openChecklistQtyCalculator(
                                               (v) => updateOfflineItemQty(it.key, v),
                                               `${it.codigo_interno} — ${it.descricao}`,
+                                              calcHistoryKeyForCodigo(it.codigo_interno),
                                             )
                                           }
                                         />
@@ -6126,11 +6142,13 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
             setChecklistQtyCalcOpen(false)
             checklistQtyCalcApplyRef.current = null
             setChecklistQtyCalcHint(undefined)
+            setChecklistQtyCalcHistoryKey(undefined)
           }}
           onApply={(value) => {
             checklistQtyCalcApplyRef.current?.(value)
           }}
           productHint={checklistQtyCalcHint}
+          historyStorageKey={checklistQtyCalcHistoryKey}
         />
 
         {savedCountModal ? (
