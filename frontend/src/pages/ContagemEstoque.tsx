@@ -71,6 +71,7 @@ import {
 import { mergeContagensDiariasDoDiaParaItems } from '../lib/mergeContagemDiariaDoBanco'
 import { atualizarTodosOsProdutosEanDunAposFinalizacao } from '../lib/atualizarTodosOsProdutosEanDunAposFinalizacao'
 import { subscribeContagensEstoqueDia } from '../lib/subscribeContagensEstoqueRealtime'
+import { ChecklistCalculatorModal, ChecklistQtyCalcButton } from '../components/ChecklistCalculatorModal'
 
 /** Se o Realtime falhar, ainda sincroniza a checklist a cada 2 min. */
 const CONTAGEM_BANCO_MERGE_FALLBACK_MS = 120_000
@@ -571,9 +572,18 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
   const [bloqueioContagemDiariaModalOpen, setBloqueioContagemDiariaModalOpen] = useState(false)
   const bloqueioResolverRef = useRef<null | ((v: 'editar' | 'zero' | 'fechar') => void)>(null)
   const bloqueioPendingActionRef = useRef<(() => void) | null>(null)
+  const checklistQtyCalcApplyRef = useRef<((value: string) => void) | null>(null)
+  const [checklistQtyCalcOpen, setChecklistQtyCalcOpen] = useState(false)
+  const [checklistQtyCalcHint, setChecklistQtyCalcHint] = useState<string | undefined>(undefined)
   /** Ancora scroll após “Atualizar prévia” para a seção ficar visível (página longa no mobile). */
   const previewSectionRef = useRef<HTMLDivElement | null>(null)
   const checklistSectionRef = useRef<HTMLDivElement | null>(null)
+
+  function openChecklistQtyCalculator(onApply: (value: string) => void, productHint?: string) {
+    checklistQtyCalcApplyRef.current = onApply
+    setChecklistQtyCalcHint(productHint)
+    setChecklistQtyCalcOpen(true)
+  }
 
   function flashChecklistRowSaved(key: string) {
     setChecklistSavedFlashKey(key)
@@ -3676,22 +3686,41 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                       <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text, #555)' }}>
                         Quantidade contada:
                         {editingPreviewId === r.id ? (
-                          <input
-                            type="text"
-                            inputMode="decimal"
-                            autoComplete="off"
-                            value={editingPreviewQuantidade}
-                            onChange={(e) => setEditingPreviewQuantidade(e.target.value)}
-                            {...{ [CHECKLIST_QTY_NAV_ATTR]: '' }}
+                          <span
                             style={{
                               marginLeft: 8,
-                              padding: '8px 10px',
-                              border: '1px solid #ccc',
-                              borderRadius: 8,
-                              width: 110,
-                              boxSizing: 'border-box',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 8,
+                              flexWrap: 'wrap',
+                              verticalAlign: 'middle',
                             }}
-                          />
+                          >
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              autoComplete="off"
+                              value={editingPreviewQuantidade}
+                              onChange={(e) => setEditingPreviewQuantidade(e.target.value)}
+                              {...{ [CHECKLIST_QTY_NAV_ATTR]: '' }}
+                              style={{
+                                padding: '8px 10px',
+                                border: '1px solid #ccc',
+                                borderRadius: 8,
+                                width: 110,
+                                boxSizing: 'border-box',
+                              }}
+                            />
+                            <ChecklistQtyCalcButton
+                              buttonStyle={buttonStyle}
+                              onClick={() =>
+                                openChecklistQtyCalculator(
+                                  (v) => setEditingPreviewQuantidade(v),
+                                  `${r.codigo_interno} — ${r.descricao}`,
+                                )
+                              }
+                            />
+                          </span>
                         ) : (
                           <span style={{ marginLeft: 8 }}>{previewQuantidadeExibidaPrevia(r)}</span>
                         )}
@@ -3895,15 +3924,32 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                   {prevCol('quantidade') ? (
                     <td style={tdStyle}>
                       {editingPreviewId === r.id ? (
-                        <input
-                          type="text"
-                          inputMode="decimal"
-                          autoComplete="off"
-                          value={editingPreviewQuantidade}
-                          onChange={(e) => setEditingPreviewQuantidade(e.target.value)}
-                          {...{ [CHECKLIST_QTY_NAV_ATTR]: '' }}
-                          style={{ padding: '6px 8px', border: '1px solid #ccc', borderRadius: 8, width: 104 }}
-                        />
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                          <input
+                            type="text"
+                            inputMode="decimal"
+                            autoComplete="off"
+                            value={editingPreviewQuantidade}
+                            onChange={(e) => setEditingPreviewQuantidade(e.target.value)}
+                            {...{ [CHECKLIST_QTY_NAV_ATTR]: '' }}
+                            style={{
+                              padding: '6px 8px',
+                              border: '1px solid #ccc',
+                              borderRadius: 8,
+                              width: 104,
+                              flex: '0 0 auto',
+                            }}
+                          />
+                          <ChecklistQtyCalcButton
+                            buttonStyle={buttonStyle}
+                            onClick={() =>
+                              openChecklistQtyCalculator(
+                                (v) => setEditingPreviewQuantidade(v),
+                                `${r.codigo_interno} — ${r.descricao}`,
+                              )
+                            }
+                          />
+                        </div>
                       ) : (
                         previewQuantidadeExibidaPrevia(r)
                       )}
@@ -5047,19 +5093,31 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                 </label>
                                 <label style={{ ...labelStyle }}>
                                   Quantidade contada
-                                  <input
-                                    type="text"
-                                    inputMode="decimal"
-                                    value={checklistEditDraft.quantidade_contada}
-                                    onChange={(e) =>
-                                      setChecklistEditDraft((d) =>
-                                        d ? { ...d, quantidade_contada: e.target.value } : d,
-                                      )
-                                    }
-                                    {...{ [CHECKLIST_QTY_NAV_ATTR]: '' }}
-                                    style={{ ...inputStyle, padding: '8px 10px', fontSize: 13 }}
-                                    placeholder="—"
-                                  />
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <input
+                                      type="text"
+                                      inputMode="decimal"
+                                      value={checklistEditDraft.quantidade_contada}
+                                      onChange={(e) =>
+                                        setChecklistEditDraft((d) =>
+                                          d ? { ...d, quantidade_contada: e.target.value } : d,
+                                        )
+                                      }
+                                      {...{ [CHECKLIST_QTY_NAV_ATTR]: '' }}
+                                      style={{ ...inputStyle, flex: 1, minWidth: 0, padding: '8px 10px', fontSize: 13 }}
+                                      placeholder="—"
+                                    />
+                                    <ChecklistQtyCalcButton
+                                      buttonStyle={buttonStyle}
+                                      onClick={() =>
+                                        openChecklistQtyCalculator(
+                                          (v) =>
+                                            setChecklistEditDraft((d) => (d ? { ...d, quantidade_contada: v } : d)),
+                                          `${checklistEditDraft.codigo_interno} — ${checklistEditDraft.descricao}`,
+                                        )
+                                      }
+                                    />
+                                  </div>
                                 </label>
                               </div>
                               <div style={{ marginTop: 8, display: 'grid', gap: 8, gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
@@ -5165,19 +5223,30 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                       <span style={{ fontSize: 10, color: '#0a0', fontWeight: 700 }}>Salvo</span>
                                     ) : null}
                                   </div>
-                                  <input
-                                    type="text"
-                                    inputMode="decimal"
-                                    value={
-                                      inventario && offlineSession?.listMode === 'planilha'
-                                        ? quantidadePlanilhaInventarioEfetiva(it, inventarioNumeroContagemRodada)
-                                        : it.quantidade_contada
-                                    }
-                                    onChange={(e) => updateOfflineItemQty(it.key, e.target.value)}
-                                    {...{ [CHECKLIST_QTY_NAV_ATTR]: '' }}
-                                    style={{ ...inputStyle, padding: '4px 6px', fontSize: 10 }}
-                                    placeholder="—"
-                                  />
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <input
+                                      type="text"
+                                      inputMode="decimal"
+                                      value={
+                                        inventario && offlineSession?.listMode === 'planilha'
+                                          ? quantidadePlanilhaInventarioEfetiva(it, inventarioNumeroContagemRodada)
+                                          : it.quantidade_contada
+                                      }
+                                      onChange={(e) => updateOfflineItemQty(it.key, e.target.value)}
+                                      {...{ [CHECKLIST_QTY_NAV_ATTR]: '' }}
+                                      style={{ ...inputStyle, flex: 1, minWidth: 0, padding: '4px 6px', fontSize: 10 }}
+                                      placeholder="—"
+                                    />
+                                    <ChecklistQtyCalcButton
+                                      buttonStyle={buttonStyle}
+                                      onClick={() =>
+                                        openChecklistQtyCalculator(
+                                          (v) => updateOfflineItemQty(it.key, v),
+                                          `${it.codigo_interno} — ${it.descricao}`,
+                                        )
+                                      }
+                                    />
+                                  </div>
                                 </label>
                                 {inventario || showChecklistColumn('unidade') ? (
                                   <label style={{ ...labelStyle, gap: 2 }}>
@@ -5369,6 +5438,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                       onPlanilhaCodigoBlur={
                         offlineSession?.listMode === 'planilha' ? aplicarCatalogoPorCodigoPlanilha : undefined
                       }
+                      openQtyCalculator={openChecklistQtyCalculator}
                     />
                     {linhasTabelaPlanilhaInventario.length > 0 ? (
                       <div
@@ -5559,21 +5629,33 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                     </td>
                                   ) : null}
                                   {showChecklistColumn('quantidade') ? (
-                                    <td style={tdStyle}>
-                                      <input
-                                        type="text"
-                                        inputMode="decimal"
-                                        value={checklistEditDraft.quantidade_contada}
-                                        onChange={(e) =>
-                                          setChecklistEditDraft((d) =>
-                                            d ? { ...d, quantidade_contada: e.target.value } : d,
-                                          )
-                                        }
-                                        {...{ [CHECKLIST_QTY_NAV_ATTR]: '' }}
-                                        style={checklistQtdInputStyle}
-                                        placeholder="—"
-                                        aria-label="Quantidade"
-                                      />
+                                    <td style={checklistQtdTableTdStyle}>
+                                      <div style={checklistQtdTableCellWrapStyle}>
+                                        <input
+                                          type="text"
+                                          inputMode="decimal"
+                                          value={checklistEditDraft.quantidade_contada}
+                                          onChange={(e) =>
+                                            setChecklistEditDraft((d) =>
+                                              d ? { ...d, quantidade_contada: e.target.value } : d,
+                                            )
+                                          }
+                                          {...{ [CHECKLIST_QTY_NAV_ATTR]: '' }}
+                                          style={checklistQtdInputTableCellStyle}
+                                          placeholder="—"
+                                          aria-label="Quantidade"
+                                        />
+                                        <ChecklistQtyCalcButton
+                                          buttonStyle={buttonStyle}
+                                          onClick={() =>
+                                            openChecklistQtyCalculator(
+                                              (v) =>
+                                                setChecklistEditDraft((d) => (d ? { ...d, quantidade_contada: v } : d)),
+                                              `${checklistEditDraft.codigo_interno} — ${checklistEditDraft.descricao}`,
+                                            )
+                                          }
+                                        />
+                                      </div>
                                     </td>
                                   ) : null}
                                   {showChecklistColumn('data_fabricacao') ? (
@@ -5709,21 +5791,32 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                                     </td>
                                   ) : null}
                                   {showChecklistColumn('quantidade') ? (
-                                    <td style={tdStyle}>
-                                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                                    <td style={checklistQtdTableTdStyle}>
+                                      <div style={checklistQtdTableCellWrapStyle}>
                                         <input
                                           type="text"
                                           inputMode="decimal"
                                           value={it.quantidade_contada}
                                           onChange={(e) => updateOfflineItemQty(it.key, e.target.value)}
                                           {...{ [CHECKLIST_QTY_NAV_ATTR]: '' }}
-                                          style={checklistQtdInputStyle}
+                                          style={checklistQtdInputTableCellStyle}
                                           placeholder="—"
                                           aria-label={`Quantidade ${it.codigo_interno}${it.inventario_repeticao ? ` ${it.inventario_repeticao}ª` : ''}`}
                                         />
-                                        {checklistSavedFlashKey === it.key ? (
-                                          <span style={{ fontSize: 11, color: '#0a0', fontWeight: 700 }}>Salvo</span>
-                                        ) : null}
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                                          <ChecklistQtyCalcButton
+                                            buttonStyle={buttonStyle}
+                                            onClick={() =>
+                                              openChecklistQtyCalculator(
+                                                (v) => updateOfflineItemQty(it.key, v),
+                                                `${it.codigo_interno} — ${it.descricao}`,
+                                              )
+                                            }
+                                          />
+                                          {checklistSavedFlashKey === it.key ? (
+                                            <span style={{ fontSize: 11, color: '#0a0', fontWeight: 700 }}>Salvo</span>
+                                          ) : null}
+                                        </div>
                                       </div>
                                     </td>
                                   ) : null}
@@ -6028,6 +6121,19 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
             </div>
           </div>
         ) : null}
+
+        <ChecklistCalculatorModal
+          open={checklistQtyCalcOpen}
+          onClose={() => {
+            setChecklistQtyCalcOpen(false)
+            checklistQtyCalcApplyRef.current = null
+            setChecklistQtyCalcHint(undefined)
+          }}
+          onApply={(value) => {
+            checklistQtyCalcApplyRef.current?.(value)
+          }}
+          productHint={checklistQtyCalcHint}
+        />
 
         {savedCountModal ? (
           <div
@@ -7115,5 +7221,29 @@ const checklistQtdInputStyle: React.CSSProperties = {
   boxSizing: 'border-box',
   background: 'var(--input-bg, #fff)',
   color: 'var(--text, #111)',
+}
+
+/** Coluna quantidade na tabela: `td` com nowrap quebra layout flex na horizontal em alguns navegadores. */
+const checklistQtdTableTdStyle: React.CSSProperties = {
+  ...tdStyle,
+  whiteSpace: 'normal',
+  verticalAlign: 'top',
+  minWidth: 200,
+  overflow: 'visible',
+}
+
+const checklistQtdTableCellWrapStyle: React.CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'stretch',
+  gap: 8,
+  maxWidth: 220,
+}
+
+const checklistQtdInputTableCellStyle: React.CSSProperties = {
+  ...checklistQtdInputStyle,
+  width: '100%',
+  maxWidth: 200,
+  minWidth: 0,
 }
 
