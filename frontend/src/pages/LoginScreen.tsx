@@ -116,6 +116,9 @@ function PasswordField({
 
 function mapAuthError(message: string): string {
   const m = message.toLowerCase()
+  if (m.includes('rate limit')) {
+    return 'Muitas tentativas em pouco tempo. Aguarde alguns minutos e tente de novo.'
+  }
   if (m.includes('invalid login credentials') || m.includes('invalid_credentials')) {
     return 'Usuário ou senha incorretos.'
   }
@@ -338,20 +341,6 @@ export default function LoginScreen() {
                 fontSize: 16,
               }}
             />
-            {mode === 'register' ? (
-              <span
-                style={{
-                  display: 'block',
-                  marginTop: 6,
-                  fontSize: 12,
-                  color: 'var(--text, #9ca3af)',
-                  lineHeight: 1.35,
-                }}
-              >
-                O acesso será registrado como <strong style={{ color: 'var(--text-h, #e5e7eb)' }}>usuário@{AUTH_EMAIL_DOMAIN}</strong>
-                .
-              </span>
-            ) : null}
           </label>
 
           <PasswordField
