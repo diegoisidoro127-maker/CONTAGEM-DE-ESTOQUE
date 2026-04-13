@@ -6118,8 +6118,8 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
             >
               <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
                 <svg
-                  width="22"
-                  height="22"
+                  width="24"
+                  height="24"
                   viewBox="0 0 24 24"
                   fill="none"
                   xmlns="http://www.w3.org/2000/svg"
@@ -6127,38 +6127,46 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                   className="contagem-icon-scan"
                 >
                   <defs>
-                    <linearGradient id="contagemScanStroke" x1="4" y1="4" x2="20" y2="20" gradientUnits="userSpaceOnUse">
-                      <stop stopColor="#38bdf8" />
+                    <linearGradient id="contagemScanStroke" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
+                      <stop stopColor="#22d3ee" />
+                      <stop offset="0.45" stopColor="#38bdf8" />
                       <stop offset="1" stopColor="#818cf8" />
                     </linearGradient>
-                    <linearGradient id="contagemLaser" x1="6" y1="10" x2="18" y2="10" gradientUnits="userSpaceOnUse">
-                      <stop stopColor="#22d3ee" stopOpacity="0.25" />
-                      <stop offset="0.5" stopColor="#a5f3fc" />
-                      <stop offset="1" stopColor="#22d3ee" stopOpacity="0.25" />
+                    <linearGradient id="contagemLaser" x1="5" y1="12" x2="19" y2="12" gradientUnits="userSpaceOnUse">
+                      <stop stopColor="#22d3ee" stopOpacity="0" />
+                      <stop offset="0.35" stopColor="#e0f2fe" />
+                      <stop offset="0.65" stopColor="#a5f3fc" />
+                      <stop offset="1" stopColor="#22d3ee" stopOpacity="0" />
                     </linearGradient>
+                    <filter id="contagemScanGlow" x="-40%" y="-40%" width="180%" height="180%">
+                      <feGaussianBlur stdDeviation="0.6" result="b" />
+                      <feMerge>
+                        <feMergeNode in="b" />
+                        <feMergeNode in="SourceGraphic" />
+                      </feMerge>
+                    </filter>
                   </defs>
                   <rect
-                    className="contagem-icon-scan__frame"
-                    x="3.5"
-                    y="4"
-                    width="17"
-                    height="16"
-                    rx="2.5"
-                    stroke="url(#contagemScanStroke)"
-                    strokeWidth="1.6"
-                    fill="rgba(15, 23, 42, 0.35)"
+                    x="5"
+                    y="5.5"
+                    width="14"
+                    height="13"
+                    rx="2"
+                    fill="rgba(15, 23, 42, 0.45)"
+                    stroke="rgba(148, 163, 184, 0.25)"
+                    strokeWidth="0.75"
                   />
-                  <g opacity="0.55">
-                    <rect x="7" y="14" width="1.2" height="4" rx="0.4" fill="#94a3b8" />
-                    <rect x="9" y="13" width="1.2" height="5" rx="0.4" fill="#94a3b8" />
-                    <rect x="11" y="14" width="1.2" height="4" rx="0.4" fill="#94a3b8" />
-                    <rect x="13" y="12.5" width="1.2" height="5.5" rx="0.4" fill="#94a3b8" />
-                    <rect x="15" y="14" width="1.2" height="4" rx="0.4" fill="#94a3b8" />
+                  <g stroke="url(#contagemScanStroke)" strokeWidth="1.35" strokeLinecap="round" filter="url(#contagemScanGlow)">
+                    <path className="contagem-icon-scan__corner contagem-icon-scan__corner--tl" d="M8.5 8.25h-2v2" />
+                    <path className="contagem-icon-scan__corner contagem-icon-scan__corner--tr" d="M15.5 8.25h2v2" />
+                    <path className="contagem-icon-scan__corner contagem-icon-scan__corner--bl" d="M6.5 15.75v2h2" />
+                    <path className="contagem-icon-scan__corner contagem-icon-scan__corner--br" d="M17.5 15.75v2h-2" />
                   </g>
-                  <g className="contagem-icon-scan__laser">
-                    <rect x="6" y="9.25" width="12" height="2" rx="1" fill="url(#contagemLaser)" />
+                  <g className="contagem-icon-scan__laser" opacity="0.95">
+                    <rect x="5.5" y="11.25" width="13" height="1.6" rx="0.8" fill="url(#contagemLaser)" />
                   </g>
-                  <circle className="contagem-icon-scan__sparkle" cx="19" cy="6" r="1.2" fill="#fbbf24" />
+                  <circle className="contagem-icon-scan__sparkle" cx="18.25" cy="7.25" r="1.35" fill="#fde047" />
+                  <circle className="contagem-icon-scan__sparkle-dim" cx="18.25" cy="7.25" r="2.4" stroke="#fbbf24" strokeWidth="0.5" fill="none" opacity="0.5" />
                 </svg>
               </span>
             </button>
@@ -6188,8 +6196,8 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
             >
               <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
                 <svg
-                  width="22"
-                  height="22"
+                  width="24"
+                  height="24"
                   viewBox="0 0 24 24"
                   fill="none"
                   xmlns="http://www.w3.org/2000/svg"
@@ -6197,38 +6205,54 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                   className="contagem-icon-camera"
                 >
                   <defs>
-                    <linearGradient id="contagemCamBody" x1="5" y1="6" x2="19" y2="18" gradientUnits="userSpaceOnUse">
-                      <stop stopColor="#e879f9" />
-                      <stop offset="0.5" stopColor="#a78bfa" />
-                      <stop offset="1" stopColor="#6366f1" />
+                    <linearGradient id="contagemCamBody" x1="4" y1="5" x2="20" y2="20" gradientUnits="userSpaceOnUse">
+                      <stop stopColor="#c084fc" />
+                      <stop offset="0.35" stopColor="#8b5cf6" />
+                      <stop offset="0.7" stopColor="#6366f1" />
+                      <stop offset="1" stopColor="#4338ca" />
                     </linearGradient>
-                    <linearGradient id="contagemCamLens" x1="9" y1="9" x2="15" y2="15" gradientUnits="userSpaceOnUse">
-                      <stop stopColor="#1e1b4b" />
+                    <linearGradient id="contagemCamLens" x1="10" y1="10" x2="15" y2="15" gradientUnits="userSpaceOnUse">
+                      <stop stopColor="#0f172a" />
+                      <stop offset="0.55" stopColor="#1e1b4b" />
                       <stop offset="1" stopColor="#312e81" />
                     </linearGradient>
+                    <radialGradient id="contagemCamGlint" cx="40%" cy="35%" r="55%">
+                      <stop offset="0%" stopColor="#f8fafc" stopOpacity="0.9" />
+                      <stop offset="0.35" stopColor="#e2e8f0" stopOpacity="0.35" />
+                      <stop offset="1" stopColor="#e2e8f0" stopOpacity="0" />
+                    </radialGradient>
+                    <filter id="contagemCamShadow" x="-25%" y="-25%" width="150%" height="150%">
+                      <feDropShadow dx="0" dy="0.8" stdDeviation="0.8" floodColor="#a78bfa" floodOpacity="0.45" />
+                    </filter>
                   </defs>
                   <path
                     className="contagem-icon-camera__body"
-                    d="M9 7.5h-.75C7.5 7.5 6.5 8.5 6.5 9.75v6.5c0 1.25 1 2.25 2.25 2.25h7.5c1.25 0 2.25-1 2.25-2.25v-6.5c0-1.25-1-2.25-2.25-2.25H15l-1.1-1.65c-.2-.3-.55-.5-.9-.5h-1.95c-.35 0-.7.2-.9.5L9 7.5z"
+                    filter="url(#contagemCamShadow)"
+                    d="M7.25 8.75h1.35l1.05-1.4c.22-.3.55-.48.9-.48h3.9c.35 0 .68.18.9.48l1.05 1.4h1.35c.9 0 1.65.75 1.65 1.65v5.85c0 .9-.75 1.65-1.65 1.65H7.25c-.9 0-1.65-.75-1.65-1.65v-5.85c0-.9.75-1.65 1.65-1.65z"
                     fill="url(#contagemCamBody)"
-                    stroke="rgba(255,255,255,0.35)"
-                    strokeWidth="0.6"
+                    stroke="rgba(255,255,255,0.38)"
+                    strokeWidth="0.55"
                   />
-                  <circle cx="12" cy="12.5" r="3.2" fill="url(#contagemCamLens)" stroke="rgba(255,255,255,0.5)" strokeWidth="0.8" />
+                  <rect className="contagem-icon-camera__grip" x="5.75" y="12.25" width="1.15" height="3.2" rx="0.45" fill="rgba(255,255,255,0.12)" />
+                  <circle cx="12" cy="12.85" r="3.45" fill="url(#contagemCamLens)" stroke="rgba(255,255,255,0.28)" strokeWidth="0.65" />
+                  <circle className="contagem-icon-camera__glint" cx="10.85" cy="11.35" r="1.05" fill="url(#contagemCamGlint)" />
                   <circle
                     className="contagem-icon-camera__lens-ring"
                     cx="12"
-                    cy="12.5"
-                    r="4.8"
+                    cy="12.85"
+                    r="4.55"
                     stroke="#fbbf24"
-                    strokeWidth="0.9"
+                    strokeWidth="0.85"
                     fill="none"
-                    opacity="0.9"
+                    opacity="0.95"
                   />
+                  <circle className="contagem-icon-camera__lens-ring-inner" cx="12" cy="12.85" r="2.85" stroke="#fbbf24" strokeWidth="0.5" fill="none" opacity="0.75" />
+                  <circle className="contagem-icon-camera__rec" cx="17.35" cy="9.15" r="0.65" fill="#f87171" />
                   <path
                     className="contagem-icon-camera__flash"
-                    d="M17.5 6.5l.6 1.2 1.3.2-1 .9.25 1.35-1.15-.65-1.15.65.25-1.35-1-.9 1.3-.2.6-1.2z"
-                    fill="#fef08a"
+                    d="M17.9 7.1c.2 0 .38.12.45.3l.35.85.9.12c.22.03.38.22.38.44 0 .12-.04.24-.12.33l-.68.68.2.92c.05.22-.08.44-.3.52l-.12.03h-.92l-.55.72a.48.48 0 01-.4.2.48.48 0 01-.45-.3l-.35-.85-.9-.12a.48.48 0 01-.38-.44c0-.12.04-.24.12-.33l.68-.68-.2-.92a.48.48 0 01.3-.52l.12-.03h.92l.55-.72c.1-.13.25-.2.4-.2z"
+                    fill="#fde68a"
+                    opacity="0.95"
                   />
                 </svg>
               </span>
