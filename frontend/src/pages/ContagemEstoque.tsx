@@ -3047,21 +3047,33 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
   const filteredPreviewRows = useMemo(() => {
     return previewRows.filter((r) => {
       const qCod = previewFilterCodigo.trim().toLowerCase()
+      const codigoStr = String(r.codigo_interno ?? '')
       const codigoOk =
         !qCod ||
-        r.codigo_interno.toLowerCase().includes(qCod) ||
-        normalizeCodigoInternoCompareKey(r.codigo_interno).toLowerCase().includes(
+        codigoStr.toLowerCase().includes(qCod) ||
+        normalizeCodigoInternoCompareKey(codigoStr).toLowerCase().includes(
           normalizeCodigoInternoCompareKey(previewFilterCodigo).toLowerCase(),
         )
       const descricaoOk =
         !previewFilterDescricao.trim() ||
-        r.descricao.toLowerCase().includes(previewFilterDescricao.trim().toLowerCase())
+        String(r.descricao ?? '')
+          .toLowerCase()
+          .includes(previewFilterDescricao.trim().toLowerCase())
       const qConf = previewFilterConferente.trim().toLowerCase()
       const confOk =
         !qConf ||
-        r.conferente_nome.toLowerCase().includes(qConf) ||
-        r.conferente_id.toLowerCase().includes(qConf) ||
-        (r.preview_conferentes_detalhe?.some((d) => d.conferente_nome.toLowerCase().includes(qConf)) ?? false)
+        String(r.conferente_nome ?? '')
+          .toLowerCase()
+          .includes(qConf) ||
+        String(r.conferente_id ?? '')
+          .toLowerCase()
+          .includes(qConf) ||
+        (r.preview_conferentes_detalhe?.some((d) =>
+          String(d.conferente_nome ?? '')
+            .toLowerCase()
+            .includes(qConf),
+        ) ??
+          false)
       const dataOk =
         !previewFilterData ||
         r.data_contagem === previewFilterData ||

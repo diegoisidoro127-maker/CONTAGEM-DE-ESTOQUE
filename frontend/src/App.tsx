@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { Component, type ErrorInfo, type ReactNode, useEffect, useState } from 'react'
 import { readLastListWasInventario, writeLastListScreen } from './lib/checklistVisibleCols'
 import type React from 'react'
 import './App.css'
@@ -9,6 +9,55 @@ import logoUltrapao from './assets/logo-ultrapao.png'
 
 type View = 'home' | 'contagem' | 'relatorio' | 'todas' | 'inventario' | 'baseDados'
 type Theme = 'dark' | 'light'
+
+/** Evita tela vazia se algum filho lançar no render; mostra mensagem e opção de recarregar. */
+class PanelErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
+  state = { error: null as Error | null }
+
+  static getDerivedStateFromError(error: Error) {
+    return { error }
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error('[Painel]', error.message, info.componentStack)
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div
+          style={{
+            padding: 24,
+            maxWidth: 560,
+            margin: '0 auto',
+            textAlign: 'left',
+            color: 'var(--text, #e5e7eb)',
+          }}
+        >
+          <h2 style={{ color: '#f87171', marginTop: 0 }}>Erro ao exibir esta aba</h2>
+          <p style={{ fontSize: 14, lineHeight: 1.55 }}>{this.state.error.message}</p>
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            style={{
+              marginTop: 16,
+              padding: '10px 16px',
+              borderRadius: 8,
+              border: '1px solid var(--border, #444)',
+              background: 'var(--code-bg, #2a2a2a)',
+              color: 'var(--text-h, #fff)',
+              cursor: 'pointer',
+              fontWeight: 600,
+            }}
+          >
+            Recarregar página
+          </button>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
 
 export default function App() {
   const [view, setView] = useState<View>('home')
@@ -185,9 +234,13 @@ export default function App() {
           </header>
 
           {view === 'contagem' ? (
-            <ContagemEstoque key="contagem" />
+            <PanelErrorBoundary>
+              <ContagemEstoque key="contagem" />
+            </PanelErrorBoundary>
           ) : view === 'inventario' ? (
-            <ContagemEstoque key="inventario" inventario />
+            <PanelErrorBoundary>
+              <ContagemEstoque key="inventario" inventario />
+            </PanelErrorBoundary>
           ) : view === 'baseDados' ? (
             <BaseProdutos key="baseDados" />
           ) : view === 'relatorio' ? (
