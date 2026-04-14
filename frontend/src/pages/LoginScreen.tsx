@@ -14,9 +14,14 @@ function edgeInvokeOptions(): { headers?: Record<string, string> } {
   return { headers: { Authorization: `Bearer ${anon}` } }
 }
 
-/** Normaliza o login: minusculas, sem @ (e-mail fica só no servidor). */
+/** Normaliza o login: minúsculas, espaços viram ponto (ex.: «diego isidoro» → «diego.isidoro»). */
 function normalizeUsername(raw: string): string {
-  return raw.trim().toLowerCase()
+  return raw
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '.')
+    .replace(/\.{2,}/g, '.')
+    .replace(/^\.+|\.+$/g, '')
 }
 
 function isValidUsernameFormat(u: string): boolean {
