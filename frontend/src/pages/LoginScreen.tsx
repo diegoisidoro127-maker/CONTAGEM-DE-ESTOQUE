@@ -3,7 +3,7 @@ import logoUltrapao from '../assets/logo-ultrapao.png'
 import { supabase } from '../lib/supabaseClient'
 import './LoginScreen.css'
 
-/** Domínio usado para montar o e-mail do Auth a partir do nome de usuário no cadastro. */
+/** Sufixo só para o Auth do Supabase (login com usuário + senha). Não é caixa postal nem confirmação por e-mail. */
 const AUTH_EMAIL_DOMAIN = 'ultrapao.com.br'
 
 function resolveAuthEmail(raw: string): string {
@@ -144,13 +144,13 @@ function mapAuthError(message: string): string {
     return 'Usuário ou senha incorretos.'
   }
   if (m.includes('email not confirmed') || m.includes('email_not_confirmed')) {
-    return 'Esta conta ainda não está liberada no sistema. Se você recebe e-mail neste endereço, use o botão Reenviar confirmação. Se usa só usuário interno (e-mail técnico), peça ao suporte da empresa para liberar o acesso.'
+    return 'Não foi possível entrar: este usuário ainda não está liberado no servidor (não há confirmação por e-mail neste painel). Tente de novo ou peça ao administrador para publicar auth-login-ensure ou rodar auth_immediate_login.sql.'
   }
   if (m.includes('user already registered') || m.includes('already been registered')) {
     return 'Este usuário já existe. Use Entrar.'
   }
   if (m.includes('password')) {
-    return 'Senha inválida. Use pelo menos 6 caracteres (regra do Supabase).'
+    return 'Senha inválida. Use pelo menos 6 caracteres.'
   }
   return message || 'Não foi possível concluir. Tente novamente.'
 }
@@ -164,24 +164,17 @@ export default function LoginScreen() {
   const [showPasswordConfirm, setShowPasswordConfirm] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [info, setInfo] = useState<string | null>(null)
-  /** Mostra botão de reenviar confirmação (conta existe mas Auth ainda bloqueia o login). */
-  const [loginNeedsConfirm, setLoginNeedsConfirm] = useState(false)
   /** Após rate limit no cadastro, bloqueia novas tentativas por alguns segundos. */
   const [registerCooldownUntil, setRegisterCooldownUntil] = useState(0)
   const [, setRegisterCooldownTick] = useState(0)
 
   const resetMessages = () => {
     setError(null)
-    setInfo(null)
-    setLoginNeedsConfirm(false)
   }
 
   /** Evita mostrar erro de cadastro na tela de entrar (e o contrário). */
   useEffect(() => {
     setError(null)
-    setInfo(null)
-    setLoginNeedsConfirm(false)
     if (mode !== 'register') setRegisterCooldownUntil(0)
   }, [mode])
 
@@ -194,31 +187,6 @@ export default function LoginScreen() {
     }, 1000)
     return () => clearInterval(id)
   }, [registerCooldownUntil])
-
-  const handleResendConfirmation = async () => {
-    const authEmail = resolveAuthEmail(email).toLowerCase()
-    if (!authEmail) return
-    setInfo(null)
-    setLoading(true)
-    try {
-      const { error: err } = await supabase.auth.resend({
-        type: 'signup',
-        email: authEmail,
-        options: {
-          emailRedirectTo: typeof window !== 'undefined' ? window.location.origin : undefined,
-        },
-      })
-      if (err) {
-        setError(mapAuthError(err.message))
-        return
-      }
-      setInfo('Se existir caixa postal para este e-mail, confira o link de confirmação e tente Entrar de novo.')
-    } catch {
-      setError('Não foi possível reenviar. Tente de novo em instantes.')
-    } finally {
-      setLoading(false)
-    }
-  }
 
   const handleLogin = async (e: FormEvent) => {
     e.preventDefault()
@@ -235,7 +203,6 @@ export default function LoginScreen() {
         password,
       })
       if (!err && authData.user) {
-        setLoginNeedsConfirm(false)
         void mirrorSenhaPlainToUsuarios(authData.user.id, password)
         return
       }
@@ -255,20 +222,16 @@ export default function LoginScreen() {
             refresh_token: fn.refresh_token,
           })
           if (sessErr) {
-            setLoginNeedsConfirm(true)
             setError(mapAuthError(sessErr.message))
             return
           }
-          setLoginNeedsConfirm(false)
-          setInfo(null)
           const uid = sessData.session?.user?.id
           if (uid) void mirrorSenhaPlainToUsuarios(uid, password)
           return
         }
-        setLoginNeedsConfirm(true)
         if (fnErr) {
           setError(
-            'Publique a função auth-login-ensure no Supabase (supabase functions deploy auth-login-ensure) ou rode supabase/sql/auth_immediate_login.sql uma vez.',
+            'Não foi possível validar usuário e senha no servidor. Publique auth-login-ensure no Supabase ou execute supabase/sql/auth_immediate_login.sql uma vez.',
           )
         } else if (fn?.error) {
           setError(mapAuthError(fn.error))
@@ -278,7 +241,6 @@ export default function LoginScreen() {
         return
       }
       if (err) {
-        setLoginNeedsConfirm(false)
         setError(mapAuthError(err.message))
         return
       }
@@ -349,7 +311,7 @@ export default function LoginScreen() {
         return true
       }
 
-      // 1) Edge primeiro: admin.createUser (sem fluxo de e-mail do signUp) → menos “Muitas tentativas”.
+      // 1) Edge primeiro: admin.createUser (evita signUp e limites de envio) → menos “Muitas tentativas”.
       const { data: fnData, error: fnErr } = await supabase.functions.invoke('auth-register-confirmed', {
         body: { email: authEmail, password, nome: nomeUsuario },
       })
@@ -377,7 +339,7 @@ export default function LoginScreen() {
 
       if (fnErr && rateLimitedReturn(fnErr.message)) return
 
-      // 2) Fallback: função indisponível ou resposta ambígua — signUp (pode acionar limite de e-mail).
+      // 2) Fallback: função indisponível ou resposta ambígua — signUp (pode acionar limite de taxa).
       const { data: signData, error: signErr } = await supabase.auth.signUp(signUpOptions)
 
       if (!signErr && signData.session && signData.user) {
@@ -460,8 +422,13 @@ export default function LoginScreen() {
             Painel de Contagem de Estoque
           </h1>
           <p style={{ margin: '10px 0 0', fontSize: 14, color: 'var(--text, #9ca3af)', lineHeight: 1.45 }}>
-            {mode === 'login' ? 'Entre com seu usuário e senha' : 'Crie sua conta com nome de usuário e senha'}
+            {mode === 'login' ? 'Entre com seu usuário e senha' : 'Cadastre usuário e senha; os dados são gravados no banco'}
           </p>
+          {mode === 'register' ? (
+            <p style={{ margin: '8px 0 0', fontSize: 12, color: 'var(--text, #6b7280)', lineHeight: 1.4 }}>
+              Não há confirmação por e-mail — o acesso é só usuário e senha.
+            </p>
+          ) : null}
         </div>
 
         {error ? (
@@ -481,45 +448,6 @@ export default function LoginScreen() {
             {error}
           </div>
         ) : null}
-        {info && mode === 'login' ? (
-          <div
-            style={{
-              marginBottom: 14,
-              padding: '10px 12px',
-              borderRadius: 8,
-              background: 'rgba(22, 101, 52, 0.35)',
-              border: '1px solid #15803d',
-              color: '#bbf7d0',
-              fontSize: 13,
-              lineHeight: 1.45,
-            }}
-          >
-            {info}
-          </div>
-        ) : null}
-        {mode === 'login' && loginNeedsConfirm ? (
-          <div style={{ marginBottom: 14, textAlign: 'center' }}>
-            <button
-              type="button"
-              onClick={handleResendConfirmation}
-              disabled={loading}
-              style={{
-                padding: '10px 14px',
-                borderRadius: 10,
-                border: '1px solid #4f8eff',
-                background: 'rgba(79, 142, 255, 0.12)',
-                color: '#93c5fd',
-                fontSize: 14,
-                fontWeight: 600,
-                cursor: loading ? 'not-allowed' : 'pointer',
-                width: '100%',
-              }}
-            >
-              Reenviar confirmação por e-mail
-            </button>
-          </div>
-        ) : null}
-
         <form onSubmit={mode === 'login' ? handleLogin : handleRegister}>
           <label style={{ display: 'block', textAlign: 'left', marginBottom: 14 }}>
             <span style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-h, #f3f4f6)' }}>
