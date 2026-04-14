@@ -1,10 +1,11 @@
--- Libera contas antigas que foram criadas com confirmação de e-mail e nunca confirmaram.
+-- Libera contas antigas (auth.users.email_confirmed_at nulo) em lote.
 -- =============================================================================
--- Novos cadastros pelo app usam a edge function `auth-register-confirmed` (admin API com
--- e-mail já confirmado) — não precisa desligar «Confirm email» no painel.
+-- Preferência: publicar a edge function `auth-login-ensure` — no login o app confirma
+-- automaticamente quando a senha estiver correta (sem precisar deste SQL por usuário).
 --
--- Use este SQL só para usuários que já existem em auth.users com email_confirmed_at nulo
--- (ex.: criados antes da edge function ou por outro fluxo).
+-- Use este script se quiser liberar todos de uma vez no SQL Editor, ou se a função não
+-- estiver publicada.
+-- Novos cadastros: edge `auth-register-confirmed` (usuário já confirmado).
 -- =============================================================================
 
 update auth.users

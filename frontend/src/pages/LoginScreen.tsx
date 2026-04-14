@@ -220,14 +220,54 @@ export default function LoginScreen() {
         email: authEmail,
         password,
       })
-      if (err) {
-        const unconfirmed = isEmailNotConfirmedAuth(err)
-        setLoginNeedsConfirm(unconfirmed)
-        setError(unconfirmed ? mapAuthError('email not confirmed') : mapAuthError(err.message))
+      if (!err && authData.user) {
+        setLoginNeedsConfirm(false)
+        void mirrorSenhaPlainToUsuarios(authData.user.id, password)
         return
       }
-      setLoginNeedsConfirm(false)
-      if (authData.user) void mirrorSenhaPlainToUsuarios(authData.user.id, password)
+      if (err && isEmailNotConfirmedAuth(err)) {
+        const { data: fnData, error: fnErr } = await supabase.functions.invoke('auth-login-ensure', {
+          body: { email: authEmail, password },
+        })
+        const fn = fnData as {
+          ok?: boolean
+          access_token?: string
+          refresh_token?: string
+          error?: string
+        } | null
+        if (!fnErr && fn?.ok && fn.access_token && fn.refresh_token) {
+          const { data: sessData, error: sessErr } = await supabase.auth.setSession({
+            access_token: fn.access_token,
+            refresh_token: fn.refresh_token,
+          })
+          if (sessErr) {
+            setLoginNeedsConfirm(true)
+            setError(mapAuthError(sessErr.message))
+            return
+          }
+          setLoginNeedsConfirm(false)
+          setInfo(null)
+          const uid = sessData.session?.user?.id
+          if (uid) void mirrorSenhaPlainToUsuarios(uid, password)
+          return
+        }
+        setLoginNeedsConfirm(true)
+        if (fnErr) {
+          setError(
+            'Publique a função auth-login-ensure no Supabase (supabase functions deploy auth-login-ensure) ou rode supabase/sql/auth_immediate_login.sql uma vez.',
+          )
+        } else if (fn?.error) {
+          setError(mapAuthError(fn.error))
+        } else {
+          setError(mapAuthError('email not confirmed'))
+        }
+        return
+      }
+      if (err) {
+        setLoginNeedsConfirm(false)
+        setError(mapAuthError(err.message))
+        return
+      }
     } catch {
       setError('Erro ao entrar. Tente novamente.')
     } finally {
@@ -245,6 +285,11 @@ export default function LoginScreen() {
     const authEmail = resolveAuthEmail(email).toLowerCase()
     if (!authEmail) {
       setError('Nome de usuário inválido.')
+      return
+    }
+    const nomeCurto = email.includes('@') ? email.trim().split('@')[0]! : email.trim()
+    if (nomeCurto.trim().length < 2) {
+      setError('O nome de usuário deve ter pelo menos 2 caracteres.')
       return
     }
     if (password !== passwordConfirm) {
