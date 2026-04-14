@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
+import { createPortal } from 'react-dom'
 import { normalizeCodigoInternoCompareKey } from '../lib/codigoInternoCompare'
 
 const CALC_HIST_STORAGE_PREFIX = 'checklist-qty-calc-hist:v1'
@@ -174,7 +175,7 @@ export function ChecklistCalculatorModal({ open, onClose, onApply, productHint, 
     </button>
   )
 
-  return (
+  return createPortal(
     <div
       role="dialog"
       aria-modal="true"
@@ -428,7 +429,8 @@ export function ChecklistCalculatorModal({ open, onClose, onApply, productHint, 
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 

@@ -408,6 +408,14 @@
   }
 }
 
+/* Sugestões código/descrição: hover só via CSS (evita mutar nós que o React controla). */
+.contagem-suggestions-ul li.contagem-suggest-li {
+  transition: background 0.12s ease;
+}
+.contagem-suggestions-ul li.contagem-suggest-li:hover {
+  background: var(--accent-bg, rgba(170, 59, 255, 0.1));
+}
+
 @media (prefers-reduced-motion: reduce) {
   .home-animated-wrap,
   .home-animated-logo,

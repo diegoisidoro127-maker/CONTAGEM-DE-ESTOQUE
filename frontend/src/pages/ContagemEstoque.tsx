@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type React from 'react'
+import { createPortal } from 'react-dom'
 import { supabase } from '../lib/supabaseClient'
 import { toDatetimeLocalValue, toISOStringFromDatetimeLocal } from '../lib/datetime'
 import {
@@ -5954,7 +5955,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
           </div>
         )}
 
-        {bloqueioContagemDiariaModalOpen ? (
+        {bloqueioContagemDiariaModalOpen ? createPortal(
           <div
             role="dialog"
             aria-modal="true"
@@ -6028,10 +6029,11 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                 </button>
               </div>
             </div>
-          </div>
+          </div>,
+          document.body,
         ) : null}
 
-        {confirmFinalizeMissingOpen ? (
+        {confirmFinalizeMissingOpen ? createPortal(
           <div
             style={{
               position: 'fixed',
@@ -6133,7 +6135,8 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                 </button>
               </div>
             </div>
-          </div>
+          </div>,
+          document.body,
         ) : null}
 
         <ChecklistCalculatorModal
@@ -6151,7 +6154,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
           historyStorageKey={checklistQtyCalcHistoryKey}
         />
 
-        {savedCountModal ? (
+        {savedCountModal ? createPortal(
           <div
             role="dialog"
             aria-modal="true"
@@ -6255,7 +6258,8 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                 </button>
               </div>
             </div>
-          </div>
+          </div>,
+          document.body,
         ) : null}
       </section>
 
@@ -6482,6 +6486,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
             </div>
             {codigoListOpen ? (
               <ul
+                className="contagem-suggestions-ul"
                 style={{
                   position: 'absolute',
                   left: 0,
@@ -6512,6 +6517,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                   codigoSuggestions.map((p) => (
                     <li
                       key={p.codigo}
+                      className="contagem-suggest-li"
                       onMouseDown={(e) => {
                         e.preventDefault()
                         setCodigoInterno(p.codigo)
@@ -6524,12 +6530,6 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                         cursor: 'pointer',
                         color: 'var(--text-h, #111)',
                         fontSize: 14,
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.background = 'var(--accent-bg, rgba(170,59,255,.1))'
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.background = 'transparent'
                       }}
                     >
                       <strong>{p.codigo}</strong>
@@ -6606,6 +6606,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                 </div>
                 {descricaoListOpen ? (
                   <ul
+                    className="contagem-suggestions-ul"
                     style={{
                       position: 'absolute',
                       left: 0,
@@ -6636,6 +6637,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                       descricaoSuggestions.map((p) => (
                         <li
                           key={`sug-desc-${p.codigo}`}
+                          className="contagem-suggest-li"
                           onMouseDown={(e) => {
                             e.preventDefault()
                             setDescricaoInput(p.descricao)
@@ -6649,12 +6651,6 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                             cursor: 'pointer',
                             color: 'var(--text-h, #111)',
                             fontSize: 14,
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.background = 'var(--accent-bg, rgba(170,59,255,.1))'
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.background = 'transparent'
                           }}
                         >
                           <span style={{ color: 'var(--text, #666)', marginRight: 8, fontWeight: 600 }}>
@@ -6894,7 +6890,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         )}
       </div>
 
-      {barcodeCameraOpen ? (
+      {barcodeCameraOpen ? createPortal(
         <div
           style={{
             position: 'fixed',
@@ -6954,10 +6950,11 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       ) : null}
 
-      {photoCameraOpen ? (
+      {photoCameraOpen ? createPortal(
         <div
           style={{
             position: 'fixed',
@@ -7116,7 +7113,8 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       ) : null}
     </div>
   )
