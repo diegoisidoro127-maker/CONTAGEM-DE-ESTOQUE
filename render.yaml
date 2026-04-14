@@ -2,13 +2,16 @@
 # No painel: conecte este Blueprint ou copie Root Directory + comandos abaixo.
 # Static site = CDN (sem processo Node “dormindo” como no free Web Service).
 # Vite 8 exige Node 20.19+ (ver https://vite.dev/guide/#scaffolding-your-first-vite-project )
+#
+# staticPublishPath é relativo à RAIZ do repo (doc Render), não ao rootDir.
+# Com rootDir: frontend, a saída do Vite é frontend/dist → ./frontend/dist.
 services:
   - type: web
     name: contagem-de-estoque
     runtime: static
     rootDir: frontend
     buildCommand: npm ci --no-audit --no-fund && npm run build
-    staticPublishPath: ./dist
+    staticPublishPath: ./frontend/dist
     envVars:
       - key: NODE_VERSION
         value: "20.19.0"
