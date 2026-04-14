@@ -1,4 +1,4 @@
-// Login só com username + senha. Resolve username → auth.users (e-mail interno) e devolve tokens.
+// Login só com username + senha. E-mail interno: username@internal.local (igual ao cadastro).
 //
 // Publicar com verify_jwt = false (supabase/config.toml), senão preflight/CORS falha no browser:
 //   supabase functions deploy login-username
@@ -7,6 +7,8 @@
 // Secrets automáticos: SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY
 
 import { createClient } from 'npm:@supabase/supabase-js'
+
+const INTERNAL_EMAIL_DOMAIN = 'internal.local'
 
 const corsHeaders: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
@@ -24,6 +26,23 @@ function jsonResponse(obj: unknown, status = 200) {
 function isEmailNotConfirmed(msg: string): boolean {
   const m = msg.toLowerCase()
   return m.includes('email not confirmed') || m.includes('email_not_confirmed')
+}
+
+async function resolveAuthUserIdForUsername(
+  admin: ReturnType<typeof createClient>,
+  usernameRaw: string,
+  emailInternal: string,
+): Promise<string | null> {
+  const { data: row } = await admin.from('usuarios').select('id').eq('username', usernameRaw).maybeSingle()
+  if (row?.id) return String(row.id)
+
+  const { data: listData, error: listErr } = await admin.auth.admin.listUsers({ page: 1, perPage: 200 })
+  if (listErr || !listData?.users?.length) return null
+  const want = emailInternal.toLowerCase()
+  for (const u of listData.users) {
+    if (u.email?.trim().toLowerCase() === want) return u.id
+  }
+  return null
 }
 
 Deno.serve(async (req) => {
@@ -64,36 +83,39 @@ Deno.serve(async (req) => {
     auth: { autoRefreshToken: false, persistSession: false },
   })
 
-  const { data: row, error: rowErr } = await admin
-    .from('usuarios')
-    .select('id')
-    .eq('username', usernameRaw)
-    .maybeSingle()
+  const emailInternal = `${usernameRaw}@${INTERNAL_EMAIL_DOMAIN}`
 
-  if (rowErr || !row?.id) {
-    return jsonResponse({ ok: false, error: 'Usuário ou senha incorretos.' }, 401)
-  }
-
-  const { data: authData, error: authErr } = await admin.auth.admin.getUserById(row.id)
-  const email = authData.user?.email?.trim().toLowerCase()
-  if (authErr || !email) {
-    return jsonResponse({ ok: false, error: 'Conta inválida. Contate o suporte.' }, 400)
-  }
-
-  let signed = await anon.auth.signInWithPassword({ email, password })
+  let signed = await anon.auth.signInWithPassword({ email: emailInternal, password })
 
   if (signed.error && isEmailNotConfirmed(signed.error.message)) {
-    const { error: upErr } = await admin.auth.admin.updateUserById(row.id, { email_confirm: true })
-    if (upErr) {
-      return jsonResponse({ ok: false, error: upErr.message }, 400)
+    const uid = await resolveAuthUserIdForUsername(admin, usernameRaw, emailInternal)
+    if (uid) {
+      const { error: upErr } = await admin.auth.admin.updateUserById(uid, { email_confirm: true })
+      if (!upErr) {
+        signed = await anon.auth.signInWithPassword({ email: emailInternal, password })
+      }
     }
-    signed = await anon.auth.signInWithPassword({ email, password })
+  }
+
+  if (signed.error || !signed.data.session) {
+    const { data: row } = await admin.from('usuarios').select('id').eq('username', usernameRaw).maybeSingle()
+    if (row?.id) {
+      const { data: authData, error: authErr } = await admin.auth.admin.getUserById(row.id)
+      const emailLegacy = authData.user?.email?.trim().toLowerCase()
+      if (!authErr && emailLegacy && emailLegacy !== emailInternal) {
+        signed = await anon.auth.signInWithPassword({ email: emailLegacy, password })
+        if (signed.error && isEmailNotConfirmed(signed.error.message)) {
+          await admin.auth.admin.updateUserById(row.id, { email_confirm: true })
+          signed = await anon.auth.signInWithPassword({ email: emailLegacy, password })
+        }
+      }
+    }
   }
 
   if (signed.error || !signed.data.session) {
     const msg = signed.error?.message || ''
     const low = msg.toLowerCase()
-    if (low.includes('invalid') && low.includes('credential')) {
+    if (low.includes('invalid') && (low.includes('credential') || low.includes('login'))) {
       return jsonResponse({ ok: false, error: 'Usuário ou senha incorretos.' }, 401)
     }
     return jsonResponse({ ok: false, error: msg || 'Não foi possível entrar.' }, 400)

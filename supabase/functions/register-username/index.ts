@@ -86,7 +86,16 @@ Deno.serve(async (req) => {
 
   const userId = created.user?.id
   if (userId) {
-    await admin.from('usuarios').update({ username: usernameRaw }).eq('id', userId)
+    const { data: existing } = await admin.from('usuarios').select('id').eq('id', userId).maybeSingle()
+    if (!existing) {
+      await admin.from('usuarios').insert({
+        id: userId,
+        nome: usernameRaw,
+        username: usernameRaw,
+      })
+    } else {
+      await admin.from('usuarios').update({ username: usernameRaw, nome: usernameRaw }).eq('id', userId)
+    }
   }
 
   const signed = await anon.auth.signInWithPassword({ email, password })
