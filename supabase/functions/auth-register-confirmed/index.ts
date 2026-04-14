@@ -1,7 +1,9 @@
 // Cadastro com usuário já “confirmado” no Auth (sem depender de «Confirm email» no painel).
-// Usa a service role só aqui (nunca no browser). Publicar: supabase functions deploy auth-register-confirmed
+// Após createUser, faz signIn no servidor (anon) e devolve tokens — o browser só usa setSession,
+// reduzindo pedidos /token no IP do utilizador (menos rate limit no cadastro).
 //
-// Variáveis automáticas no host Supabase: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
+// Publicar: supabase functions deploy auth-register-confirmed
+// Variáveis automáticas: SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY
 
 import { createClient } from 'npm:@supabase/supabase-js'
 
@@ -66,5 +68,24 @@ Deno.serve(async (req) => {
     return jsonResponse({ ok: false, error: error.message }, 400)
   }
 
+  const anonKey = Deno.env.get('SUPABASE_ANON_KEY')?.trim()
+  if (!anonKey) {
+    return jsonResponse({ ok: true })
+  }
+
+  const anon = createClient(supabaseUrl, anonKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  })
+
+  const signed = await anon.auth.signInWithPassword({ email, password })
+  if (!signed.error && signed.data.session) {
+    return jsonResponse({
+      ok: true,
+      access_token: signed.data.session.access_token,
+      refresh_token: signed.data.session.refresh_token,
+    })
+  }
+
+  // Conta criada; o cliente pode abrir sessão com signIn (comportamento anterior).
   return jsonResponse({ ok: true })
 })

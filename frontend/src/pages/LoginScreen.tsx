@@ -316,7 +316,12 @@ export default function LoginScreen() {
       const { data: fnData, error: fnErr } = await supabase.functions.invoke('auth-register-confirmed', {
         body: { email: authEmail, password, nome: nomeUsuario },
       })
-      const fnPayload = fnData as { ok?: boolean; error?: string } | null
+      const fnPayload = fnData as {
+        ok?: boolean
+        error?: string
+        access_token?: string
+        refresh_token?: string
+      } | null
 
       if (!fnErr && fnPayload?.ok === false) {
         const rawErr = fnPayload.error || ''
@@ -339,6 +344,23 @@ export default function LoginScreen() {
       }
 
       if (!fnErr && fnPayload?.ok) {
+        if (fnPayload.access_token && fnPayload.refresh_token) {
+          const { data: sessData, error: sessErr } = await supabase.auth.setSession({
+            access_token: fnPayload.access_token,
+            refresh_token: fnPayload.refresh_token,
+          })
+          if (sessErr) {
+            setError(mapAuthError(sessErr.message))
+            return
+          }
+          const uid = sessData.session?.user?.id
+          if (uid) {
+            await finishAfterSession(uid)
+            return
+          }
+          setError('Cadastro ok, mas a sessão não pôde ser aberta. Use Entrar.')
+          return
+        }
         const opened = await openSessionAfterAuth(authEmail, password)
         if (opened.ok) {
           await finishAfterSession(opened.userId)
