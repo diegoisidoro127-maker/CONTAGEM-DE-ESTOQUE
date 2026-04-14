@@ -3,6 +3,17 @@ import logoUltrapao from '../assets/logo-ultrapao.png'
 import { supabase } from '../lib/supabaseClient'
 import './LoginScreen.css'
 
+/**
+ * O gateway das Edge Functions pode exigir JWT (verify_jwt). Sem sessão de utilizador,
+ * enviamos o JWT anónimo do projeto — é o mesmo valor de VITE_SUPABASE_ANON_KEY (já público no front).
+ * Isto evita 401 no preflight/POST quando verify_jwt não foi desligado no painel.
+ */
+function edgeInvokeOptions(): { headers?: Record<string, string> } {
+  const anon = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
+  if (!anon) return {}
+  return { headers: { Authorization: `Bearer ${anon}` } }
+}
+
 /** Normaliza o login: minusculas, sem @ (e-mail fica só no servidor). */
 function normalizeUsername(raw: string): string {
   return raw.trim().toLowerCase()
@@ -231,6 +242,7 @@ export default function LoginScreen() {
     try {
       const { data: fnData, error: fnErr } = await supabase.functions.invoke('login-username', {
         body: { username: u, password },
+        ...edgeInvokeOptions(),
       })
       const payload = fnData as FnAuthPayload
       const errMsg = messageFromFn(payload, fnErr)
@@ -285,6 +297,7 @@ export default function LoginScreen() {
     try {
       const { data: fnData, error: fnErr } = await supabase.functions.invoke('register-username', {
         body: { username: u, password },
+        ...edgeInvokeOptions(),
       })
       const payload = fnData as FnAuthPayload
       const errMsg = messageFromFn(payload, fnErr)
