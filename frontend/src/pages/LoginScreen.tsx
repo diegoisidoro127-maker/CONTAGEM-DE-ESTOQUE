@@ -3,15 +3,76 @@ import logoUltrapao from '../assets/logo-ultrapao.png'
 import { supabase } from '../lib/supabaseClient'
 import './LoginScreen.css'
 
+function supabaseProjectRefFromEnv(): string {
+  const raw = (import.meta.env.VITE_SUPABASE_URL as string | undefined)?.trim()
+  if (!raw) return ''
+  try {
+    return new URL(raw).hostname.replace(/\.supabase\.co$/i, '')
+  } catch {
+    return ''
+  }
+}
+
+type AuthEdgeOk = { ok: true; data: NonNullable<FnAuthPayload> }
+type AuthEdgeFail = { ok: false; message: string }
+
 /**
- * O gateway das Edge Functions pode exigir JWT (verify_jwt). Sem sessão de utilizador,
- * enviamos o JWT anónimo do projeto — é o mesmo valor de VITE_SUPABASE_ANON_KEY (já público no front).
- * Isto evita 401 no preflight/POST quando verify_jwt não foi desligado no painel.
+ * Chamada direta à Edge Function com Authorization + apikey (recomendado na doc).
+ * Distingue 401 do gateway (Verify JWT ligado) de 401 com JSON { ok:false } da própria função (credenciais).
  */
-function edgeInvokeOptions(): { headers?: Record<string, string> } {
-  const anon = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
-  if (!anon) return {}
-  return { headers: { Authorization: `Bearer ${anon}` } }
+async function invokeAuthUsernameEdge(
+  fn: 'login-username' | 'register-username',
+  body: Record<string, unknown>,
+): Promise<AuthEdgeOk | AuthEdgeFail> {
+  const base = (import.meta.env.VITE_SUPABASE_URL as string | undefined)?.trim().replace(/\/$/, '')
+  const anon = (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined)?.trim()
+  const ref = supabaseProjectRefFromEnv()
+  if (!base || !anon) {
+    return { ok: false, message: 'Falta VITE_SUPABASE_URL ou VITE_SUPABASE_ANON_KEY no ambiente do site.' }
+  }
+  try {
+    const res = await fetch(`${base}/functions/v1/${fn}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${anon}`,
+        apikey: anon,
+      },
+      body: JSON.stringify(body),
+    })
+    const text = await res.text()
+    let data: FnAuthPayload = null
+    if (text) {
+      try {
+        data = JSON.parse(text) as FnAuthPayload
+      } catch {
+        data = null
+      }
+    }
+    if (res.ok && data && data.ok === true) {
+      return { ok: true, data }
+    }
+    if (data && data.ok === false && data.error) {
+      return { ok: false, message: mapAuthError(data.error) }
+    }
+    if (res.status === 401 || res.status === 403) {
+      return {
+        ok: false,
+        message:
+          `O Supabase bloqueou «${fn}» (${res.status}). No projeto «${ref || 'seu-ref'}», abra Edge Functions → ${fn} → desligue «Verify JWT» / «Enforce JWT» e faça Deploy. ` +
+          'Com isso ligado, o gateway exige JWT de utilizador autenticado; a chave anónima não serve para login/cadastro.',
+      }
+    }
+    const transport = mapInvokeTransportError(text || undefined)
+    if (transport) return { ok: false, message: transport }
+    return {
+      ok: false,
+      message: data?.error ? mapAuthError(data.error) : `Erro ${res.status} ao chamar ${fn}. Tente de novo.`,
+    }
+  } catch (e) {
+    const m = e instanceof Error ? e.message : String(e)
+    return { ok: false, message: mapInvokeTransportError(m) || 'Falha de rede. Tente de novo.' }
+  }
 }
 
 /** Normaliza o login: minúsculas, espaços viram ponto (ex.: «diego isidoro» → «diego.isidoro»). */
@@ -193,15 +254,6 @@ function mapInvokeTransportError(message: string | undefined): string | null {
   return null
 }
 
-function messageFromFn(data: FnAuthPayload, invokeError: { message?: string } | null): string | null {
-  if (data?.ok === true) return null
-  if (data?.ok === false) return mapAuthError(data.error || '')
-  const transport = mapInvokeTransportError(invokeError?.message)
-  if (transport) return transport
-  if (invokeError?.message) return mapAuthError(invokeError.message)
-  return null
-}
-
 export default function LoginScreen() {
   const [mode, setMode] = useState<'login' | 'register'>('login')
   const [username, setUsername] = useState('')
@@ -241,17 +293,13 @@ export default function LoginScreen() {
     }
     setLoading(true)
     try {
-      const { data: fnData, error: fnErr } = await supabase.functions.invoke('login-username', {
-        body: { username: u, password },
-        ...edgeInvokeOptions(),
-      })
-      const payload = fnData as FnAuthPayload
-      const errMsg = messageFromFn(payload, fnErr)
-      if (errMsg) {
-        setError(errMsg)
+      const result = await invokeAuthUsernameEdge('login-username', { username: u, password })
+      if (!result.ok) {
+        setError(result.message)
         return
       }
-      if (!payload?.ok || !payload.access_token || !payload.refresh_token) {
+      const payload = result.data
+      if (!payload.access_token || !payload.refresh_token) {
         setError(
           'Não foi possível entrar. Publique login-username no Supabase (supabase functions deploy login-username).',
         )
@@ -296,16 +344,12 @@ export default function LoginScreen() {
     }
     setLoading(true)
     try {
-      const { data: fnData, error: fnErr } = await supabase.functions.invoke('register-username', {
-        body: { username: u, password },
-        ...edgeInvokeOptions(),
-      })
-      const payload = fnData as FnAuthPayload
-      const errMsg = messageFromFn(payload, fnErr)
-      if (errMsg) {
-        setError(errMsg)
+      const result = await invokeAuthUsernameEdge('register-username', { username: u, password })
+      if (!result.ok) {
+        setError(result.message)
         return
       }
+      const payload = result.data
       if (!payload?.ok) {
         setError(
           'Não foi possível cadastrar. Publique register-username no Supabase e rode o SQL alter_usuarios_username.sql.',
