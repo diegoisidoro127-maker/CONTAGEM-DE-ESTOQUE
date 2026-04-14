@@ -151,6 +151,17 @@ Deno.serve(async (req) => {
     }
   }
 
+  // «primeiro.sobrenome» sem linha com esse username: tenta o primeiro segmento (ex.: diego.isidoro → diego no Auth).
+  if (effectiveUsername === usernameRaw && usernameRaw.includes('.')) {
+    const prefix = usernameRaw.split('.')[0]?.trim().toLowerCase() ?? ''
+    if (prefix.length >= 2 && prefix !== usernameRaw) {
+      const { data: rowPrefix } = await admin.from('usuarios').select('username').eq('username', prefix).maybeSingle()
+      if (rowPrefix?.username) {
+        effectiveUsername = String(rowPrefix.username).trim().toLowerCase()
+      }
+    }
+  }
+
   const emailInternal = `${effectiveUsername}@${INTERNAL_EMAIL_DOMAIN}`
   const emailLegacyDomain = `${effectiveUsername}@${LEGACY_EMAIL_DOMAIN}`
 
