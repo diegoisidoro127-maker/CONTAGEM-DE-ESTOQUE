@@ -9,6 +9,8 @@
 #   supabase functions deploy login-username
 #   supabase functions deploy register-username
 #
+# Também existe config.toml dentro de cada pasta da função (recomendado pelo Supabase).
+#
 # Só usa o painel Supabase? Em cada função, desative a exigência de JWT para invocação anónima.
 #   (opcional, legado) auth-register-confirmed, auth-login-ensure
 #

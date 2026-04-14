@@ -1,0 +1,3 @@
+# Sem isto, o gateway devolve 401 ao OPTIONS e o browser acusa CORS no cadastro.
+# Deploy: supabase functions deploy register-username
+verify_jwt = false

@@ -176,12 +176,13 @@ function mapInvokeTransportError(message: string | undefined): string | null {
     m.includes('failed to fetch') ||
     m.includes('networkerror') ||
     m.includes('load failed') ||
-    m.includes('err_failed')
+    m.includes('err_failed') ||
+    m.includes('cors')
   ) {
     return (
-      'Servidor Supabase não respondeu à função Edge (rede ou CORS). ' +
-      'Publique login-username e register-username e use verify_jwt = false (supabase/config.toml). ' +
-      'No painel: Edge Functions → cada função → desative exigir JWT para chamadas sem login.'
+      'O pedido ao Supabase foi bloqueado (muitas vezes o navegador mostra “CORS”, mas a causa é o gateway a exigir JWT no OPTIONS). ' +
+      'No painel Supabase: Edge Functions → register-username e login-username → definições → desligue “Verify JWT” / “Enforce JWT”. ' +
+      'Ou faça deploy pela CLI na pasta do projeto: supabase functions deploy register-username e login-username (já vão com verify_jwt = false em config.toml).'
     )
   }
   return null
