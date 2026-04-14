@@ -197,6 +197,22 @@ export default function App() {
             >
               Inventário
             </button>
+            {authEnabled ? (
+              <button
+                type="button"
+                onClick={() => void supabase.auth.signOut()}
+                style={{
+                  ...homeSecondaryBtnStyle,
+                  marginTop: 4,
+                  border: '1px solid var(--border, #444)',
+                  background: 'transparent',
+                  color: 'var(--text, #e5e7eb)',
+                }}
+                title="Encerra a sessão e volta à tela de login"
+              >
+                Sair — voltar ao login
+              </button>
+            ) : null}
           </div>
 
           <button
