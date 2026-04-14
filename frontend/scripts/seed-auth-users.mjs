@@ -2,7 +2,7 @@
  * Cria usuários no Supabase Auth (e espelha senha em public.usuarios, como no app).
  *
  * Credenciais criadas/atualizadas (e-mail interno diego@internal.local, etc.):
- *   diego     / diego123
+ *   diego / diego123 (nome em usuarios: Diego Isidoro — permite login pelo nome completo após deploy da função)
  *   leticia   / leticia123
  *
  * Uso (na pasta frontend), com service role do painel Supabase (Settings → API):
@@ -60,8 +60,8 @@ async function findUserIdByEmail(admin, email) {
 const INTERNAL_DOMAIN = 'internal.local'
 
 const USERS = [
-  { login: 'diego', password: 'diego123' },
-  { login: 'leticia', password: 'leticia123' },
+  { login: 'diego', password: 'diego123', nome: 'Diego Isidoro' },
+  { login: 'leticia', password: 'leticia123', nome: 'Leticia' },
 ]
 
 async function main() {
@@ -81,11 +81,12 @@ async function main() {
 
   for (const u of USERS) {
     const email = `${u.login}@${INTERNAL_DOMAIN}`
+    const displayNome = u.nome ?? u.login
     const { data, error } = await admin.auth.admin.createUser({
       email,
       password: u.password,
       email_confirm: true,
-      user_metadata: { nome: u.login, username: u.login },
+      user_metadata: { nome: displayNome, username: u.login },
     })
 
     let userId = data?.user?.id
@@ -106,7 +107,7 @@ async function main() {
       const { error: upErr } = await admin.auth.admin.updateUserById(id, {
         password: u.password,
         email_confirm: true,
-        user_metadata: { nome: u.login, username: u.login },
+        user_metadata: { nome: displayNome, username: u.login },
       })
       if (upErr) {
         console.error(`${u.login} (atualizar):`, upErr.message)
@@ -121,7 +122,7 @@ async function main() {
     if (userId) {
       const { error: dbErr } = await admin
         .from('usuarios')
-        .update({ senha: u.password, nome: u.login, username: u.login })
+        .update({ senha: u.password, nome: displayNome, username: u.login })
         .eq('id', userId)
       if (dbErr) {
         console.warn(`${u.login}: usuarios —`, dbErr.message, '(trigger pode ainda não ter criado a linha; rode o SQL create_usuarios.sql)')

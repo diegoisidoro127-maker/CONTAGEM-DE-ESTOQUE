@@ -133,36 +133,54 @@ Deno.serve(async (req) => {
     auth: { autoRefreshToken: false, persistSession: false },
   })
 
-  const emailInternal = `${usernameRaw}@${INTERNAL_EMAIL_DOMAIN}`
-  const emailLegacyDomain = `${usernameRaw}@${LEGACY_EMAIL_DOMAIN}`
+  // Permite entrar com nome completo: o front envia espaços como «.»; mapeamos de volta e batemos em usuarios.nome (ILIKE).
+  let effectiveUsername = usernameRaw
+  const { data: rowByUser } = await admin.from('usuarios').select('username').eq('username', usernameRaw).maybeSingle()
+  if (!rowByUser?.username) {
+    const nameGuess = usernameRaw.replace(/\./g, ' ').replace(/\s+/g, ' ').trim()
+    if (nameGuess.length >= 2) {
+      const { data: rowsByNome, error: nomeErr } = await admin
+        .from('usuarios')
+        .select('username')
+        .ilike('nome', nameGuess)
+        .not('username', 'is', null)
+        .limit(2)
+      if (!nomeErr && rowsByNome?.length === 1 && rowsByNome[0].username) {
+        effectiveUsername = String(rowsByNome[0].username).trim().toLowerCase()
+      }
+    }
+  }
 
-  let signed = await trySignInWithEmail(admin, anon, emailInternal, password, usernameRaw)
+  const emailInternal = `${effectiveUsername}@${INTERNAL_EMAIL_DOMAIN}`
+  const emailLegacyDomain = `${effectiveUsername}@${LEGACY_EMAIL_DOMAIN}`
+
+  let signed = await trySignInWithEmail(admin, anon, emailInternal, password, effectiveUsername)
 
   if (signed.error || !signed.data.session) {
-    signed = await trySignInWithEmail(admin, anon, emailLegacyDomain, password, usernameRaw)
+    signed = await trySignInWithEmail(admin, anon, emailLegacyDomain, password, effectiveUsername)
   }
 
   if (signed.error || !signed.data.session) {
-    const { data: row } = await admin.from('usuarios').select('id').eq('username', usernameRaw).maybeSingle()
+    const { data: row } = await admin.from('usuarios').select('id').eq('username', effectiveUsername).maybeSingle()
     if (row?.id) {
       const { data: authData, error: authErr } = await admin.auth.admin.getUserById(row.id)
       const emailFromRow = authData.user?.email?.trim()
       if (!authErr && emailFromRow) {
         const emLower = emailFromRow.toLowerCase()
         if (emLower !== emailInternal.toLowerCase() && emLower !== emailLegacyDomain.toLowerCase()) {
-          signed = await trySignInWithEmail(admin, anon, emailFromRow, password, usernameRaw)
+          signed = await trySignInWithEmail(admin, anon, emailFromRow, password, effectiveUsername)
         }
       }
     }
   }
 
   if (signed.error || !signed.data.session) {
-    const uid = await findAuthUserIdByEmailLocalPart(admin, usernameRaw)
+    const uid = await findAuthUserIdByEmailLocalPart(admin, effectiveUsername)
     if (uid) {
       const { data: authData } = await admin.auth.admin.getUserById(uid)
       const em = authData.user?.email?.trim()
       if (em) {
-        signed = await trySignInWithEmail(admin, anon, em, password, usernameRaw)
+        signed = await trySignInWithEmail(admin, anon, em, password, effectiveUsername)
       }
     }
   }

@@ -454,7 +454,7 @@ export default function LoginScreen() {
               value={username}
               disabled={loading}
               onChange={(e) => setUsername(e.target.value)}
-              placeholder="ex.: diego.isidoro"
+              placeholder={mode === 'register' ? 'ex.: diego.isidoro' : 'ex.: diego ou nome completo cadastrado'}
               style={{
                 width: '100%',
                 boxSizing: 'border-box',
