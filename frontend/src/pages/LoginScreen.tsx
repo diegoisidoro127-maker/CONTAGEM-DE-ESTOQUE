@@ -167,6 +167,9 @@ export default function LoginScreen() {
   const [info, setInfo] = useState<string | null>(null)
   /** Mostra botão de reenviar confirmação (conta existe mas Auth ainda bloqueia o login). */
   const [loginNeedsConfirm, setLoginNeedsConfirm] = useState(false)
+  /** Após rate limit no cadastro, bloqueia novas tentativas por alguns segundos. */
+  const [registerCooldownUntil, setRegisterCooldownUntil] = useState(0)
+  const [, setRegisterCooldownTick] = useState(0)
 
   const resetMessages = () => {
     setError(null)
@@ -179,7 +182,18 @@ export default function LoginScreen() {
     setError(null)
     setInfo(null)
     setLoginNeedsConfirm(false)
+    if (mode !== 'register') setRegisterCooldownUntil(0)
   }, [mode])
+
+  useEffect(() => {
+    if (registerCooldownUntil <= Date.now()) return
+    const end = registerCooldownUntil
+    const id = window.setInterval(() => {
+      setRegisterCooldownTick((t) => t + 1)
+      if (Date.now() >= end) setRegisterCooldownUntil(0)
+    }, 1000)
+    return () => clearInterval(id)
+  }, [registerCooldownUntil])
 
   const handleResendConfirmation = async () => {
     const authEmail = resolveAuthEmail(email).toLowerCase()
@@ -277,6 +291,12 @@ export default function LoginScreen() {
 
   const handleRegister = async (e: FormEvent) => {
     e.preventDefault()
+    if (registerCooldownUntil > Date.now()) {
+      resetMessages()
+      const s = Math.ceil((registerCooldownUntil - Date.now()) / 1000)
+      setError(`Aguarde ${s} segundos antes de tentar cadastrar de novo.`)
+      return
+    }
     resetMessages()
     if (!email.trim() || !password) {
       setError('Preencha o nome de usuário e a senha.')
@@ -320,7 +340,44 @@ export default function LoginScreen() {
         },
       }
 
-      // 1) signUp primeiro = 1 chamada ao Auth (menos estouro de limite que invoke+signUp).
+      const bumpRegisterCooldown = () => setRegisterCooldownUntil(Date.now() + 120_000)
+
+      const rateLimitedReturn = (msg: string | undefined) => {
+        if (!msg || !isRateLimitedMessage(msg)) return false
+        bumpRegisterCooldown()
+        setError(mapAuthError(msg))
+        return true
+      }
+
+      // 1) Edge primeiro: admin.createUser (sem fluxo de e-mail do signUp) → menos “Muitas tentativas”.
+      const { data: fnData, error: fnErr } = await supabase.functions.invoke('auth-register-confirmed', {
+        body: { email: authEmail, password, nome: nomeUsuario },
+      })
+      const fnPayload = fnData as { ok?: boolean; error?: string } | null
+
+      if (!fnErr && fnPayload?.ok === false) {
+        if (rateLimitedReturn(fnPayload.error)) return
+        setError(mapAuthError(fnPayload.error || ''))
+        return
+      }
+
+      if (!fnErr && fnPayload?.ok) {
+        const { data: si, error: se } = await supabase.auth.signInWithPassword({
+          email: authEmail,
+          password,
+        })
+        if (se) {
+          if (rateLimitedReturn(se.message)) return
+          setError(mapAuthError(se.message))
+          return
+        }
+        if (si.user) await finishAfterSession(si.user.id)
+        return
+      }
+
+      if (fnErr && rateLimitedReturn(fnErr.message)) return
+
+      // 2) Fallback: função indisponível ou resposta ambígua — signUp (pode acionar limite de e-mail).
       const { data: signData, error: signErr } = await supabase.auth.signUp(signUpOptions)
 
       if (!signErr && signData.session && signData.user) {
@@ -346,70 +403,25 @@ export default function LoginScreen() {
       }
 
       if (signErr) {
-        if (isRateLimitedMessage(signErr.message)) {
-          setError(mapAuthError(signErr.message))
-          return
-        }
+        if (rateLimitedReturn(signErr.message)) return
         const dup =
           signErr.message.toLowerCase().includes('already') && signErr.message.toLowerCase().includes('registered')
         if (dup) {
           setError(mapAuthError(signErr.message))
           return
         }
+        setError(mapAuthError(signErr.message))
+        return
       }
 
-      // 2) Edge Function (admin): usuário confirmado sem depender do painel — só se signUp não criou sessão.
-      const { data: fnData, error: fnErr } = await supabase.functions.invoke('auth-register-confirmed', {
-        body: { email: authEmail, password, nome: nomeUsuario },
-      })
-      const fnPayload = fnData as { ok?: boolean; error?: string } | null
-
       if (fnErr) {
-        if (isRateLimitedMessage(fnErr.message)) {
-          setError(mapAuthError(fnErr.message))
-          return
-        }
-        if (signErr) {
-          setError(mapAuthError(signErr.message))
-          return
-        }
         setError(
           'Não foi possível concluir o cadastro agora. Tente de novo em instantes ou use «Já tenho conta — entrar» se já criou a conta.',
         )
         return
       }
 
-      if (fnPayload && fnPayload.ok === false) {
-        if (isRateLimitedMessage(fnPayload.error)) {
-          setError(mapAuthError(fnPayload.error || ''))
-          return
-        }
-        setError(mapAuthError(fnPayload.error || ''))
-        return
-      }
-
-      if (!fnPayload?.ok) {
-        if (signErr) {
-          setError(mapAuthError(signErr.message))
-          return
-        }
-        setError('Não foi possível concluir o cadastro. Tente de novo em instantes.')
-        return
-      }
-
-      const { data: signData2, error: signErr2 } = await supabase.auth.signInWithPassword({
-        email: authEmail,
-        password,
-      })
-      if (signErr2) {
-        if (isRateLimitedMessage(signErr2.message)) {
-          setError(mapAuthError(signErr2.message))
-          return
-        }
-        setError(mapAuthError(signErr2.message))
-        return
-      }
-      if (signData2.user) await finishAfterSession(signData2.user.id)
+      setError('Não foi possível concluir o cadastro. Tente de novo em instantes.')
     } catch {
       setError('Erro ao cadastrar. Tente novamente.')
     } finally {
@@ -559,7 +571,7 @@ export default function LoginScreen() {
 
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || (mode === 'register' && registerCooldownUntil > Date.now())}
             style={{
               width: '100%',
               marginTop: 6,
@@ -570,11 +582,18 @@ export default function LoginScreen() {
               color: '#1a1300',
               fontSize: 16,
               fontWeight: 700,
-              cursor: loading ? 'wait' : 'pointer',
-              opacity: loading ? 0.85 : 1,
+              cursor:
+                loading || (mode === 'register' && registerCooldownUntil > Date.now()) ? 'not-allowed' : 'pointer',
+              opacity: loading || (mode === 'register' && registerCooldownUntil > Date.now()) ? 0.65 : 1,
             }}
           >
-            {loading ? 'Aguarde…' : mode === 'login' ? 'Entrar' : 'Cadastrar'}
+            {loading
+              ? 'Aguarde…'
+              : mode === 'login'
+                ? 'Entrar'
+                : registerCooldownUntil > Date.now()
+                  ? `Aguarde ${Math.ceil((registerCooldownUntil - Date.now()) / 1000)}s…`
+                  : 'Cadastrar'}
           </button>
         </form>
 
