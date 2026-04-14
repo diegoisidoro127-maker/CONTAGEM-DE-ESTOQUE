@@ -1,9 +1,9 @@
 /**
  * Cria usuários no Supabase Auth (e espelha senha em public.usuarios, como no app).
  *
- * Credenciais criadas/atualizadas:
- *   diego     / diego123     → diego@ultrapao.com.br
- *   leticia   / leticia123   → leticia@ultrapao.com.br
+ * Credenciais criadas/atualizadas (e-mail interno diego@internal.local, etc.):
+ *   diego     / diego123
+ *   leticia   / leticia123
  *
  * Uso (na pasta frontend), com service role do painel Supabase (Settings → API):
  *   PowerShell:
@@ -57,9 +57,11 @@ async function findUserIdByEmail(admin, email) {
   return null
 }
 
+const INTERNAL_DOMAIN = 'internal.local'
+
 const USERS = [
-  { login: 'diego', email: 'diego@ultrapao.com.br', password: 'diego123' },
-  { login: 'leticia', email: 'leticia@ultrapao.com.br', password: 'leticia123' },
+  { login: 'diego', password: 'diego123' },
+  { login: 'leticia', password: 'leticia123' },
 ]
 
 async function main() {
@@ -78,11 +80,12 @@ async function main() {
   })
 
   for (const u of USERS) {
+    const email = `${u.login}@${INTERNAL_DOMAIN}`
     const { data, error } = await admin.auth.admin.createUser({
-      email: u.email,
+      email,
       password: u.password,
       email_confirm: true,
-      user_metadata: { nome: u.login },
+      user_metadata: { nome: u.login, username: u.login },
     })
 
     let userId = data?.user?.id
@@ -94,7 +97,8 @@ async function main() {
         console.error(`${u.login}:`, error.message)
         continue
       }
-      const id = await findUserIdByEmail(admin, u.email)
+      let id = await findUserIdByEmail(admin, email)
+      if (!id) id = await findUserIdByEmail(admin, `${u.login}@ultrapao.com.br`)
       if (!id) {
         console.error(`${u.login}: conta já existe mas não foi possível localizar o ID.`)
         continue
@@ -102,7 +106,7 @@ async function main() {
       const { error: upErr } = await admin.auth.admin.updateUserById(id, {
         password: u.password,
         email_confirm: true,
-        user_metadata: { nome: u.login },
+        user_metadata: { nome: u.login, username: u.login },
       })
       if (upErr) {
         console.error(`${u.login} (atualizar):`, upErr.message)
@@ -115,7 +119,10 @@ async function main() {
     }
 
     if (userId) {
-      const { error: dbErr } = await admin.from('usuarios').update({ senha: u.password, nome: u.login }).eq('id', userId)
+      const { error: dbErr } = await admin
+        .from('usuarios')
+        .update({ senha: u.password, nome: u.login, username: u.login })
+        .eq('id', userId)
       if (dbErr) {
         console.warn(`${u.login}: usuarios —`, dbErr.message, '(trigger pode ainda não ter criado a linha; rode o SQL create_usuarios.sql)')
       } else {
@@ -124,7 +131,7 @@ async function main() {
     }
   }
 
-  console.log('\nNo app, use só o nome de usuário (diego / leticia) e a senha — o domínio @ultrapao.com.br é só interno ao Auth.')
+  console.log('\nNo app, use só o usuário (diego / leticia) e a senha — o e-mail interno é @' + INTERNAL_DOMAIN + ' .')
 }
 
 main().catch((e) => {

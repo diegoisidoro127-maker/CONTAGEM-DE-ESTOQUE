@@ -4,11 +4,18 @@
 # o gateway responde 401 ao OPTIONS e o navegador acusa falha de CORS no preflight.
 #
 # Depois de alterar: redeploy
-#   supabase functions deploy auth-register-confirmed
-#   supabase functions deploy auth-login-ensure
+#   supabase functions deploy login-username
+#   supabase functions deploy register-username
+#   (opcional, legado) auth-register-confirmed, auth-login-ensure
 #
 # project_id = ref do projeto (URL https://<ref>.supabase.co). Ajuste se for outro ambiente.
 project_id = "swnefuddaswgjvhiuxok"
+
+[functions.login-username]
+verify_jwt = false
+
+[functions.register-username]
+verify_jwt = false
 
 [functions.auth-register-confirmed]
 verify_jwt = false

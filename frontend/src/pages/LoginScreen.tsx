@@ -3,14 +3,14 @@ import logoUltrapao from '../assets/logo-ultrapao.png'
 import { supabase } from '../lib/supabaseClient'
 import './LoginScreen.css'
 
-/** Sufixo só para o Auth do Supabase (login com usuário + senha). Não é caixa postal nem confirmação por e-mail. */
-const AUTH_EMAIL_DOMAIN = 'ultrapao.com.br'
+/** Normaliza o login: minusculas, sem @ (e-mail fica só no servidor). */
+function normalizeUsername(raw: string): string {
+  return raw.trim().toLowerCase()
+}
 
-function resolveAuthEmail(raw: string): string {
-  const t = raw.trim()
-  if (!t) return ''
-  if (t.includes('@')) return t
-  return `${t}@${AUTH_EMAIL_DOMAIN}`
+function isValidUsernameFormat(u: string): boolean {
+  if (u.length < 2 || u.includes('@')) return false
+  return /^[a-z0-9._-]+$/.test(u)
 }
 
 /**
@@ -128,13 +128,6 @@ function isRateLimitedMessage(message: string | undefined | null): boolean {
   )
 }
 
-function isEmailNotConfirmedAuth(err: { message?: string; code?: string }): boolean {
-  const c = err.code
-  if (c === 'email_not_confirmed') return true
-  const m = (err.message || '').toLowerCase()
-  return m.includes('email not confirmed') || m.includes('email_not_confirmed')
-}
-
 function mapAuthError(message: string): string {
   const m = message.toLowerCase()
   if (isRateLimitedMessage(message)) {
@@ -144,7 +137,7 @@ function mapAuthError(message: string): string {
     return 'Usuário ou senha incorretos.'
   }
   if (m.includes('email not confirmed') || m.includes('email_not_confirmed')) {
-    return 'Não foi possível entrar: este usuário ainda não está liberado no servidor (não há confirmação por e-mail neste painel). Tente de novo ou peça ao administrador para publicar auth-login-ensure ou rodar auth_immediate_login.sql.'
+    return 'Conta ainda não liberada no servidor. Tente de novo ou peça suporte.'
   }
   if (m.includes('user already registered') || m.includes('already been registered')) {
     return 'Este usuário já existe. Use Entrar.'
@@ -155,73 +148,23 @@ function mapAuthError(message: string): string {
   return message || 'Não foi possível concluir. Tente novamente.'
 }
 
-/** Login direto ou, se o Auth bloquear por «não confirmado», libera via auth-login-ensure e abre sessão. */
-async function openSessionAfterAuth(
-  authEmail: string,
-  password: string,
-): Promise<{ ok: true; userId: string } | { ok: false; error: string }> {
-  const { data: authData, error: err } = await supabase.auth.signInWithPassword({
-    email: authEmail,
-    password,
-  })
-  if (!err && authData.user?.id) {
-    return { ok: true, userId: authData.user.id }
-  }
-  if (err && isEmailNotConfirmedAuth(err)) {
-    const { data: fnData, error: fnErr } = await supabase.functions.invoke('auth-login-ensure', {
-      body: { email: authEmail, password },
-    })
-    const fn = fnData as {
-      ok?: boolean
-      access_token?: string
-      refresh_token?: string
-      error?: string
-    } | null
-    if (!fnErr && fn?.ok && fn.access_token && fn.refresh_token) {
-      const { data: sessData, error: sessErr } = await supabase.auth.setSession({
-        access_token: fn.access_token,
-        refresh_token: fn.refresh_token,
-      })
-      if (sessErr) {
-        return { ok: false, error: mapAuthError(sessErr.message) }
-      }
-      const uid = sessData.session?.user?.id
-      if (uid) return { ok: true, userId: uid }
-      return { ok: false, error: 'Não foi possível abrir a sessão após liberar o acesso.' }
-    }
-    if (fnErr) {
-      return {
-        ok: false,
-        error:
-          'Não foi possível validar usuário e senha no servidor. Publique auth-login-ensure no Supabase ou execute supabase/sql/auth_immediate_login.sql uma vez.',
-      }
-    }
-    if (fn?.error) {
-      return { ok: false, error: mapAuthError(fn.error) }
-    }
-    return { ok: false, error: mapAuthError('email not confirmed') }
-  }
-  if (err) {
-    return { ok: false, error: mapAuthError(err.message) }
-  }
-  return { ok: false, error: 'Não foi possível abrir a sessão.' }
-}
+type FnAuthPayload = {
+  ok?: boolean
+  error?: string
+  access_token?: string
+  refresh_token?: string
+} | null
 
-function looksLikeUserAlreadyExistsMessage(msg: string): boolean {
-  const m = msg.toLowerCase()
-  return (
-    m.includes('already') ||
-    m.includes('registered') ||
-    m.includes('exists') ||
-    m.includes('duplicate') ||
-    m.includes('unique') ||
-    m.includes('has already been')
-  )
+function messageFromFn(data: FnAuthPayload, invokeError: { message?: string } | null): string | null {
+  if (data?.ok === true) return null
+  if (data?.ok === false) return mapAuthError(data.error || '')
+  if (invokeError?.message) return mapAuthError(invokeError.message)
+  return null
 }
 
 export default function LoginScreen() {
   const [mode, setMode] = useState<'login' | 'register'>('login')
-  const [email, setEmail] = useState('')
+  const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [passwordConfirm, setPasswordConfirm] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -233,33 +176,61 @@ export default function LoginScreen() {
     setError(null)
   }
 
-  /** Evita mostrar erro de cadastro na tela de entrar (e o contrário). */
   useEffect(() => {
     setError(null)
   }, [mode])
 
-  /** No cadastro, some o aviso ao corrigir usuário ou senha (evita mensagem antiga com campos vazios). */
   useEffect(() => {
     if (mode !== 'register') return
     setError(null)
-  }, [email, password, passwordConfirm, mode])
+  }, [username, password, passwordConfirm, mode])
+
+  const finishAfterSession = async (userId: string) => {
+    await mirrorSenhaPlainToUsuarios(userId, password)
+    setPassword('')
+    setPasswordConfirm('')
+    setUsername('')
+  }
 
   const handleLogin = async (e: FormEvent) => {
     e.preventDefault()
     resetMessages()
-    const authEmail = resolveAuthEmail(email).toLowerCase()
-    if (!authEmail || !password) {
+    const u = normalizeUsername(username)
+    if (!u || !password) {
       setError('Preencha usuário e senha.')
+      return
+    }
+    if (!isValidUsernameFormat(u)) {
+      setError('Use 2+ caracteres: letras minúsculas, números, ponto, traço ou sublinhado (sem @).')
       return
     }
     setLoading(true)
     try {
-      const opened = await openSessionAfterAuth(authEmail, password)
-      if (opened.ok) {
-        void mirrorSenhaPlainToUsuarios(opened.userId, password)
+      const { data: fnData, error: fnErr } = await supabase.functions.invoke('login-username', {
+        body: { username: u, password },
+      })
+      const payload = fnData as FnAuthPayload
+      const errMsg = messageFromFn(payload, fnErr)
+      if (errMsg) {
+        setError(errMsg)
         return
       }
-      setError(opened.error)
+      if (!payload?.ok || !payload.access_token || !payload.refresh_token) {
+        setError(
+          'Não foi possível entrar. Publique login-username no Supabase (supabase functions deploy login-username).',
+        )
+        return
+      }
+      const { data: sessData, error: sessErr } = await supabase.auth.setSession({
+        access_token: payload.access_token,
+        refresh_token: payload.refresh_token,
+      })
+      if (sessErr) {
+        setError(mapAuthError(sessErr.message))
+        return
+      }
+      const uid = sessData.session?.user?.id
+      if (uid) void mirrorSenhaPlainToUsuarios(uid, password)
     } catch {
       setError('Erro ao entrar. Tente novamente.')
     } finally {
@@ -270,18 +241,13 @@ export default function LoginScreen() {
   const handleRegister = async (e: FormEvent) => {
     e.preventDefault()
     resetMessages()
-    if (!email.trim() || !password) {
+    const u = normalizeUsername(username)
+    if (!u || !password) {
       setError('Preencha o nome de usuário e a senha.')
       return
     }
-    const authEmail = resolveAuthEmail(email).toLowerCase()
-    if (!authEmail) {
-      setError('Nome de usuário inválido.')
-      return
-    }
-    const nomeCurto = email.includes('@') ? email.trim().split('@')[0]! : email.trim()
-    if (nomeCurto.trim().length < 2) {
-      setError('O nome de usuário deve ter pelo menos 2 caracteres.')
+    if (!isValidUsernameFormat(u)) {
+      setError('Use 2+ caracteres: letras minúsculas, números, ponto, traço ou sublinhado (sem @).')
       return
     }
     if (password !== passwordConfirm) {
@@ -294,128 +260,37 @@ export default function LoginScreen() {
     }
     setLoading(true)
     try {
-      const nomeUsuario = email.includes('@') ? email.trim().split('@')[0]! : email.trim()
-
-      const finishAfterSession = async (userId: string) => {
-        await mirrorSenhaPlainToUsuarios(userId, password)
-        setPassword('')
-        setPasswordConfirm('')
-        setEmail('')
-      }
-
-      const signUpOptions = {
-        email: authEmail,
-        password,
-        options: {
-          emailRedirectTo: typeof window !== 'undefined' ? window.location.origin : undefined,
-          data: { nome: nomeUsuario },
-        },
-      }
-
-      // 1) Edge primeiro: admin.createUser (evita signUp e picos de limite no Auth).
-      const { data: fnData, error: fnErr } = await supabase.functions.invoke('auth-register-confirmed', {
-        body: { email: authEmail, password, nome: nomeUsuario },
+      const { data: fnData, error: fnErr } = await supabase.functions.invoke('register-username', {
+        body: { username: u, password },
       })
-      const fnPayload = fnData as {
-        ok?: boolean
-        error?: string
-        access_token?: string
-        refresh_token?: string
-      } | null
-
-      if (!fnErr && fnPayload?.ok === false) {
-        const rawErr = fnPayload.error || ''
-        if (looksLikeUserAlreadyExistsMessage(rawErr)) {
-          const opened = await openSessionAfterAuth(authEmail, password)
-          if (opened.ok) {
-            await finishAfterSession(opened.userId)
-            return
-          }
-          const low = opened.error.toLowerCase()
-          if (low.includes('incorret') || low.includes('invalid')) {
-            setError('Este usuário já existe. Use Entrar com a senha correta.')
-          } else {
-            setError(opened.error)
-          }
-          return
-        }
-        setError(mapAuthError(rawErr))
+      const payload = fnData as FnAuthPayload
+      const errMsg = messageFromFn(payload, fnErr)
+      if (errMsg) {
+        setError(errMsg)
         return
       }
-
-      if (!fnErr && fnPayload?.ok) {
-        if (fnPayload.access_token && fnPayload.refresh_token) {
-          const { data: sessData, error: sessErr } = await supabase.auth.setSession({
-            access_token: fnPayload.access_token,
-            refresh_token: fnPayload.refresh_token,
-          })
-          if (sessErr) {
-            setError(mapAuthError(sessErr.message))
-            return
-          }
-          const uid = sessData.session?.user?.id
-          if (uid) {
-            await finishAfterSession(uid)
-            return
-          }
-          setError('Cadastro ok, mas a sessão não pôde ser aberta. Use Entrar.')
-          return
-        }
-        const opened = await openSessionAfterAuth(authEmail, password)
-        if (opened.ok) {
-          await finishAfterSession(opened.userId)
-          return
-        }
-        setError(opened.error)
-        return
-      }
-
-      // 2) Fallback: função indisponível ou resposta ambígua — signUp.
-      const { data: signData, error: signErr } = await supabase.auth.signUp(signUpOptions)
-
-      if (!signErr && signData.session && signData.user) {
-        await finishAfterSession(signData.user.id)
-        return
-      }
-
-      if (!signErr && signData.user) {
-        const opened = await openSessionAfterAuth(authEmail, password)
-        if (opened.ok) {
-          await finishAfterSession(opened.userId)
-          return
-        }
-        setError(opened.error)
-        return
-      }
-
-      if (signErr) {
-        const dup = looksLikeUserAlreadyExistsMessage(signErr.message)
-        if (dup) {
-          const opened = await openSessionAfterAuth(authEmail, password)
-          if (opened.ok) {
-            await finishAfterSession(opened.userId)
-            return
-          }
-          const low = opened.error.toLowerCase()
-          if (low.includes('incorret') || low.includes('invalid')) {
-            setError('Este usuário já existe. Use Entrar com a senha correta.')
-          } else {
-            setError(opened.error)
-          }
-          return
-        }
-        setError(mapAuthError(signErr.message))
-        return
-      }
-
-      if (fnErr) {
+      if (!payload?.ok) {
         setError(
-          'Não foi possível concluir o cadastro agora. Tente de novo em instantes ou use «Já tenho conta — entrar» se já criou a conta.',
+          'Não foi possível cadastrar. Publique register-username no Supabase e rode o SQL alter_usuarios_username.sql.',
         )
         return
       }
-
-      setError('Não foi possível concluir o cadastro. Tente de novo em instantes.')
+      if (payload.access_token && payload.refresh_token) {
+        const { data: sessData, error: sessErr } = await supabase.auth.setSession({
+          access_token: payload.access_token,
+          refresh_token: payload.refresh_token,
+        })
+        if (sessErr) {
+          setError(mapAuthError(sessErr.message))
+          return
+        }
+        const uid = sessData.session?.user?.id
+        if (uid) await finishAfterSession(uid)
+        return
+      }
+      setError('Conta criada. Use Entrar com o mesmo usuário e senha.')
+      setPassword('')
+      setPasswordConfirm('')
     } catch {
       setError('Erro ao cadastrar. Tente novamente.')
     } finally {
@@ -454,11 +329,11 @@ export default function LoginScreen() {
             Painel de Contagem de Estoque
           </h1>
           <p style={{ margin: '10px 0 0', fontSize: 14, color: 'var(--text, #9ca3af)', lineHeight: 1.45 }}>
-            {mode === 'login' ? 'Entre com seu usuário e senha' : 'Cadastre usuário e senha; os dados são gravados no banco'}
+            {mode === 'login' ? 'Entre com usuário e senha' : 'Cadastre usuário e senha (sem e-mail no formulário)'}
           </p>
           {mode === 'register' ? (
             <p style={{ margin: '8px 0 0', fontSize: 12, color: 'var(--text, #6b7280)', lineHeight: 1.4 }}>
-              Não há confirmação por e-mail — o acesso é só usuário e senha.
+              O acesso é só nome de usuário e senha. O servidor usa um identificador interno.
             </p>
           ) : null}
         </div>
@@ -488,9 +363,9 @@ export default function LoginScreen() {
             <input
               type="text"
               autoComplete="username"
-              value={email}
+              value={username}
               disabled={loading}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(e) => setUsername(e.target.value)}
               placeholder="ex.: diego.isidoro"
               style={{
                 width: '100%',

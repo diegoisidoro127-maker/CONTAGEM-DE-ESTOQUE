@@ -6,6 +6,8 @@
 --
 -- A senha de login do Supabase fica em auth.users (hash). A coluna `senha` aqui é opcional
 -- (ex.: integração legada); se usar, armazene apenas hash (pgcrypto crypt), nunca texto puro.
+--
+-- Coluna `username`: login curto (Edge Functions usam e-mail interno username@internal.local no Auth).
 
 begin;
 
@@ -17,6 +19,7 @@ create extension if not exists pgcrypto;
 create table if not exists public.usuarios (
   id uuid primary key references auth.users (id) on delete cascade,
   nome text not null default '',
+  username text,
   senha text,
   ativo boolean not null default true,
   created_at timestamptz not null default now(),
@@ -28,8 +31,14 @@ comment on table public.usuarios is
 
 comment on column public.usuarios.id is 'Mesmo UUID de auth.users.';
 comment on column public.usuarios.nome is 'Nome de exibição (pode vir de raw_user_meta_data no cadastro).';
+comment on column public.usuarios.username is
+  'Login curto em minusculas; alinhado ao local-part do e-mail interno.';
 comment on column public.usuarios.senha is
   'Opcional. O app pode gravar aqui a senha em texto após login/cadastro (uso interno); login oficial segue no Auth.';
+
+create unique index if not exists usuarios_username_lower_unique
+  on public.usuarios (lower(username))
+  where username is not null and length(trim(username)) > 0;
 
 -- Mantém updated_at ao atualizar
 create or replace function public.touch_usuarios_updated_at()
@@ -59,6 +68,7 @@ set search_path = public
 as $$
 declare
   meta_nome text;
+  uname text;
 begin
   meta_nome := coalesce(
     nullif(trim(new.raw_user_meta_data->>'nome'), ''),
@@ -67,10 +77,16 @@ begin
     split_part(coalesce(new.email, ''), '@', 1)
   );
 
-  insert into public.usuarios (id, nome)
-  values (new.id, coalesce(meta_nome, ''))
+  uname := lower(nullif(trim(new.raw_user_meta_data->>'username'), ''));
+  if uname is null or uname = '' then
+    uname := lower(split_part(coalesce(new.email, ''), '@', 1));
+  end if;
+
+  insert into public.usuarios (id, nome, username)
+  values (new.id, coalesce(meta_nome, ''), nullif(uname, ''))
   on conflict (id) do update
     set nome = coalesce(nullif(excluded.nome, ''), public.usuarios.nome),
+        username = coalesce(nullif(excluded.username, ''), public.usuarios.username),
         updated_at = now();
 
   return new;
@@ -134,7 +150,7 @@ commit;
 -- ---------------------------------------------------------------------------
 -- Backfill (opcional): usuários em auth.users sem linha em usuarios
 -- ---------------------------------------------------------------------------
--- insert into public.usuarios (id, nome)
+-- insert into public.usuarios (id, nome, username)
 -- select
 --   u.id,
 --   coalesce(
@@ -142,6 +158,7 @@ commit;
 --     nullif(trim(u.raw_user_meta_data->>'full_name'), ''),
 --     split_part(coalesce(u.email, ''), '@', 1),
 --     ''
---   )
+--   ),
+--   lower(split_part(coalesce(u.email, ''), '@', 1))
 -- from auth.users u
 -- where not exists (select 1 from public.usuarios p where p.id = u.id);
