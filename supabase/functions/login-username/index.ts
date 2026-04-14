@@ -1,14 +1,15 @@
-// Login só com username + senha. E-mail interno: username@internal.local (igual ao cadastro).
+// Login só com username + senha. Ordem de tentativa de e-mail:
+//1) username@internal.local (cadastro novo)
+// 2) username@ultrapao.com.br (legado)
+//   3) linha em usuarios + qualquer auth.users cujo local-part do e-mail = username
 //
-// Publicar com verify_jwt = false (supabase/config.toml), senão preflight/CORS falha no browser:
-//   supabase functions deploy login-username
-//
-// Painel Supabase: desative exigir JWT nesta função se publicar pela UI.
-// Secrets automáticos: SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY
+// Publicar: supabase functions deploy login-username
+// Secrets: SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY
 
 import { createClient } from 'npm:@supabase/supabase-js'
 
 const INTERNAL_EMAIL_DOMAIN = 'internal.local'
+const LEGACY_EMAIL_DOMAIN = 'ultrapao.com.br'
 
 const corsHeaders: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
@@ -28,21 +29,70 @@ function isEmailNotConfirmed(msg: string): boolean {
   return m.includes('email not confirmed') || m.includes('email_not_confirmed')
 }
 
-async function resolveAuthUserIdForUsername(
-  admin: ReturnType<typeof createClient>,
+type SupabaseAdmin = ReturnType<typeof createClient>
+
+async function resolveAuthUserIdForExactEmail(
+  admin: SupabaseAdmin,
   usernameRaw: string,
-  emailInternal: string,
+  emailWant: string,
 ): Promise<string | null> {
   const { data: row } = await admin.from('usuarios').select('id').eq('username', usernameRaw).maybeSingle()
   if (row?.id) return String(row.id)
 
-  const { data: listData, error: listErr } = await admin.auth.admin.listUsers({ page: 1, perPage: 200 })
-  if (listErr || !listData?.users?.length) return null
-  const want = emailInternal.toLowerCase()
-  for (const u of listData.users) {
-    if (u.email?.trim().toLowerCase() === want) return u.id
+  const want = emailWant.toLowerCase()
+  let page = 1
+  const perPage = 1000
+  for (let i = 0; i < 100; i++) {
+    const { data: listData, error: listErr } = await admin.auth.admin.listUsers({ page, perPage })
+    if (listErr || !listData?.users?.length) return null
+    for (const u of listData.users) {
+      if (u.email?.trim().toLowerCase() === want) return u.id
+    }
+    if (listData.users.length < perPage) break
+    page++
   }
   return null
+}
+
+/** Qualquer conta Auth cujo e-mail seja «username@*» (útil se username na tabela estiver vazio ou desatualizado). */
+async function findAuthUserIdByEmailLocalPart(admin: SupabaseAdmin, localPart: string): Promise<string | null> {
+  const want = localPart.toLowerCase()
+  let page = 1
+  const perPage = 1000
+  for (let i = 0; i < 100; i++) {
+    const { data, error } = await admin.auth.admin.listUsers({ page, perPage })
+    if (error) return null
+    const users = data?.users ?? []
+    for (const u of users) {
+      const em = (u.email || '').trim().toLowerCase()
+      if (!em.includes('@')) continue
+      const local = em.slice(0, em.indexOf('@'))
+      if (local === want) return u.id
+    }
+    if (users.length < perPage) break
+    page++
+  }
+  return null
+}
+
+async function trySignInWithEmail(
+  admin: SupabaseAdmin,
+  anon: SupabaseAdmin,
+  email: string,
+  password: string,
+  usernameRaw: string,
+) {
+  let signed = await anon.auth.signInWithPassword({ email, password })
+  if (signed.error && isEmailNotConfirmed(signed.error.message)) {
+    const uid = await resolveAuthUserIdForExactEmail(admin, usernameRaw, email)
+    if (uid) {
+      const { error: upErr } = await admin.auth.admin.updateUserById(uid, { email_confirm: true })
+      if (!upErr) {
+        signed = await anon.auth.signInWithPassword({ email, password })
+      }
+    }
+  }
+  return signed
 }
 
 Deno.serve(async (req) => {
@@ -84,30 +134,35 @@ Deno.serve(async (req) => {
   })
 
   const emailInternal = `${usernameRaw}@${INTERNAL_EMAIL_DOMAIN}`
+  const emailLegacyDomain = `${usernameRaw}@${LEGACY_EMAIL_DOMAIN}`
 
-  let signed = await anon.auth.signInWithPassword({ email: emailInternal, password })
+  let signed = await trySignInWithEmail(admin, anon, emailInternal, password, usernameRaw)
 
-  if (signed.error && isEmailNotConfirmed(signed.error.message)) {
-    const uid = await resolveAuthUserIdForUsername(admin, usernameRaw, emailInternal)
-    if (uid) {
-      const { error: upErr } = await admin.auth.admin.updateUserById(uid, { email_confirm: true })
-      if (!upErr) {
-        signed = await anon.auth.signInWithPassword({ email: emailInternal, password })
-      }
-    }
+  if (signed.error || !signed.data.session) {
+    signed = await trySignInWithEmail(admin, anon, emailLegacyDomain, password, usernameRaw)
   }
 
   if (signed.error || !signed.data.session) {
     const { data: row } = await admin.from('usuarios').select('id').eq('username', usernameRaw).maybeSingle()
     if (row?.id) {
       const { data: authData, error: authErr } = await admin.auth.admin.getUserById(row.id)
-      const emailLegacy = authData.user?.email?.trim().toLowerCase()
-      if (!authErr && emailLegacy && emailLegacy !== emailInternal) {
-        signed = await anon.auth.signInWithPassword({ email: emailLegacy, password })
-        if (signed.error && isEmailNotConfirmed(signed.error.message)) {
-          await admin.auth.admin.updateUserById(row.id, { email_confirm: true })
-          signed = await anon.auth.signInWithPassword({ email: emailLegacy, password })
+      const emailFromRow = authData.user?.email?.trim()
+      if (!authErr && emailFromRow) {
+        const emLower = emailFromRow.toLowerCase()
+        if (emLower !== emailInternal.toLowerCase() && emLower !== emailLegacyDomain.toLowerCase()) {
+          signed = await trySignInWithEmail(admin, anon, emailFromRow, password, usernameRaw)
         }
+      }
+    }
+  }
+
+  if (signed.error || !signed.data.session) {
+    const uid = await findAuthUserIdByEmailLocalPart(admin, usernameRaw)
+    if (uid) {
+      const { data: authData } = await admin.auth.admin.getUserById(uid)
+      const em = authData.user?.email?.trim()
+      if (em) {
+        signed = await trySignInWithEmail(admin, anon, em, password, usernameRaw)
       }
     }
   }
