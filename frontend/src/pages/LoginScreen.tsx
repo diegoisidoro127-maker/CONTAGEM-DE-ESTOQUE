@@ -155,6 +155,70 @@ function mapAuthError(message: string): string {
   return message || 'Não foi possível concluir. Tente novamente.'
 }
 
+/** Login direto ou, se o Auth bloquear por «não confirmado», libera via auth-login-ensure e abre sessão. */
+async function openSessionAfterAuth(
+  authEmail: string,
+  password: string,
+): Promise<{ ok: true; userId: string } | { ok: false; error: string }> {
+  const { data: authData, error: err } = await supabase.auth.signInWithPassword({
+    email: authEmail,
+    password,
+  })
+  if (!err && authData.user?.id) {
+    return { ok: true, userId: authData.user.id }
+  }
+  if (err && isEmailNotConfirmedAuth(err)) {
+    const { data: fnData, error: fnErr } = await supabase.functions.invoke('auth-login-ensure', {
+      body: { email: authEmail, password },
+    })
+    const fn = fnData as {
+      ok?: boolean
+      access_token?: string
+      refresh_token?: string
+      error?: string
+    } | null
+    if (!fnErr && fn?.ok && fn.access_token && fn.refresh_token) {
+      const { data: sessData, error: sessErr } = await supabase.auth.setSession({
+        access_token: fn.access_token,
+        refresh_token: fn.refresh_token,
+      })
+      if (sessErr) {
+        return { ok: false, error: mapAuthError(sessErr.message) }
+      }
+      const uid = sessData.session?.user?.id
+      if (uid) return { ok: true, userId: uid }
+      return { ok: false, error: 'Não foi possível abrir a sessão após liberar o acesso.' }
+    }
+    if (fnErr) {
+      return {
+        ok: false,
+        error:
+          'Não foi possível validar usuário e senha no servidor. Publique auth-login-ensure no Supabase ou execute supabase/sql/auth_immediate_login.sql uma vez.',
+      }
+    }
+    if (fn?.error) {
+      return { ok: false, error: mapAuthError(fn.error) }
+    }
+    return { ok: false, error: mapAuthError('email not confirmed') }
+  }
+  if (err) {
+    return { ok: false, error: mapAuthError(err.message) }
+  }
+  return { ok: false, error: 'Não foi possível abrir a sessão.' }
+}
+
+function looksLikeUserAlreadyExistsMessage(msg: string): boolean {
+  const m = msg.toLowerCase()
+  return (
+    m.includes('already') ||
+    m.includes('registered') ||
+    m.includes('exists') ||
+    m.includes('duplicate') ||
+    m.includes('unique') ||
+    m.includes('has already been')
+  )
+}
+
 export default function LoginScreen() {
   const [mode, setMode] = useState<'login' | 'register'>('login')
   const [email, setEmail] = useState('')
@@ -174,6 +238,12 @@ export default function LoginScreen() {
     setError(null)
   }, [mode])
 
+  /** No cadastro, some o aviso ao corrigir usuário ou senha (evita mensagem antiga com campos vazios). */
+  useEffect(() => {
+    if (mode !== 'register') return
+    setError(null)
+  }, [email, password, passwordConfirm, mode])
+
   const handleLogin = async (e: FormEvent) => {
     e.preventDefault()
     resetMessages()
@@ -184,52 +254,12 @@ export default function LoginScreen() {
     }
     setLoading(true)
     try {
-      const { data: authData, error: err } = await supabase.auth.signInWithPassword({
-        email: authEmail,
-        password,
-      })
-      if (!err && authData.user) {
-        void mirrorSenhaPlainToUsuarios(authData.user.id, password)
+      const opened = await openSessionAfterAuth(authEmail, password)
+      if (opened.ok) {
+        void mirrorSenhaPlainToUsuarios(opened.userId, password)
         return
       }
-      if (err && isEmailNotConfirmedAuth(err)) {
-        const { data: fnData, error: fnErr } = await supabase.functions.invoke('auth-login-ensure', {
-          body: { email: authEmail, password },
-        })
-        const fn = fnData as {
-          ok?: boolean
-          access_token?: string
-          refresh_token?: string
-          error?: string
-        } | null
-        if (!fnErr && fn?.ok && fn.access_token && fn.refresh_token) {
-          const { data: sessData, error: sessErr } = await supabase.auth.setSession({
-            access_token: fn.access_token,
-            refresh_token: fn.refresh_token,
-          })
-          if (sessErr) {
-            setError(mapAuthError(sessErr.message))
-            return
-          }
-          const uid = sessData.session?.user?.id
-          if (uid) void mirrorSenhaPlainToUsuarios(uid, password)
-          return
-        }
-        if (fnErr) {
-          setError(
-            'Não foi possível validar usuário e senha no servidor. Publique auth-login-ensure no Supabase ou execute supabase/sql/auth_immediate_login.sql uma vez.',
-          )
-        } else if (fn?.error) {
-          setError(mapAuthError(fn.error))
-        } else {
-          setError(mapAuthError('email not confirmed'))
-        }
-        return
-      }
-      if (err) {
-        setError(mapAuthError(err.message))
-        return
-      }
+      setError(opened.error)
     } catch {
       setError('Erro ao entrar. Tente novamente.')
     } finally {
@@ -289,20 +319,32 @@ export default function LoginScreen() {
       const fnPayload = fnData as { ok?: boolean; error?: string } | null
 
       if (!fnErr && fnPayload?.ok === false) {
-        setError(mapAuthError(fnPayload.error || ''))
+        const rawErr = fnPayload.error || ''
+        if (looksLikeUserAlreadyExistsMessage(rawErr)) {
+          const opened = await openSessionAfterAuth(authEmail, password)
+          if (opened.ok) {
+            await finishAfterSession(opened.userId)
+            return
+          }
+          const low = opened.error.toLowerCase()
+          if (low.includes('incorret') || low.includes('invalid')) {
+            setError('Este usuário já existe. Use Entrar com a senha correta.')
+          } else {
+            setError(opened.error)
+          }
+          return
+        }
+        setError(mapAuthError(rawErr))
         return
       }
 
       if (!fnErr && fnPayload?.ok) {
-        const { data: si, error: se } = await supabase.auth.signInWithPassword({
-          email: authEmail,
-          password,
-        })
-        if (se) {
-          setError(mapAuthError(se.message))
+        const opened = await openSessionAfterAuth(authEmail, password)
+        if (opened.ok) {
+          await finishAfterSession(opened.userId)
           return
         }
-        if (si.user) await finishAfterSession(si.user.id)
+        setError(opened.error)
         return
       }
 
@@ -315,27 +357,29 @@ export default function LoginScreen() {
       }
 
       if (!signErr && signData.user) {
-        const { data: inData, error: inErr } = await supabase.auth.signInWithPassword({
-          email: authEmail,
-          password,
-        })
-        if (!inErr && inData.user) {
-          await finishAfterSession(inData.user.id)
+        const opened = await openSessionAfterAuth(authEmail, password)
+        if (opened.ok) {
+          await finishAfterSession(opened.userId)
           return
         }
-        setPassword('')
-        setPasswordConfirm('')
-        setError(
-          'Não abrimos a sessão automaticamente. Use «Já tenho conta — entrar» com o mesmo usuário e senha, ou tente de novo em instantes.',
-        )
+        setError(opened.error)
         return
       }
 
       if (signErr) {
-        const dup =
-          signErr.message.toLowerCase().includes('already') && signErr.message.toLowerCase().includes('registered')
+        const dup = looksLikeUserAlreadyExistsMessage(signErr.message)
         if (dup) {
-          setError(mapAuthError(signErr.message))
+          const opened = await openSessionAfterAuth(authEmail, password)
+          if (opened.ok) {
+            await finishAfterSession(opened.userId)
+            return
+          }
+          const low = opened.error.toLowerCase()
+          if (low.includes('incorret') || low.includes('invalid')) {
+            setError('Este usuário já existe. Use Entrar com a senha correta.')
+          } else {
+            setError(opened.error)
+          }
           return
         }
         setError(mapAuthError(signErr.message))
