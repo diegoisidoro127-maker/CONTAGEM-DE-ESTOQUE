@@ -206,9 +206,11 @@ export default function LoginScreen() {
   const [showPasswordConfirm, setShowPasswordConfirm] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState<string | null>(null)
 
   const resetMessages = () => {
     setError(null)
+    setSuccess(null)
   }
 
   useEffect(() => {
@@ -219,13 +221,6 @@ export default function LoginScreen() {
     if (mode !== 'register') return
     setError(null)
   }, [username, password, passwordConfirm, mode])
-
-  const finishAfterSession = async (userId: string) => {
-    await mirrorSenhaPlainToUsuarios(userId, password)
-    setPassword('')
-    setPasswordConfirm('')
-    setUsername('')
-  }
 
   const handleLogin = async (e: FormEvent) => {
     e.preventDefault()
@@ -312,28 +307,18 @@ export default function LoginScreen() {
         )
         return
       }
-      if (payload.access_token && payload.refresh_token) {
-        const { data: sessData, error: sessErr } = await supabase.auth.setSession({
-          access_token: payload.access_token,
-          refresh_token: payload.refresh_token,
-        })
-        if (sessErr) {
-          setError(mapAuthError(sessErr.message))
-          return
-        }
-        const uid = sessData.session?.user?.id
-        if (uid) await finishAfterSession(uid)
-        return
-      }
-      setError('Conta criada. Use Entrar com o mesmo usuário e senha.')
+      setMode('login')
       setPassword('')
       setPasswordConfirm('')
+      setSuccess('Conta criada com sucesso. Agora faça login com o mesmo usuário e senha.')
     } catch {
       setError('Erro ao cadastrar. Tente novamente.')
     } finally {
       setLoading(false)
     }
   }
+
+  const showInfoText = mode === 'login' ? success : null
 
   return (
     <div
@@ -375,6 +360,23 @@ export default function LoginScreen() {
           ) : null}
         </div>
 
+        {showInfoText ? (
+          <div
+            role="status"
+            style={{
+              marginBottom: 14,
+              padding: '10px 12px',
+              borderRadius: 8,
+              background: 'rgba(21, 128, 61, 0.2)',
+              border: '1px solid #15803d',
+              color: '#bbf7d0',
+              fontSize: 13,
+              lineHeight: 1.45,
+            }}
+          >
+            {showInfoText}
+          </div>
+        ) : null}
         {error ? (
           <div
             role="alert"
