@@ -155,9 +155,32 @@ type FnAuthPayload = {
   refresh_token?: string
 } | null
 
+/** Rede / CORS / função ausente: o cliente Supabase costuma devolver isto quando o preflight OPTIONS falha (ex.: verify_jwt ligado no gateway). */
+function mapInvokeTransportError(message: string | undefined): string | null {
+  if (!message) return null
+  const m = message.toLowerCase()
+  if (
+    m.includes('failed to send') ||
+    m.includes('edge function') ||
+    m.includes('failed to fetch') ||
+    m.includes('networkerror') ||
+    m.includes('load failed') ||
+    m.includes('err_failed')
+  ) {
+    return (
+      'Servidor Supabase não respondeu à função Edge (rede ou CORS). ' +
+      'Publique login-username e register-username e use verify_jwt = false (supabase/config.toml). ' +
+      'No painel: Edge Functions → cada função → desative exigir JWT para chamadas sem login.'
+    )
+  }
+  return null
+}
+
 function messageFromFn(data: FnAuthPayload, invokeError: { message?: string } | null): string | null {
   if (data?.ok === true) return null
   if (data?.ok === false) return mapAuthError(data.error || '')
+  const transport = mapInvokeTransportError(invokeError?.message)
+  if (transport) return transport
   if (invokeError?.message) return mapAuthError(invokeError.message)
   return null
 }

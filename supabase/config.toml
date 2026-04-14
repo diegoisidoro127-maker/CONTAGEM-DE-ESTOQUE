@@ -3,9 +3,13 @@
 # Cadastro e login chamam Edge Functions sem JWT de usuário. Com verify_jwt = true (padrão),
 # o gateway responde 401 ao OPTIONS e o navegador acusa falha de CORS no preflight.
 #
-# Depois de alterar: redeploy
+# Sem verify_jwt = false, o gateway bloqueia OPTIONS (401) e o browser mostra erro de CORS no cadastro/login.
+#
+# Depois de alterar: redeploy a partir desta pasta, com projeto ligado:
 #   supabase functions deploy login-username
 #   supabase functions deploy register-username
+#
+# Só usa o painel Supabase? Em cada função, desative a exigência de JWT para invocação anónima.
 #   (opcional, legado) auth-register-confirmed, auth-login-ensure
 #
 # project_id = ref do projeto (URL https://<ref>.supabase.co). Ajuste se for outro ambiente.

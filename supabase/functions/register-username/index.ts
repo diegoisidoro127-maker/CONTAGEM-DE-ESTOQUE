@@ -1,6 +1,10 @@
 // Cadastro só com username + senha. E-mail interno: username@internal.local (nunca mostrado no front).
-// Publicar: supabase functions deploy register-username
-// Secrets: SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY
+//
+// Publicar (com verify_jwt = false no supabase/config.toml, senão o OPTIONS falha e o browser acusa CORS):
+//   supabase functions deploy register-username
+//
+// Se publicar só pelo painel: desative «Verify JWT» / exigir JWT nesta função.
+// Secrets automáticos: SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY
 
 import { createClient } from 'npm:@supabase/supabase-js'
 

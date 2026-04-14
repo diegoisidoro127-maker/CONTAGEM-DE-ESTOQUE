@@ -1,5 +1,9 @@
 // Login só com username + senha. Resolve username → auth.users (e-mail interno) e devolve tokens.
-// Publicar: supabase functions deploy login-username
+//
+// Publicar com verify_jwt = false (supabase/config.toml), senão preflight/CORS falha no browser:
+//   supabase functions deploy login-username
+//
+// Painel Supabase: desative exigir JWT nesta função se publicar pela UI.
 // Secrets automáticos: SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY
 
 import { createClient } from 'npm:@supabase/supabase-js'
