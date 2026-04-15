@@ -231,20 +231,21 @@ const TABELA_PRODUTOS = 'Todos os Produtos'
 /** Alguns códigos da tabela não devem entrar na checklist do app (lista vazia = nenhum). */
 const CHECKLIST_EXCLUIR_CODIGOS = new Set<string>([])
 
-/** Quantidade exibida/gravada na planilha de inventário: vazio = número da rodada (1–4). */
+/** Quantidade efetiva da linha: só considera o que foi digitado no campo. */
 function quantidadePlanilhaInventarioEfetiva(
   it: OfflineChecklistItem,
   inventarioNumeroContagem: 1 | 2 | 3 | 4,
 ): string {
+  void inventarioNumeroContagem
   const t = String(it.quantidade_contada ?? '').trim()
-  return t === '' ? String(inventarioNumeroContagem) : t
+  return t
 }
 
 function countPendingForSession(session: OfflineSession | null): number {
   if (!session || session.status !== 'aberta') return 0
-  /** Quantidade vazia na planilha usa o número da rodada (1–4), então não há pendência por “quantidade em branco”. */
   if (session.listMode === 'planilha') {
-    return 0
+    const comCodigo = session.items.filter((i) => String(i.codigo_interno ?? '').trim() !== '')
+    return comCodigo.filter((i) => String(i.quantidade_contada ?? '').trim() === '').length
   }
   return countPendingItems(session.items)
 }
@@ -268,6 +269,19 @@ function formatContagemLabel(contagem: number) {
   if (contagem === 3) return '3° CONTAGEM'
   if (contagem === 4) return '4° CONTAGEM'
   return `${contagem}° CONTAGEM`
+}
+
+function formatSessionInterval(startIso: string, endIso: string): string {
+  const startMs = new Date(startIso).getTime()
+  const endMs = new Date(endIso).getTime()
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) return '0m'
+  const diffSec = Math.floor((endMs - startMs) / 1000)
+  const h = Math.floor(diffSec / 3600)
+  const m = Math.floor((diffSec % 3600) / 60)
+  const s = diffSec % 60
+  if (h > 0) return `${h}h ${m}m ${s}s`
+  if (m > 0) return `${m}m ${s}s`
+  return `${s}s`
 }
 
 function formatInventarioRodadaPreviewCell(n: number | null | undefined): string {
@@ -544,6 +558,9 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     registros: number
     pendAutoZero?: number
     conferenteNome?: string
+    startedAtIso?: string
+    endedAtIso?: string
+    elapsedLabel?: string
   } | null>(null)
   const finalizePendAutoZeroRef = useRef<number | null>(null)
   const [checklistPage, setChecklistPage] = useState(1)
@@ -769,6 +786,11 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     const s = loadOfflineSession(sessionMode)
     if (s && s.status === 'aberta') {
       setOfflineSession(s)
+      const startedMs = new Date(String(s.started_at_iso ?? '')).getTime()
+      if (Number.isFinite(startedMs)) {
+        setClockBaseMs(startedMs)
+        setClockRealStartMs(Date.now())
+      }
       if (s.conferente_id) setConferenteId(s.conferente_id)
       if (s.data_contagem_ymd && /^\d{4}-\d{2}-\d{2}$/.test(s.data_contagem_ymd)) {
         setContagemDiaYmd(s.data_contagem_ymd)
@@ -2141,16 +2163,23 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
             })
           }
         }
+        const sessionStartedAtIso = new Date().toISOString()
+        const sessionStartedAtMs = new Date(sessionStartedAtIso).getTime()
         const sess: OfflineSession = {
           sessionId: newSessionId(),
           data_contagem_ymd: contagemDiaYmd,
           conferente_id: conferenteId,
           status: 'aberta',
+          started_at_iso: sessionStartedAtIso,
           listMode: listModeEfetivo,
           context: sessionMode,
           items,
           inventario_numero_contagem: 1,
           updatedAt: new Date().toISOString(),
+        }
+        if (Number.isFinite(sessionStartedAtMs)) {
+          setClockBaseMs(sessionStartedAtMs)
+          setClockRealStartMs(Date.now())
         }
         setOfflineSession(sess)
         saveOfflineSession(sess, sessionMode)
@@ -2226,16 +2255,23 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         items = merged.items
         preenchidosDoBanco = merged.preenchidos
       }
+      const sessionStartedAtIso = new Date().toISOString()
+      const sessionStartedAtMs = new Date(sessionStartedAtIso).getTime()
       const sess: OfflineSession = {
         sessionId: newSessionId(),
         data_contagem_ymd: contagemDiaYmd,
         conferente_id: conferenteId,
         status: 'aberta',
+        started_at_iso: sessionStartedAtIso,
         listMode: listModeEfetivo,
         context: sessionMode,
         items,
         ...(inventario ? { inventario_numero_contagem: 1 as const } : { contagem_diaria_rascunho_sessao_id: newSessionId() }),
         updatedAt: new Date().toISOString(),
+      }
+      if (Number.isFinite(sessionStartedAtMs)) {
+        setClockBaseMs(sessionStartedAtMs)
+        setClockRealStartMs(Date.now())
       }
       setOfflineSession(sess)
       saveOfflineSession(sess, sessionMode)
@@ -2772,23 +2808,6 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       return
     }
 
-    const itemsSnapshot = offlineSession.items.map((i) => ({ ...i }))
-    const pend = countPendingForSession(offlineSession)
-    if (pend > 0) {
-      const rodadaPend = clampInventarioNumeroContagem(offlineSession.inventario_numero_contagem ?? 1)
-      const missing = itemsSnapshot.filter((i) => {
-        if (offlineSession.listMode === 'planilha') {
-          const c = String(i.codigo_interno ?? '').trim()
-          if (!c) return false
-          return quantidadePlanilhaInventarioEfetiva(i, rodadaPend) === ''
-        }
-        return String(i.quantidade_contada ?? '').trim() === ''
-      })
-      setMissingItemsForFinalize(missing)
-      setConfirmFinalizeMissingOpen(true)
-      return
-    }
-
     await finalizeInternal()
   }
 
@@ -2824,10 +2843,12 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       finalizePendAutoZeroRef.current = null
 
       const ymd = session.data_contagem_ymd
+      const sessionStartedAtIso = String(session.started_at_iso ?? '').trim() || new Date().toISOString()
+      const sessionEndedAtIso = new Date().toISOString()
       let itemsSnapshot = session.items.map((i) => ({ ...i }))
 
       itemsSnapshot = itemsSnapshot.filter((it) => String(it.codigo_interno ?? '').trim() !== '')
-      /** Só grava linhas com quantidade digitada; vazio não vira 0 e não é enviado. Na planilha de inventário, vazio usa o número da rodada (1–4). */
+      /** Só grava linhas com quantidade digitada; vazio não vira 0 e não é enviado. */
       const rodadaFin = clampInventarioNumeroContagem(session.inventario_numero_contagem ?? 1)
       itemsSnapshot = itemsSnapshot.filter((it) => {
         if (session.listMode === 'planilha') {
@@ -2846,7 +2867,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         await apagarRascunhoSupabaseParaSessao(session)
       }
 
-      const dataHoraIso = toISOStringFromDatetimeLocal(dataHoraContagem)
+      const dataHoraIso = sessionEndedAtIso
       const finalizacaoSessaoId = !inventario ? newSessionId() : null
       const rows: Record<string, unknown>[] = []
       /** Metadados paralelos a `rows` para gravar `inventario_planilha_linhas` após obter os ids de `contagens_estoque`. */
@@ -3096,6 +3117,9 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
           pendAutoZero:
             pendAutoZeroSnapshot != null && pendAutoZeroSnapshot > 0 ? pendAutoZeroSnapshot : undefined,
           conferenteNome: nomeConf,
+          startedAtIso: sessionStartedAtIso,
+          endedAtIso: sessionEndedAtIso,
+          elapsedLabel: formatSessionInterval(sessionStartedAtIso, sessionEndedAtIso),
         })
         setSaveSuccess(`Contagem salva no Supabase.${msgCadastroEanDun}`)
       }
@@ -4263,42 +4287,6 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
   const inventarioNumeroContagemRodada = clampInventarioNumeroContagem(
     offlineSession?.inventario_numero_contagem ?? 1,
   )
-
-  /** Planilha inventário: linhas novas com quantidade vazia recebem o número da rodada (1–4) no estado. */
-  const planilhaItensLen = offlineSession?.items?.length ?? 0
-  const planilhaItensComQtdVazia = useMemo(() => {
-    if (!offlineSession?.items) return 0
-    return offlineSession.items.filter((it) => String(it.quantidade_contada ?? '').trim() === '').length
-  }, [offlineSession?.items])
-
-  useEffect(() => {
-    if (!inventario || !offlineSession || offlineSession.status !== 'aberta') return
-    if (offlineSession.listMode !== 'planilha') return
-    if (planilhaItensComQtdVazia === 0) return
-    const nStr = String(inventarioNumeroContagemRodada)
-    setOfflineSession((prev) => {
-      if (!prev || prev.status !== 'aberta' || prev.listMode !== 'planilha') return prev
-      if (!prev.items.some((it) => String(it.quantidade_contada ?? '').trim() === '')) return prev
-      const next = {
-        ...prev,
-        items: prev.items.map((it) =>
-          String(it.quantidade_contada ?? '').trim() === '' ? { ...it, quantidade_contada: nStr } : it,
-        ),
-        updatedAt: new Date().toISOString(),
-      }
-      saveOfflineSession(next, sessionMode)
-      return next
-    })
-  }, [
-    inventario,
-    offlineSession?.sessionId,
-    offlineSession?.status,
-    offlineSession?.listMode,
-    planilhaItensLen,
-    planilhaItensComQtdVazia,
-    inventarioNumeroContagemRodada,
-    sessionMode,
-  ])
 
   const planilhaQtdContagemHeader =
     inventario && isArmazemPaginado
@@ -6224,6 +6212,15 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                 {savedCountModal.conferenteNome ? (
                   <div style={{ marginTop: 8 }}>
                     Conferente: <strong>{savedCountModal.conferenteNome}</strong>
+                  </div>
+                ) : null}
+                {savedCountModal.startedAtIso && savedCountModal.endedAtIso ? (
+                  <div style={{ marginTop: 8, fontSize: 13, color: '#444' }}>
+                    Início: <strong>{new Date(savedCountModal.startedAtIso).toLocaleString('pt-BR')}</strong>
+                    <br />
+                    Fim: <strong>{new Date(savedCountModal.endedAtIso).toLocaleString('pt-BR')}</strong>
+                    <br />
+                    Intervalo: <strong>{savedCountModal.elapsedLabel ?? '0m'}</strong>
                   </div>
                 ) : null}
                 {savedCountModal.pendAutoZero != null && savedCountModal.pendAutoZero > 0 ? (

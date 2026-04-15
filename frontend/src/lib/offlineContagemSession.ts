@@ -58,6 +58,10 @@ export type OfflineSession = {
   data_contagem_ymd: string
   conferente_id: string
   status: 'aberta' | 'finalizada'
+  /** Início real da sessão: momento em que o usuário clica em "Carregar lista". */
+  started_at_iso?: string
+  /** Fim real da sessão: momento da finalização (preenchido no fechamento). */
+  ended_at_iso?: string
   /** Como a lista foi carregada (ordem do cadastro vs ordem dividida por contagem). */
   listMode?: ChecklistListMode
   items: OfflineChecklistItem[]
