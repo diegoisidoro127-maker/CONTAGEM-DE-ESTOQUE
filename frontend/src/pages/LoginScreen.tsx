@@ -124,25 +124,6 @@ function loginEmailCandidates(username: string): string[] {
   return out
 }
 
-function shouldTryDirectAuthFallback(message: string): boolean {
-  const m = message.toLowerCase()
-  if (m.includes('usuário ou senha incorretos')) return false
-  return (
-    m.includes('tempo esgotado') ||
-    m.includes('erro 5') ||
-    m.includes('504') ||
-    m.includes('timeout') ||
-    m.includes('gateway') ||
-    m.includes('edge function') ||
-    m.includes('cors') ||
-    m.includes('bloqueado')
-  )
-}
-
-function isCredenciaisInvalidasMessage(message: string): boolean {
-  return message.trim().toLowerCase() === 'usuário ou senha incorretos.'
-}
-
 async function tryDirectAuthLogin(username: string, password: string): Promise<DirectLoginOk | DirectLoginFail> {
   const candidates = loginEmailCandidates(username)
   let lastError: string | null = null
@@ -362,45 +343,13 @@ export default function LoginScreen() {
     }
     setLoading(true)
     try {
-      // Caminho principal: login direto no Auth (mais rápido e resiliente que depender da Edge).
-      const directFirst = await tryDirectAuthLogin(u, password)
-      if (directFirst.ok) {
-        if (directFirst.userId) void mirrorSenhaPlainToUsuarios(directFirst.userId, password)
+      // Fluxo de login simplificado: somente Auth direto (sem Edge Function no caminho crítico).
+      const direct = await tryDirectAuthLogin(u, password)
+      if (!direct.ok) {
+        setError(direct.message)
         return
       }
-
-      // Se o direto falhou por problema de infraestrutura, tenta Edge como alternativa.
-      if (isCredenciaisInvalidasMessage(directFirst.message)) {
-        setError(directFirst.message)
-        return
-      }
-
-      const result = await invokeAuthUsernameEdge('login-username', { username: u, password })
-      if (!result.ok) {
-        if (shouldTryDirectAuthFallback(result.message)) {
-          setError(directFirst.message || result.message)
-          return
-        }
-        setError(result.message)
-        return
-      }
-      const payload = result.data
-      if (!payload.access_token || !payload.refresh_token) {
-        setError(
-          'Não foi possível entrar. Publique login-username no Supabase (supabase functions deploy login-username).',
-        )
-        return
-      }
-      const { data: sessData, error: sessErr } = await supabase.auth.setSession({
-        access_token: payload.access_token,
-        refresh_token: payload.refresh_token,
-      })
-      if (sessErr) {
-        setError(mapAuthError(sessErr.message))
-        return
-      }
-      const uid = sessData.session?.user?.id
-      if (uid) void mirrorSenhaPlainToUsuarios(uid, password)
+      if (direct.userId) void mirrorSenhaPlainToUsuarios(direct.userId, password)
     } catch {
       const fallback = await tryDirectAuthLogin(u, password)
       if (fallback.ok) {
