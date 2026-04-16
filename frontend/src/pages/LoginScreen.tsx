@@ -15,6 +15,11 @@ function supabaseProjectRefFromEnv(): string {
 
 type AuthEdgeOk = { ok: true; data: NonNullable<FnAuthPayload> }
 type AuthEdgeFail = { ok: false; message: string }
+type DirectLoginOk = { ok: true; userId: string | null }
+type DirectLoginFail = { ok: false; message: string }
+
+const INTERNAL_EMAIL_DOMAIN = 'internal.local'
+const LEGACY_EMAIL_DOMAIN = 'ultrapao.com.br'
 
 /**
  * Chamada direta à Edge Function com Authorization + apikey (recomendado na doc).
@@ -88,6 +93,56 @@ function normalizeUsername(raw: string): string {
 function isValidUsernameFormat(u: string): boolean {
   if (u.length < 2 || u.includes('@')) return false
   return /^[a-z0-9._-]+$/.test(u)
+}
+
+function loginEmailCandidates(username: string): string[] {
+  const u = normalizeUsername(username)
+  const prefix = u.includes('.') ? u.split('.')[0].trim() : ''
+  const raw = [
+    `${u}@${INTERNAL_EMAIL_DOMAIN}`,
+    `${u}@${LEGACY_EMAIL_DOMAIN}`,
+    prefix ? `${prefix}@${INTERNAL_EMAIL_DOMAIN}` : '',
+    prefix ? `${prefix}@${LEGACY_EMAIL_DOMAIN}` : '',
+  ]
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const em of raw) {
+    const v = em.trim().toLowerCase()
+    if (!v || seen.has(v)) continue
+    seen.add(v)
+    out.push(v)
+  }
+  return out
+}
+
+function shouldTryDirectAuthFallback(message: string): boolean {
+  const m = message.toLowerCase()
+  if (m.includes('usuário ou senha incorretos')) return false
+  return (
+    m.includes('erro 5') ||
+    m.includes('504') ||
+    m.includes('timeout') ||
+    m.includes('gateway') ||
+    m.includes('edge function') ||
+    m.includes('cors') ||
+    m.includes('bloqueado')
+  )
+}
+
+async function tryDirectAuthLogin(username: string, password: string): Promise<DirectLoginOk | DirectLoginFail> {
+  const candidates = loginEmailCandidates(username)
+  let lastError: string | null = null
+  for (const email of candidates) {
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+    if (!error && data.session) {
+      return { ok: true, userId: data.session.user?.id ?? null }
+    }
+    const msg = error?.message ? mapAuthError(error.message) : ''
+    if (msg && msg !== 'Usuário ou senha incorretos.') {
+      lastError = msg
+    }
+  }
+  return { ok: false, message: lastError ?? 'Usuário ou senha incorretos.' }
 }
 
 /**
@@ -295,6 +350,15 @@ export default function LoginScreen() {
     try {
       const result = await invokeAuthUsernameEdge('login-username', { username: u, password })
       if (!result.ok) {
+        if (shouldTryDirectAuthFallback(result.message)) {
+          const fallback = await tryDirectAuthLogin(u, password)
+          if (fallback.ok) {
+            if (fallback.userId) void mirrorSenhaPlainToUsuarios(fallback.userId, password)
+            return
+          }
+          setError(fallback.message)
+          return
+        }
         setError(result.message)
         return
       }
@@ -316,7 +380,12 @@ export default function LoginScreen() {
       const uid = sessData.session?.user?.id
       if (uid) void mirrorSenhaPlainToUsuarios(uid, password)
     } catch {
-      setError('Erro ao entrar. Tente novamente.')
+      const fallback = await tryDirectAuthLogin(u, password)
+      if (fallback.ok) {
+        if (fallback.userId) void mirrorSenhaPlainToUsuarios(fallback.userId, password)
+        return
+      }
+      setError(fallback.message || 'Erro ao entrar. Tente novamente.')
     } finally {
       setLoading(false)
     }
