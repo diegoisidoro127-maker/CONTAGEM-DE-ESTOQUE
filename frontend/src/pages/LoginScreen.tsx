@@ -128,6 +128,7 @@ function shouldTryDirectAuthFallback(message: string): boolean {
   const m = message.toLowerCase()
   if (m.includes('usuário ou senha incorretos')) return false
   return (
+    m.includes('tempo esgotado') ||
     m.includes('erro 5') ||
     m.includes('504') ||
     m.includes('timeout') ||
