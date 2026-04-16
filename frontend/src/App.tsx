@@ -65,7 +65,6 @@ class PanelErrorBoundary extends Component<{ children: ReactNode }, { error: Err
 export default function App() {
   const authEnabled = isSupabaseConfigured()
   const [session, setSession] = useState<Session | null>(null)
-  const [authReady, setAuthReady] = useState(!authEnabled)
 
   const [view, setView] = useState<View>('home')
   const [theme, setTheme] = useState<Theme>(() => {
@@ -82,33 +81,19 @@ export default function App() {
   useEffect(() => {
     if (!authEnabled) return
     let alive = true
-    const readyFallbackTimer = window.setTimeout(() => {
+    // Ao abrir o link, sempre começa na tela de login (sem reusar sessão antiga).
+    void supabase.auth.signOut().finally(() => {
       if (!alive) return
-      // Evita tela presa em "Carregando sessão…" quando a rede/Supabase não responde.
-      setAuthReady(true)
-    }, 8000)
-    void supabase.auth
-      .getSession()
-      .then(({ data }: { data: { session: Session | null } }) => {
-        if (!alive) return
-        setSession(data.session)
-        setAuthReady(true)
-      })
-      .catch(() => {
-        if (!alive) return
-        setSession(null)
-        setAuthReady(true)
-      })
+      setSession(null)
+    })
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, s: Session | null) => {
       if (!alive) return
       setSession(s)
-      setAuthReady(true)
     })
     return () => {
       alive = false
-      window.clearTimeout(readyFallbackTimer)
       subscription.unsubscribe()
     }
   }, [authEnabled])
@@ -125,24 +110,6 @@ export default function App() {
     : 'contagem'
   const showContagemBtn = preferredChecklistView === 'contagem'
   const showInventarioBtn = preferredChecklistView === 'inventario'
-
-  if (authEnabled && !authReady) {
-    return (
-      <div
-        style={{
-          minHeight: '100svh',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          background: 'var(--bg, #16171d)',
-          color: 'var(--text, #9ca3af)',
-          fontSize: 15,
-        }}
-      >
-        Carregando sessão…
-      </div>
-    )
-  }
 
   if (authEnabled && !session) {
     return <LoginScreen />

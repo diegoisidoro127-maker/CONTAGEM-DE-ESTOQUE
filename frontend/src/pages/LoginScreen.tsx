@@ -35,6 +35,8 @@ async function invokeAuthUsernameEdge(
   if (!base || !anon) {
     return { ok: false, message: 'Falta VITE_SUPABASE_URL ou VITE_SUPABASE_ANON_KEY no ambiente do site.' }
   }
+  const controller = new AbortController()
+  const timeoutId = window.setTimeout(() => controller.abort(), 6000)
   try {
     const res = await fetch(`${base}/functions/v1/${fn}`, {
       method: 'POST',
@@ -43,8 +45,10 @@ async function invokeAuthUsernameEdge(
         Authorization: `Bearer ${anon}`,
         apikey: anon,
       },
+      signal: controller.signal,
       body: JSON.stringify(body),
     })
+    window.clearTimeout(timeoutId)
     const text = await res.text()
     let data: FnAuthPayload = null
     if (text) {
@@ -76,7 +80,12 @@ async function invokeAuthUsernameEdge(
     }
   } catch (e) {
     const m = e instanceof Error ? e.message : String(e)
+    if (e instanceof DOMException && e.name === 'AbortError') {
+      return { ok: false, message: `Tempo esgotado ao chamar ${fn}.` }
+    }
     return { ok: false, message: mapInvokeTransportError(m) || 'Falha de rede. Tente de novo.' }
+  } finally {
+    window.clearTimeout(timeoutId)
   }
 }
 
