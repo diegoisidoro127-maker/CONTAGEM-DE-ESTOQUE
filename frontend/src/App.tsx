@@ -82,19 +82,33 @@ export default function App() {
   useEffect(() => {
     if (!authEnabled) return
     let alive = true
-    void supabase.auth.getSession().then(({ data }: { data: { session: Session | null } }) => {
-      if (alive) {
+    const readyFallbackTimer = window.setTimeout(() => {
+      if (!alive) return
+      // Evita tela presa em "Carregando sessão…" quando a rede/Supabase não responde.
+      setAuthReady(true)
+    }, 8000)
+    void supabase.auth
+      .getSession()
+      .then(({ data }: { data: { session: Session | null } }) => {
+        if (!alive) return
         setSession(data.session)
         setAuthReady(true)
-      }
-    })
+      })
+      .catch(() => {
+        if (!alive) return
+        setSession(null)
+        setAuthReady(true)
+      })
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, s: Session | null) => {
+      if (!alive) return
       setSession(s)
+      setAuthReady(true)
     })
     return () => {
       alive = false
+      window.clearTimeout(readyFallbackTimer)
       subscription.unsubscribe()
     }
   }, [authEnabled])
