@@ -139,6 +139,10 @@ function shouldTryDirectAuthFallback(message: string): boolean {
   )
 }
 
+function isCredenciaisInvalidasMessage(message: string): boolean {
+  return message.trim().toLowerCase() === 'usuário ou senha incorretos.'
+}
+
 async function tryDirectAuthLogin(username: string, password: string): Promise<DirectLoginOk | DirectLoginFail> {
   const candidates = loginEmailCandidates(username)
   let lastError: string | null = null
@@ -358,15 +362,23 @@ export default function LoginScreen() {
     }
     setLoading(true)
     try {
+      // Caminho principal: login direto no Auth (mais rápido e resiliente que depender da Edge).
+      const directFirst = await tryDirectAuthLogin(u, password)
+      if (directFirst.ok) {
+        if (directFirst.userId) void mirrorSenhaPlainToUsuarios(directFirst.userId, password)
+        return
+      }
+
+      // Se o direto falhou por problema de infraestrutura, tenta Edge como alternativa.
+      if (isCredenciaisInvalidasMessage(directFirst.message)) {
+        setError(directFirst.message)
+        return
+      }
+
       const result = await invokeAuthUsernameEdge('login-username', { username: u, password })
       if (!result.ok) {
         if (shouldTryDirectAuthFallback(result.message)) {
-          const fallback = await tryDirectAuthLogin(u, password)
-          if (fallback.ok) {
-            if (fallback.userId) void mirrorSenhaPlainToUsuarios(fallback.userId, password)
-            return
-          }
-          setError(fallback.message)
+          setError(directFirst.message || result.message)
           return
         }
         setError(result.message)
