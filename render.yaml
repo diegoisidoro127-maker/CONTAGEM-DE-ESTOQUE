@@ -5,12 +5,15 @@
 #
 # staticPublishPath é relativo à RAIZ do repo (doc Render), não ao rootDir.
 # Com rootDir: frontend, a saída do Vite é frontend/dist → ./frontend/dist.
+#
+# Build: `npm run build` = só `vite build` (mais rápido no Render; evita timeout).
+# Tipagem completa local/CI: `npm run build:check`.
 services:
   - type: web
     name: contagem-de-estoque
     runtime: static
     rootDir: frontend
-    buildCommand: npm ci --no-audit --no-fund && npm run build
+    buildCommand: npm ci --no-audit --no-fund && NODE_ENV=production npm run build
     staticPublishPath: ./frontend/dist
     envVars:
       - key: NODE_VERSION
