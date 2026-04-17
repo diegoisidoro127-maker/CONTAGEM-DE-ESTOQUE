@@ -1,4 +1,4 @@
-import { useState, useEffect, type FormEvent } from 'react'
+import { useState, useEffect, useRef, type FormEvent, type RefObject } from 'react'
 import logoUltrapao from '../assets/logo-ultrapao.png'
 import { supabase } from '../lib/supabaseClient'
 import './LoginScreen.css'
@@ -176,6 +176,7 @@ type PasswordFieldProps = {
   disabled: boolean
   show: boolean
   onToggleShow: () => void
+  inputRef?: RefObject<HTMLInputElement | null>
 }
 
 function PasswordField({
@@ -187,6 +188,7 @@ function PasswordField({
   disabled,
   show,
   onToggleShow,
+  inputRef,
 }: PasswordFieldProps) {
   return (
     <label style={{ display: 'block', textAlign: 'left', marginBottom: 14 }}>
@@ -196,6 +198,7 @@ function PasswordField({
       <div style={{ position: 'relative', width: '100%' }}>
         <input
           id={id}
+          ref={inputRef}
           type={show ? 'text' : 'password'}
           autoComplete={autoComplete}
           value={value}
@@ -314,6 +317,7 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+  const passwordInputRef = useRef<HTMLInputElement | null>(null)
 
   const resetMessages = () => {
     setError(null)
@@ -328,6 +332,14 @@ export default function LoginScreen() {
     if (mode !== 'register') return
     setError(null)
   }, [username, password, passwordConfirm, mode])
+
+  useEffect(() => {
+    if (mode !== 'login' || !success) return
+    const t = window.setTimeout(() => {
+      passwordInputRef.current?.focus()
+    }, 100)
+    return () => window.clearTimeout(t)
+  }, [mode, success])
 
   const handleLogin = async (e: FormEvent) => {
     e.preventDefault()
@@ -399,6 +411,7 @@ export default function LoginScreen() {
       setMode('login')
       setPassword('')
       setPasswordConfirm('')
+      setError(null)
       setSuccess('Conta criada com sucesso. Agora faça login com o mesmo usuário e senha.')
     } catch {
       setError('Erro ao cadastrar. Tente novamente.')
@@ -517,6 +530,7 @@ export default function LoginScreen() {
             disabled={loading}
             show={showPassword}
             onToggleShow={() => setShowPassword((v) => !v)}
+            inputRef={passwordInputRef}
           />
 
           {mode === 'register' ? (

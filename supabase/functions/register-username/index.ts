@@ -107,11 +107,10 @@ Deno.serve(async (req) => {
     })
   }
 
-  return jsonResponse(
-    {
-      ok: false,
-      error: signed.error?.message || 'Conta criada, mas nao foi possivel abrir a sessao. Use Entrar.',
-    },
-    500,
-  )
+  // Conta já foi criada; login automático falhou (ex.: latência). Front deve voltar à tela de login.
+  return jsonResponse({
+    ok: true,
+    login_pending: true,
+    note: signed.error?.message ?? null,
+  })
 })
