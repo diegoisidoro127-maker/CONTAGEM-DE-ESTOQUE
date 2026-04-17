@@ -78,6 +78,16 @@ export default function App() {
     localStorage.setItem('ui-theme', theme)
   }, [theme])
 
+  // LoginScreen grava ui-theme em localStorage; o estado `theme` do App não acompanha até entrar.
+  // Ao abrir o painel, puxar o mesmo valor para o tema não “voltar” ao escolhido antes do login.
+  useEffect(() => {
+    if (!authEnabled || !session) return
+    const saved = localStorage.getItem('ui-theme')
+    if (saved === 'light' || saved === 'dark') {
+      setTheme(saved)
+    }
+  }, [authEnabled, session])
+
   useEffect(() => {
     if (!authEnabled) return
     let alive = true
