@@ -192,7 +192,7 @@ function PasswordField({
 }: PasswordFieldProps) {
   return (
     <label style={{ display: 'block', textAlign: 'left', marginBottom: 14 }}>
-      <span style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-h, #f3f4f6)' }}>
+      <span style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: '#1f2937' }}>
         {label}
       </span>
       <div style={{ position: 'relative', width: '100%' }}>
@@ -209,9 +209,9 @@ function PasswordField({
             boxSizing: 'border-box',
             padding: '12px 44px 12px 12px',
             borderRadius: 10,
-            border: '1px solid var(--border, #444)',
-            background: 'var(--code-bg, #1f2028)',
-            color: 'var(--text-h, #fff)',
+            border: '1px solid #cbd5e1',
+            background: '#ffffff',
+            color: '#111827',
             fontSize: 16,
           }}
         />
@@ -229,7 +229,7 @@ function PasswordField({
             padding: 8,
             border: 'none',
             background: 'transparent',
-            color: 'var(--text, #9ca3af)',
+            color: '#64748b',
             cursor: disabled ? 'not-allowed' : 'pointer',
             display: 'flex',
             alignItems: 'center',
@@ -341,6 +341,11 @@ export default function LoginScreen() {
     return () => window.clearTimeout(t)
   }, [mode, success])
 
+  useEffect(() => {
+    document.body.classList.add('login-screen-active')
+    return () => document.body.classList.remove('login-screen-active')
+  }, [])
+
   const handleLogin = async (e: FormEvent) => {
     e.preventDefault()
     resetMessages()
@@ -432,7 +437,7 @@ export default function LoginScreen() {
         justifyContent: 'center',
         padding: '24px 20px 40px',
         boxSizing: 'border-box',
-        background: 'var(--bg, #16171d)',
+        background: 'transparent',
       }}
     >
       <div
@@ -441,22 +446,22 @@ export default function LoginScreen() {
           maxWidth: 420,
           padding: '28px 24px 32px',
           borderRadius: 16,
-          border: '1px solid var(--border, #2e303a)',
-          background: 'var(--code-bg, #1f2028)',
-          boxShadow: 'var(--shadow, 0 12px 40px rgba(0,0,0,.35))',
+          border: '1px solid #d1d5db',
+          background: '#ffffff',
+          boxShadow: '0 12px 40px rgba(15, 23, 42, 0.12)',
           boxSizing: 'border-box',
         }}
       >
         <div style={{ textAlign: 'center', marginBottom: 22 }}>
           <img className="login-screen-logo" src={logoUltrapao} alt="Ultra Pão Alimentos" />
-          <h1 style={{ margin: 0, fontSize: 'clamp(20px, 4vw, 24px)', color: '#ffd95c', fontWeight: 700 }}>
+          <h1 style={{ margin: 0, fontSize: 'clamp(20px, 4vw, 24px)', color: '#92400e', fontWeight: 700 }}>
             Painel de Contagem de Estoque
           </h1>
-          <p style={{ margin: '10px 0 0', fontSize: 14, color: 'var(--text, #9ca3af)', lineHeight: 1.45 }}>
+          <p style={{ margin: '10px 0 0', fontSize: 14, color: '#4b5563', lineHeight: 1.45 }}>
             {mode === 'login' ? 'Entre com usuário e senha' : 'Cadastre usuário e senha (sem e-mail no formulário)'}
           </p>
           {mode === 'register' ? (
-            <p style={{ margin: '8px 0 0', fontSize: 12, color: 'var(--text, #6b7280)', lineHeight: 1.4 }}>
+            <p style={{ margin: '8px 0 0', fontSize: 12, color: '#64748b', lineHeight: 1.4 }}>
               O acesso é só nome de usuário e senha. O servidor usa um identificador interno.
             </p>
           ) : null}
@@ -469,9 +474,9 @@ export default function LoginScreen() {
               marginBottom: 14,
               padding: '10px 12px',
               borderRadius: 8,
-              background: 'rgba(21, 128, 61, 0.2)',
-              border: '1px solid #15803d',
-              color: '#bbf7d0',
+              background: '#dcfce7',
+              border: '1px solid #16a34a',
+              color: '#14532d',
               fontSize: 13,
               lineHeight: 1.45,
             }}
@@ -486,9 +491,9 @@ export default function LoginScreen() {
               marginBottom: 14,
               padding: '10px 12px',
               borderRadius: 8,
-              background: 'rgba(127, 29, 29, 0.35)',
-              border: '1px solid #b91c1c',
-              color: '#fecaca',
+              background: '#fee2e2',
+              border: '1px solid #dc2626',
+              color: '#991b1b',
               fontSize: 13,
               lineHeight: 1.45,
             }}
@@ -498,7 +503,7 @@ export default function LoginScreen() {
         ) : null}
         <form onSubmit={mode === 'login' ? handleLogin : handleRegister}>
           <label style={{ display: 'block', textAlign: 'left', marginBottom: 14 }}>
-            <span style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-h, #f3f4f6)' }}>
+            <span style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: '#1f2937' }}>
               {mode === 'register' ? 'Nome de usuário' : 'Usuário'}
             </span>
             <input
@@ -513,9 +518,9 @@ export default function LoginScreen() {
                 boxSizing: 'border-box',
                 padding: '12px 12px',
                 borderRadius: 10,
-                border: '1px solid var(--border, #444)',
-                background: 'var(--bg, #16171d)',
-                color: 'var(--text-h, #fff)',
+                border: '1px solid #cbd5e1',
+                background: '#ffffff',
+                color: '#111827',
                 fontSize: 16,
               }}
             />
@@ -601,7 +606,7 @@ export default function LoginScreen() {
               style={{
                 background: 'none',
                 border: 'none',
-                color: 'var(--text, #9ca3af)',
+                color: '#64748b',
                 fontSize: 14,
                 cursor: loading ? 'not-allowed' : 'pointer',
                 textDecoration: 'underline',

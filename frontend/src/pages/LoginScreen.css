@@ -26,3 +26,15 @@
     filter: drop-shadow(0 0 10px rgba(255, 217, 92, 0.3));
   }
 }
+
+/* Login sempre em tema claro: evita fundo preto por dark mode do SO / --bg. */
+body.login-screen-active {
+  background: linear-gradient(180deg, #eef2f7 0%, #e2e8f0 100%) !important;
+}
+
+body.login-screen-active #root {
+  width: 100% !important;
+  max-width: none !important;
+  margin: 0 !important;
+  border: none !important;
+}
