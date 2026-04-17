@@ -509,39 +509,11 @@ export default function LoginScreen() {
         position: 'relative',
       }}
     >
-      <button
-        type="button"
-        onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
-        disabled={loading}
-        title={theme === 'dark' ? 'Usar tema claro' : 'Usar tema escuro'}
-        style={{
-          position: 'fixed',
-          top: 14,
-          right: 14,
-          zIndex: 50,
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 8,
-          padding: '10px 14px',
-          borderRadius: 10,
-          border: `1px solid ${ui.themeBtn.border}`,
-          background: ui.themeBtn.bg,
-          color: ui.themeBtn.color,
-          fontSize: 14,
-          fontWeight: 600,
-          cursor: loading ? 'not-allowed' : 'pointer',
-          boxShadow: '0 4px 14px rgba(0,0,0,0.12)',
-        }}
-      >
-        <span aria-hidden>{theme === 'dark' ? '☀️' : '🌙'}</span>
-        {theme === 'dark' ? 'Tema claro' : 'Tema escuro'}
-      </button>
-
       <div
         style={{
           width: '100%',
           maxWidth: 420,
-          padding: '28px 24px 32px',
+          padding: '20px 24px 28px',
           borderRadius: 16,
           border: `1px solid ${ui.cardBorder}`,
           background: ui.cardBg,
@@ -549,6 +521,34 @@ export default function LoginScreen() {
           boxSizing: 'border-box',
         }}
       >
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+          <button
+            type="button"
+            onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
+            disabled={loading}
+            title={theme === 'dark' ? 'Usar tema claro' : 'Usar tema escuro'}
+            aria-label={theme === 'dark' ? 'Ativar tema claro' : 'Ativar tema escuro'}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '8px 12px',
+              borderRadius: 10,
+              border: `1px solid ${ui.themeBtn.border}`,
+              background: ui.themeBtn.bg,
+              color: ui.themeBtn.color,
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: loading ? 'not-allowed' : 'pointer',
+              boxShadow: '0 2px 10px rgba(0,0,0,0.08)',
+              flexShrink: 0,
+            }}
+          >
+            <span aria-hidden>{theme === 'dark' ? '☀️' : '🌙'}</span>
+            <span style={{ whiteSpace: 'nowrap' }}>{theme === 'dark' ? 'Tema claro' : 'Tema escuro'}</span>
+          </button>
+        </div>
+
         <div style={{ textAlign: 'center', marginBottom: 22 }}>
           <img className="login-screen-logo" src={logoUltrapao} alt="Ultra Pão Alimentos" />
           <h1 style={{ margin: 0, fontSize: 'clamp(20px, 4vw, 24px)', color: ui.title, fontWeight: 700 }}>
