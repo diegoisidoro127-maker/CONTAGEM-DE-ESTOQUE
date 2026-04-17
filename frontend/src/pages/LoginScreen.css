@@ -27,9 +27,13 @@
   }
 }
 
-/* Login sempre em tema claro: evita fundo preto por dark mode do SO / --bg. */
-body.login-screen-active {
+/* Tela de login: fundo conforme tema escolhido (classe definida no TS). */
+body.login-screen-active.login-screen--light {
   background: linear-gradient(180deg, #eef2f7 0%, #e2e8f0 100%) !important;
+}
+
+body.login-screen-active.login-screen--dark {
+  background: linear-gradient(180deg, #12131a 0%, #1a1b22 100%) !important;
 }
 
 body.login-screen-active #root {

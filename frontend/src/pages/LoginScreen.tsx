@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, type FormEvent, type RefObject } from 'react'
+import { useState, useEffect, useMemo, useRef, type FormEvent, type RefObject } from 'react'
 import logoUltrapao from '../assets/logo-ultrapao.png'
 import { supabase } from '../lib/supabaseClient'
 import './LoginScreen.css'
@@ -167,6 +167,14 @@ function EyeClosedIcon() {
   )
 }
 
+type LoginFieldColors = {
+  label: string
+  inputBg: string
+  inputBorder: string
+  inputText: string
+  icon: string
+}
+
 type PasswordFieldProps = {
   id: string
   label: string
@@ -177,6 +185,7 @@ type PasswordFieldProps = {
   show: boolean
   onToggleShow: () => void
   inputRef?: RefObject<HTMLInputElement | null>
+  colors: LoginFieldColors
 }
 
 function PasswordField({
@@ -189,10 +198,11 @@ function PasswordField({
   show,
   onToggleShow,
   inputRef,
+  colors,
 }: PasswordFieldProps) {
   return (
     <label style={{ display: 'block', textAlign: 'left', marginBottom: 14 }}>
-      <span style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: '#1f2937' }}>
+      <span style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: colors.label }}>
         {label}
       </span>
       <div style={{ position: 'relative', width: '100%' }}>
@@ -209,9 +219,9 @@ function PasswordField({
             boxSizing: 'border-box',
             padding: '12px 44px 12px 12px',
             borderRadius: 10,
-            border: '1px solid #cbd5e1',
-            background: '#ffffff',
-            color: '#111827',
+            border: `1px solid ${colors.inputBorder}`,
+            background: colors.inputBg,
+            color: colors.inputText,
             fontSize: 16,
           }}
         />
@@ -229,7 +239,7 @@ function PasswordField({
             padding: 8,
             border: 'none',
             background: 'transparent',
-            color: '#64748b',
+            color: colors.icon,
             cursor: disabled ? 'not-allowed' : 'pointer',
             display: 'flex',
             alignItems: 'center',
@@ -307,7 +317,59 @@ function mapInvokeTransportError(message: string | undefined): string | null {
   return null
 }
 
+type LoginUiTheme = 'light' | 'dark'
+
+function loginUiPalette(theme: LoginUiTheme) {
+  if (theme === 'light') {
+    return {
+      cardBg: '#ffffff',
+      cardBorder: '#d1d5db',
+      cardShadow: '0 12px 40px rgba(15, 23, 42, 0.12)',
+      title: '#92400e',
+      subtitle: '#4b5563',
+      muted: '#64748b',
+      field: {
+        label: '#1f2937',
+        inputBg: '#ffffff',
+        inputBorder: '#cbd5e1',
+        inputText: '#111827',
+        icon: '#64748b',
+      } satisfies LoginFieldColors,
+      success: { bg: '#dcfce7', border: '#16a34a', color: '#14532d' },
+      error: { bg: '#fee2e2', border: '#dc2626', color: '#991b1b' },
+      linkMuted: '#64748b',
+      themeBtn: { bg: 'rgba(255,255,255,0.92)', border: '#cbd5e1', color: '#334155' },
+    }
+  }
+  return {
+    cardBg: '#1f2028',
+    cardBorder: '#2e303a',
+    cardShadow: '0 12px 40px rgba(0,0,0,0.35)',
+    title: '#ffd95c',
+    subtitle: '#9ca3af',
+    muted: '#9ca3af',
+    field: {
+      label: '#f3f4f6',
+      inputBg: '#16171d',
+      inputBorder: '#3f3f46',
+      inputText: '#f9fafb',
+      icon: '#9ca3af',
+    } satisfies LoginFieldColors,
+    success: { bg: 'rgba(21, 128, 61, 0.25)', border: '#15803d', color: '#bbf7d0' },
+    error: { bg: 'rgba(127, 29, 29, 0.35)', border: '#b91c1c', color: '#fecaca' },
+    linkMuted: '#9ca3af',
+    themeBtn: { bg: 'rgba(40, 42, 52, 0.96)', border: '#3f3f46', color: '#e5e7eb' },
+  }
+}
+
 export default function LoginScreen() {
+  const [theme, setTheme] = useState<LoginUiTheme>(() => {
+    const saved = localStorage.getItem('ui-theme')
+    if (saved === 'light' || saved === 'dark') return saved
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+  })
+  const ui = useMemo(() => loginUiPalette(theme), [theme])
+
   const [mode, setMode] = useState<'login' | 'register'>('login')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -343,8 +405,14 @@ export default function LoginScreen() {
 
   useEffect(() => {
     document.body.classList.add('login-screen-active')
-    return () => document.body.classList.remove('login-screen-active')
-  }, [])
+    document.body.classList.toggle('login-screen--light', theme === 'light')
+    document.body.classList.toggle('login-screen--dark', theme === 'dark')
+    document.documentElement.setAttribute('data-theme', theme)
+    localStorage.setItem('ui-theme', theme)
+    return () => {
+      document.body.classList.remove('login-screen-active', 'login-screen--light', 'login-screen--dark')
+    }
+  }, [theme])
 
   const handleLogin = async (e: FormEvent) => {
     e.preventDefault()
@@ -438,30 +506,59 @@ export default function LoginScreen() {
         padding: '24px 20px 40px',
         boxSizing: 'border-box',
         background: 'transparent',
+        position: 'relative',
       }}
     >
+      <button
+        type="button"
+        onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
+        disabled={loading}
+        title={theme === 'dark' ? 'Usar tema claro' : 'Usar tema escuro'}
+        style={{
+          position: 'fixed',
+          top: 14,
+          right: 14,
+          zIndex: 50,
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 8,
+          padding: '10px 14px',
+          borderRadius: 10,
+          border: `1px solid ${ui.themeBtn.border}`,
+          background: ui.themeBtn.bg,
+          color: ui.themeBtn.color,
+          fontSize: 14,
+          fontWeight: 600,
+          cursor: loading ? 'not-allowed' : 'pointer',
+          boxShadow: '0 4px 14px rgba(0,0,0,0.12)',
+        }}
+      >
+        <span aria-hidden>{theme === 'dark' ? '☀️' : '🌙'}</span>
+        {theme === 'dark' ? 'Tema claro' : 'Tema escuro'}
+      </button>
+
       <div
         style={{
           width: '100%',
           maxWidth: 420,
           padding: '28px 24px 32px',
           borderRadius: 16,
-          border: '1px solid #d1d5db',
-          background: '#ffffff',
-          boxShadow: '0 12px 40px rgba(15, 23, 42, 0.12)',
+          border: `1px solid ${ui.cardBorder}`,
+          background: ui.cardBg,
+          boxShadow: ui.cardShadow,
           boxSizing: 'border-box',
         }}
       >
         <div style={{ textAlign: 'center', marginBottom: 22 }}>
           <img className="login-screen-logo" src={logoUltrapao} alt="Ultra Pão Alimentos" />
-          <h1 style={{ margin: 0, fontSize: 'clamp(20px, 4vw, 24px)', color: '#92400e', fontWeight: 700 }}>
+          <h1 style={{ margin: 0, fontSize: 'clamp(20px, 4vw, 24px)', color: ui.title, fontWeight: 700 }}>
             Painel de Contagem de Estoque
           </h1>
-          <p style={{ margin: '10px 0 0', fontSize: 14, color: '#4b5563', lineHeight: 1.45 }}>
+          <p style={{ margin: '10px 0 0', fontSize: 14, color: ui.subtitle, lineHeight: 1.45 }}>
             {mode === 'login' ? 'Entre com usuário e senha' : 'Cadastre usuário e senha (sem e-mail no formulário)'}
           </p>
           {mode === 'register' ? (
-            <p style={{ margin: '8px 0 0', fontSize: 12, color: '#64748b', lineHeight: 1.4 }}>
+            <p style={{ margin: '8px 0 0', fontSize: 12, color: ui.muted, lineHeight: 1.4 }}>
               O acesso é só nome de usuário e senha. O servidor usa um identificador interno.
             </p>
           ) : null}
@@ -474,9 +571,9 @@ export default function LoginScreen() {
               marginBottom: 14,
               padding: '10px 12px',
               borderRadius: 8,
-              background: '#dcfce7',
-              border: '1px solid #16a34a',
-              color: '#14532d',
+              background: ui.success.bg,
+              border: `1px solid ${ui.success.border}`,
+              color: ui.success.color,
               fontSize: 13,
               lineHeight: 1.45,
             }}
@@ -491,9 +588,9 @@ export default function LoginScreen() {
               marginBottom: 14,
               padding: '10px 12px',
               borderRadius: 8,
-              background: '#fee2e2',
-              border: '1px solid #dc2626',
-              color: '#991b1b',
+              background: ui.error.bg,
+              border: `1px solid ${ui.error.border}`,
+              color: ui.error.color,
               fontSize: 13,
               lineHeight: 1.45,
             }}
@@ -503,7 +600,7 @@ export default function LoginScreen() {
         ) : null}
         <form onSubmit={mode === 'login' ? handleLogin : handleRegister}>
           <label style={{ display: 'block', textAlign: 'left', marginBottom: 14 }}>
-            <span style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: '#1f2937' }}>
+            <span style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: ui.field.label }}>
               {mode === 'register' ? 'Nome de usuário' : 'Usuário'}
             </span>
             <input
@@ -518,9 +615,9 @@ export default function LoginScreen() {
                 boxSizing: 'border-box',
                 padding: '12px 12px',
                 borderRadius: 10,
-                border: '1px solid #cbd5e1',
-                background: '#ffffff',
-                color: '#111827',
+                border: `1px solid ${ui.field.inputBorder}`,
+                background: ui.field.inputBg,
+                color: ui.field.inputText,
                 fontSize: 16,
               }}
             />
@@ -536,6 +633,7 @@ export default function LoginScreen() {
             show={showPassword}
             onToggleShow={() => setShowPassword((v) => !v)}
             inputRef={passwordInputRef}
+            colors={ui.field}
           />
 
           {mode === 'register' ? (
@@ -548,6 +646,7 @@ export default function LoginScreen() {
               disabled={loading}
               show={showPasswordConfirm}
               onToggleShow={() => setShowPasswordConfirm((v) => !v)}
+              colors={ui.field}
             />
           ) : null}
 
@@ -606,7 +705,7 @@ export default function LoginScreen() {
               style={{
                 background: 'none',
                 border: 'none',
-                color: '#64748b',
+                color: ui.linkMuted,
                 fontSize: 14,
                 cursor: loading ? 'not-allowed' : 'pointer',
                 textDecoration: 'underline',
