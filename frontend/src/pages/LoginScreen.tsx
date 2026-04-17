@@ -279,8 +279,17 @@ function mapAuthError(message: string): string {
   if (m.includes('email not confirmed') || m.includes('email_not_confirmed')) {
     return 'Conta ainda não liberada no servidor. Tente de novo ou peça suporte.'
   }
-  if (m.includes('user already registered') || m.includes('already been registered')) {
-    return 'Este usuário já existe. Use Entrar.'
+  if (
+    m.includes('user already registered') ||
+    m.includes('already been registered') ||
+    m.includes('already registered') ||
+    m.includes('email address has already been registered') ||
+    m.includes('a user with this email')
+  ) {
+    return (
+      'Esse usuário já existe no login (Auth), mesmo que não apareça na tabela usuarios. ' +
+      'No Supabase: Authentication → Users → excluir o usuário, ou use Entrar.'
+    )
   }
   if (m.includes('password')) {
     return 'Senha inválida. Use pelo menos 6 caracteres.'
