@@ -13,7 +13,8 @@
     "preview": "vite preview --host 0.0.0.0",
     "start": "serve -s dist -l ${PORT:-4173}",
     "import:relatorio-xlsx": "node scripts/import-relatorio-contagem-xlsx.mjs",
-    "seed:users": "node scripts/seed-auth-users.mjs"
+    "seed:users": "node scripts/seed-auth-users.mjs",
+    "backup:usuarios-produtos": "node scripts/backup-usuarios-produtos.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.99.2",
