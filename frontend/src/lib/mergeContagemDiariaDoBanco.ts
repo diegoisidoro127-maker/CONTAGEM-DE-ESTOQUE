@@ -5,7 +5,8 @@ import { isContagemDiariaRowResumo } from './contagemDiariaPresenca'
 import { fetchConferentesNomesPorIds } from './conferentesNomesBatch'
 import type { OfflineChecklistItem } from './offlineContagemSession'
 
-const FETCH_CHUNK = 2000
+/** Até 1000 por requisição — alinhado ao max_rows padrão da API Supabase. */
+const FETCH_CHUNK = 1000
 
 function toDateInputValue(v?: string | null) {
   if (!v) return ''

@@ -46,6 +46,20 @@ function asInt(v: string): number {
   return Math.max(0, Math.trunc(n))
 }
 
+function formatDataBr(ymd: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return ymd
+  const [y, m, d] = ymd.split('-').map(Number)
+  const dt = new Date(y, m - 1, d)
+  return dt.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+}
+
+function formatHoraRegistro(iso: string) {
+  if (!iso?.trim()) return '—'
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return '—'
+  return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+}
+
 function TinyLineChart({
   title,
   color,
@@ -106,6 +120,81 @@ function TinyLineChart({
             <span>Min: {pointsData.min.toFixed(1)}°C</span>
             <span>Max: {pointsData.max.toFixed(1)}°C</span>
             <span>Média: {pointsData.avg.toFixed(1)}°C</span>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+function CombinedTempChart({ rows }: { rows: TempRow[] }) {
+  const width = 640
+  const height = 200
+  const pad = 36
+  const series = useMemo(
+    () =>
+      [
+        { color: '#22c55e', valueOf: (r: TempRow) => r.camara11_temp, label: 'Câmara 11' },
+        { color: '#38bdf8', valueOf: (r: TempRow) => r.camara12_temp, label: 'Câmara 12' },
+        { color: '#f59e0b', valueOf: (r: TempRow) => r.camara13_temp, label: 'Câmara 13' },
+      ] as const,
+    [],
+  )
+
+  const chart = useMemo(() => {
+    if (!rows.length) return { paths: [] as { d: string; color: string; label: string }[], min: 0, max: 0 }
+    const allVals = rows.flatMap((r) => [r.camara11_temp, r.camara12_temp, r.camara13_temp])
+    const min = Math.min(...allVals)
+    const max = Math.max(...allVals)
+    const safeMin = min === max ? min - 1 : min
+    const safeMax = min === max ? max + 1 : max
+    const stepX = rows.length > 1 ? (width - pad * 2) / (rows.length - 1) : 0
+    const paths = series.map((s) => {
+      const pts = rows.map((r, idx) => {
+        const v = s.valueOf(r)
+        const x = pad + stepX * idx
+        const norm = (v - safeMin) / (safeMax - safeMin)
+        const y = height - pad - norm * (height - pad * 2)
+        return { x, y }
+      })
+      const d = pts.map((p, idx) => `${idx === 0 ? 'M' : 'L'} ${p.x.toFixed(2)} ${p.y.toFixed(2)}`).join(' ')
+      return { d, color: s.color, label: s.label }
+    })
+    return { paths, min, max }
+  }, [rows, series])
+
+  return (
+    <div
+      style={{
+        border: '1px solid var(--border, #2e303a)',
+        borderRadius: 12,
+        padding: 10,
+        background: 'var(--code-bg, #1f2028)',
+        gridColumn: '1 / -1',
+      }}
+    >
+      <div style={{ fontWeight: 700, marginBottom: 8, color: '#a7f3d0' }}>Comparativo — Câmaras 11, 12 e 13</div>
+      {!rows.length ? (
+        <div style={{ fontSize: 13, color: 'var(--text, #9ca3af)' }}>Sem dados ainda.</div>
+      ) : (
+        <>
+          <svg width="100%" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid meet">
+            <rect x={0} y={0} width={width} height={height} fill="transparent" />
+            <line x1={pad} y1={height - pad} x2={width - pad} y2={height - pad} stroke="#64748b" strokeWidth="1" />
+            <line x1={pad} y1={pad} x2={pad} y2={height - pad} stroke="#64748b" strokeWidth="1" />
+            {chart.paths.map((p) => (
+              <path key={p.label} d={p.d} stroke={p.color} strokeWidth="2.5" fill="none" />
+            ))}
+          </svg>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, marginTop: 8, fontSize: 12 }}>
+            {chart.paths.map((p) => (
+              <span key={p.label} style={{ color: p.color, fontWeight: 600 }}>
+                <span style={{ opacity: 0.9 }}>●</span> {p.label}
+              </span>
+            ))}
+            <span style={{ color: 'var(--text, #9ca3af)' }}>
+              Escala: {chart.min.toFixed(1)}°C — {chart.max.toFixed(1)}°C
+            </span>
           </div>
         </>
       )}
@@ -270,6 +359,9 @@ export default function ContagemDiariaAmbiental() {
     }
   }
 
+  /** Mais recentes primeiro — para histórico em tabela. */
+  const tempHistoricoDesc = useMemo(() => [...tempRows].reverse(), [tempRows])
+
   const ocupResumoAtual = useMemo(() => {
     const v6 = asInt(vazias6)
     const v7 = asInt(vazias7)
@@ -389,6 +481,37 @@ export default function ContagemDiariaAmbiental() {
             <TinyLineChart title="Câmara 11" color="#22c55e" rows={tempRows} valueOf={(r) => r.camara11_temp} />
             <TinyLineChart title="Câmara 12" color="#38bdf8" rows={tempRows} valueOf={(r) => r.camara12_temp} />
             <TinyLineChart title="Câmara 13" color="#f59e0b" rows={tempRows} valueOf={(r) => r.camara13_temp} />
+            <CombinedTempChart rows={tempRows} />
+          </div>
+
+          <div style={{ border: '1px solid var(--border, #2e303a)', borderRadius: 12, padding: 12, overflowX: 'auto' }}>
+            <div style={{ fontWeight: 700, marginBottom: 10, color: '#22c55e' }}>Histórico de registros (temperatura)</div>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 420 }}>
+              <thead>
+                <tr>
+                  <th style={th}>Conferente</th>
+                  <th style={th}>Data</th>
+                  <th style={th}>Hora do registro</th>
+                </tr>
+              </thead>
+              <tbody>
+                {tempHistoricoDesc.length === 0 ? (
+                  <tr>
+                    <td colSpan={3} style={{ ...td, color: 'var(--text, #9ca3af)' }}>
+                      Nenhum registro ainda.
+                    </td>
+                  </tr>
+                ) : (
+                  tempHistoricoDesc.map((r) => (
+                    <tr key={r.id}>
+                      <td style={td}>{r.conferente_nome}</td>
+                      <td style={td}>{formatDataBr(r.data_registro)}</td>
+                      <td style={td}>{formatHoraRegistro(r.created_at)}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
       ) : (

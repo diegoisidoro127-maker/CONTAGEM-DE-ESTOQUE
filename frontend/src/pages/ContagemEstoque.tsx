@@ -1835,13 +1835,27 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
 
     let previewOrigemAusenteNoResultado = false
 
-    const queryPreview = (selectStr: string) =>
-      supabase
-        .from('contagens_estoque')
-        .select(selectStr)
-        .eq('data_contagem', dayKey)
-        .order('data_hora_contagem', { ascending: false })
-        .limit(2000)
+    /** Páginas de no máx. 1000 linhas — acima disso a API do Supabase (max_rows) costuma responder 400. */
+    const PREVIEW_PAGE_SIZE = 1000
+    const queryPreview = async (selectStr: string) => {
+      const acc: Record<string, unknown>[] = []
+      let from = 0
+      while (true) {
+        const { data: batch, error: batchErr } = await supabase
+          .from('contagens_estoque')
+          .select(selectStr)
+          .eq('data_contagem', dayKey)
+          .order('data_hora_contagem', { ascending: false })
+          .range(from, from + PREVIEW_PAGE_SIZE - 1)
+        if (batchErr) return { data: null, error: batchErr }
+        const rows = (batch ?? []) as Record<string, unknown>[]
+        acc.push(...rows)
+        if (rows.length < PREVIEW_PAGE_SIZE) break
+        from += PREVIEW_PAGE_SIZE
+        if (from > 80000) break
+      }
+      return { data: acc, error: null }
+    }
 
     const previewSelectInitial = contagensHasFinalizacaoSessaoIdRef.current ? previewSelectFull : previewSelectFullLegacy
     let { data, error } = await queryPreview(previewSelectInitial)

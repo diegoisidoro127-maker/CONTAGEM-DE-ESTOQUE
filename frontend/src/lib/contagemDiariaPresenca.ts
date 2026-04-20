@@ -165,7 +165,7 @@ export type ResumoFinalizadoDia = {
   ultima_data_hora: string | null
 }
 
-const CONTAGENS_FETCH_CHUNK = 2000
+const CONTAGENS_FETCH_CHUNK = 1000
 
 /**
  * Agrega linhas já gravadas em `contagens_estoque` no dia (contagem diária), por conferente.

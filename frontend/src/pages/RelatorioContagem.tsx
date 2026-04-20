@@ -175,7 +175,7 @@ function mergeContagemRowsById(
 /** Paginação (15 + “Mostrar tudo”) vale para Relatório completo e Todas as contagens — mesmo componente. */
 const RELATORIO_PAGE_SIZE = 15
 /** PostgREST costuma limitar ~1000 linhas por requisição; buscamos em fatias para trazer o relatório inteiro. */
-const RELATORIO_FETCH_CHUNK = 2000
+const RELATORIO_FETCH_CHUNK = 1000
 
 /** Uma linha no histórico: conferente × dia civil × lote de finalização × quantidade de lançamentos. */
 type HistoricoContagemItem = {
