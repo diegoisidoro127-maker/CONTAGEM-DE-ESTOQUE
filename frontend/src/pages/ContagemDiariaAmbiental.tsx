@@ -215,6 +215,8 @@ function TinyLineChart<T extends { data_registro: string }>({
   valueSuffix = '°C',
   decimals = 1,
   axisCaption,
+  denseTimeline,
+  showSeriesInsight,
 }: {
   title: string
   color: string
@@ -225,6 +227,10 @@ function TinyLineChart<T extends { data_registro: string }>({
   decimals?: number
   /** Texto curto no canto do gráfico; default = valueSuffix. */
   axisCaption?: string
+  /** Mais marcas no eixo X (do primeiro ao último lançamento). */
+  denseTimeline?: boolean
+  /** Último ponto destacado + bloco início / fim / variação. */
+  showSeriesInsight?: boolean
 }) {
   const uid = useId().replace(/:/g, '')
   const gradId = `tgrad-${uid}`
@@ -258,14 +264,28 @@ function TinyLineChart<T extends { data_registro: string }>({
     const areaD = `${lineD} L ${last.x.toFixed(2)} ${bottomY.toFixed(2)} L ${first.x.toFixed(2)} ${bottomY.toFixed(2)} Z`
     const yTicks = linearYTicks(safeMin, safeMax, yAt, 5)
     const n = rows.length
-    const xIdx =
-      n <= 1 ? [0] : n === 2 ? [0, 1] : [0, Math.floor((n - 1) / 3), Math.floor((2 * (n - 1)) / 3), n - 1]
+    let xIdx: number[]
+    if (denseTimeline) {
+      if (n <= 1) xIdx = [0]
+      else if (n <= 7) xIdx = Array.from({ length: n }, (_, i) => i)
+      else {
+        xIdx = [0]
+        for (let k = 1; k <= 5; k++) xIdx.push(Math.round(((n - 1) * k) / 6))
+        xIdx.push(n - 1)
+        xIdx = [...new Set(xIdx)].sort((a, b) => a - b)
+      }
+    } else {
+      xIdx = n <= 1 ? [0] : n === 2 ? [0, 1] : [0, Math.floor((n - 1) / 3), Math.floor((2 * (n - 1)) / 3), n - 1]
+    }
     const xLabels = [...new Set(xIdx)]
       .sort((a, b) => a - b)
       .map((i) => ({ x: xAt(i), text: formatAxisDateChart(rows[i].data_registro) }))
     const avg = values.reduce((a, b) => a + b, 0) / values.length
-    return { lineD, areaD, yTicks, xLabels, min, max, avg }
-  }, [rows, valueOf, innerW, innerH, padL, padT, bottomY])
+    const firstVal = values[0]
+    const lastVal = values[values.length - 1]
+    const lastPt = pts[pts.length - 1]
+    return { lineD, areaD, yTicks, xLabels, min, max, avg, firstVal, lastVal, lastPt, delta: lastVal - firstVal }
+  }, [rows, valueOf, innerW, innerH, padL, padT, bottomY, denseTimeline])
 
   return (
     <div style={chartCardStyle}>
@@ -316,6 +336,16 @@ function TinyLineChart<T extends { data_registro: string }>({
               strokeLinejoin="round"
               style={{ filter: `drop-shadow(0 0 8px ${color}66)` }}
             />
+            {showSeriesInsight && geom.lastPt ? (
+              <circle
+                cx={geom.lastPt.x}
+                cy={geom.lastPt.y}
+                r={5}
+                fill={color}
+                stroke="rgba(15,23,42,.9)"
+                strokeWidth={2}
+              />
+            ) : null}
             {geom.yTicks.map((t, i) => (
               <text
                 key={`yl-${i}`}
@@ -403,6 +433,54 @@ function TinyLineChart<T extends { data_registro: string }>({
                 {valueSuffix}
               </strong>
             </div>
+            {showSeriesInsight && rows.length >= 2 ? (
+              <div
+                style={{
+                  width: '100%',
+                  maxWidth: 360,
+                  marginTop: 4,
+                  padding: '10px 12px',
+                  borderRadius: 10,
+                  background: 'rgba(0,0,0,.22)',
+                  border: '1px solid rgba(255,255,255,.06)',
+                  display: 'grid',
+                  gap: 8,
+                  fontSize: 11,
+                  color: '#94a3b8',
+                }}
+              >
+                <div style={{ fontWeight: 700, color: '#cbd5e1', fontSize: 11 }}>Tendência no período exibido</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', gap: 8 }}>
+                  <span>
+                    Início ({formatAxisDateChart(rows[0].data_registro)})
+                  </span>
+                  <strong style={{ color: '#f1f5f9', fontVariantNumeric: 'tabular-nums' }}>
+                    {fmt(geom.firstVal)}
+                    {valueSuffix}
+                  </strong>
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', gap: 8 }}>
+                  <span>Fim ({formatAxisDateChart(rows[rows.length - 1].data_registro)})</span>
+                  <strong style={{ color: '#f1f5f9', fontVariantNumeric: 'tabular-nums' }}>
+                    {fmt(geom.lastVal)}
+                    {valueSuffix}
+                  </strong>
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', gap: 8 }}>
+                  <span>Variação (fim − início)</span>
+                  <strong
+                    style={{
+                      fontVariantNumeric: 'tabular-nums',
+                      color: geom.delta > 0.0001 ? '#6ee7b7' : geom.delta < -0.0001 ? '#fca5a5' : '#e2e8f0',
+                    }}
+                  >
+                    {geom.delta > 0 ? '+' : ''}
+                    {fmt(geom.delta)}
+                    {valueSuffix}
+                  </strong>
+                </div>
+              </div>
+            ) : null}
           </div>
         </>
       )}
@@ -739,6 +817,371 @@ function CombinedTempChart({ rows }: { rows: TempRow[] }) {
   )
 }
 
+const COMBINED_OCP_SERIES = [
+  { color: '#f0f9ff', valueOf: ocupPercGeral, label: 'Geral (11+12+13 + avaria)', strokeWidth: 3.35 },
+  { color: '#22c55e', valueOf: ocupPercCam11, label: 'Câmara 11', strokeWidth: 2.7 },
+  { color: '#38bdf8', valueOf: ocupPercCam12, label: 'Câmara 12', strokeWidth: 2.7 },
+  { color: '#f59e0b', valueOf: ocupPercCam13, label: 'Câmara 13', strokeWidth: 2.7 },
+] as const
+
+function CombinedOcupacaoChart({ rows }: { rows: OcupRow[] }) {
+  const uid = useId().replace(/:/g, '')
+  const width = 1100
+  const height = 292
+  const padL = 54
+  const padR = 18
+  const padT = 20
+  const padB = 50
+  const innerW = width - padL - padR
+  const innerH = height - padT - padB
+  const bottomY = padT + innerH
+  const [tip, setTip] = useState<{ idx: number; pxPct: number } | null>(null)
+
+  const chart = useMemo(() => {
+    if (!rows.length) return null
+    const allVals = rows.flatMap((r) => COMBINED_OCP_SERIES.map((s) => s.valueOf(r)))
+    const min = Math.min(...allVals)
+    const max = Math.max(...allVals)
+    const pad = (max - min) * 0.06 || 1
+    const safeMin = min === max ? min - pad : min - pad * 0.35
+    const safeMax = min === max ? max + pad : max + pad * 0.35
+    const rng = safeMax - safeMin
+    const xAt = (i: number) => padL + (rows.length > 1 ? (innerW * i) / (rows.length - 1) : innerW / 2)
+    const yAt = (v: number) => padT + innerH - ((v - safeMin) / rng) * innerH
+    const seriesPaths = COMBINED_OCP_SERIES.map((s, si) => {
+      const pts = rows.map((r, i) => {
+        const v = s.valueOf(r)
+        return { x: xAt(i), y: yAt(v) }
+      })
+      return {
+        lineD: smoothLinePath(pts),
+        color: s.color,
+        label: s.label,
+        strokeWidth: s.strokeWidth,
+        gradId: `ocp-grad-${uid}-${si}`,
+      }
+    })
+    const yTicks = linearYTicks(safeMin, safeMax, yAt, 6)
+    const n = rows.length
+    const xIdx =
+      n <= 1 ? [0] : n === 2 ? [0, 1] : [0, Math.floor((n - 1) / 4), Math.floor((n - 1) / 2), Math.floor((3 * (n - 1)) / 4), n - 1]
+    const xLabels = [...new Set(xIdx)]
+      .sort((a, b) => a - b)
+      .map((i) => ({ x: xAt(i), text: formatAxisDateChart(rows[i].data_registro) }))
+    return { seriesPaths, yTicks, xLabels, min, max, xAt, yAt }
+  }, [rows, innerW, innerH, padL, padT, bottomY, uid])
+
+  const onSvgMove = useCallback(
+    (e: React.MouseEvent<SVGSVGElement>) => {
+      if (!rows.length || !chart) return
+      const svg = e.currentTarget
+      const rect = svg.getBoundingClientRect()
+      const vx = ((e.clientX - rect.left) / Math.max(1, rect.width)) * width
+      const n = rows.length
+      if (vx < padL || vx > width - padR) {
+        setTip(null)
+        return
+      }
+      const step = n > 1 ? innerW / (n - 1) : 0
+      let idx = n <= 1 ? 0 : Math.round((vx - padL) / step)
+      idx = Math.max(0, Math.min(n - 1, idx))
+      const xCenter = padL + step * idx
+      setTip({ idx, pxPct: (xCenter / width) * 100 })
+    },
+    [rows.length, chart, width, padL, padR, innerW],
+  )
+
+  const onSvgLeave = useCallback(() => setTip(null), [])
+
+  return (
+    <div style={{ ...chartCardStyle, padding: 16 }}>
+      <div
+        style={{
+          fontWeight: 800,
+          marginBottom: 6,
+          fontSize: 18,
+          letterSpacing: '0.02em',
+          background: 'linear-gradient(90deg, #bae6fd, #38bdf8, #7dd3fc)',
+          WebkitBackgroundClip: 'text',
+          WebkitTextFillColor: 'transparent',
+          backgroundClip: 'text',
+        }}
+      >
+        Comparativo — ocupação %
+      </div>
+      <div style={{ fontSize: 12, color: '#64748b', marginBottom: 14, lineHeight: 1.45 }}>
+        Linha <strong style={{ color: '#e2e8f0' }}>geral</strong> inclui avaria no total ocupado. As outras três curvas são só as câmaras 11, 12 e 13 (percentual sobre a capacidade de cada uma).
+      </div>
+      {!rows.length || !chart ? (
+        <div style={{ fontSize: 13, color: 'var(--text, #9ca3af)' }}>Sem dados ainda.</div>
+      ) : (
+        <>
+          <div
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              alignItems: 'center',
+              gap: 10,
+              marginBottom: 12,
+              padding: '10px 12px',
+              background: 'rgba(0,0,0,.22)',
+              borderRadius: 12,
+              border: '1px solid rgba(56,189,248,.12)',
+            }}
+          >
+            <span style={{ fontSize: 11, color: '#64748b', fontWeight: 600, marginRight: 4 }}>Legenda</span>
+            {chart.seriesPaths.map((p) => (
+              <span
+                key={p.label}
+                style={{
+                  color: '#e2e8f0',
+                  fontWeight: 600,
+                  fontSize: 12,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '6px 12px',
+                  borderRadius: 999,
+                  border: `1px solid ${p.color === '#f0f9ff' ? 'rgba(240,249,255,.45)' : `${p.color}55`}`,
+                  background: `${p.color === '#f0f9ff' ? 'rgba(240,249,255,.12)' : `${p.color}14`}`,
+                }}
+              >
+                <span
+                  style={{
+                    width: 10,
+                    height: 10,
+                    borderRadius: 999,
+                    background: p.color,
+                    boxShadow: `0 0 10px ${p.color === '#f0f9ff' ? 'rgba(240,249,255,.5)' : p.color}`,
+                  }}
+                />
+                {p.label}
+              </span>
+            ))}
+            <span style={{ fontSize: 12, color: '#64748b', marginLeft: 'auto' }}>
+              Passe o mouse para ver valores, conferente e avaria na data
+            </span>
+          </div>
+
+          <div style={{ position: 'relative' }}>
+            {tip != null && rows[tip.idx] ? (
+              <div
+                style={{
+                  position: 'absolute',
+                  left: `${tip.pxPct}%`,
+                  top: 6,
+                  transform: 'translateX(-50%)',
+                  zIndex: 2,
+                  pointerEvents: 'none',
+                  minWidth: 240,
+                  padding: '12px 14px',
+                  borderRadius: 12,
+                  background: 'rgba(15,23,42,.96)',
+                  border: '1px solid rgba(56,189,248,.4)',
+                  boxShadow: '0 12px 40px rgba(0,0,0,.5)',
+                  fontSize: 12,
+                }}
+              >
+                <div style={{ fontWeight: 700, color: '#e0f2fe', marginBottom: 4 }}>
+                  {formatAxisDateChart(rows[tip.idx].data_registro)}
+                </div>
+                <div style={{ fontSize: 11, color: '#64748b', marginBottom: 10 }}>
+                  {rows[tip.idx].conferente_nome}
+                  <span style={{ color: '#475569' }}> · </span>
+                  {formatHoraRegistro(rows[tip.idx].created_at)}
+                </div>
+                <div style={{ display: 'grid', gap: 7 }}>
+                  <div style={{ color: '#f0f9ff' }}>
+                    Geral: <strong>{ocupPercGeral(rows[tip.idx]).toFixed(1)} %</strong>
+                  </div>
+                  <div style={{ color: '#22c55e' }}>
+                    Câm. 11: <strong>{ocupPercCam11(rows[tip.idx]).toFixed(1)} %</strong>
+                  </div>
+                  <div style={{ color: '#38bdf8' }}>
+                    Câm. 12: <strong>{ocupPercCam12(rows[tip.idx]).toFixed(1)} %</strong>
+                  </div>
+                  <div style={{ color: '#f59e0b' }}>
+                    Câm. 13: <strong>{ocupPercCam13(rows[tip.idx]).toFixed(1)} %</strong>
+                  </div>
+                  <div
+                    style={{
+                      marginTop: 4,
+                      paddingTop: 8,
+                      borderTop: '1px solid rgba(255,255,255,.08)',
+                      color: '#fdba74',
+                    }}
+                  >
+                    Avaria: <strong>{rows[tip.idx].avaria_acrescimo_ocupacao}</strong> pos. (
+                    {ocupAvariaPercTotal(rows[tip.idx]).toFixed(1)}% do armazém)
+                  </div>
+                </div>
+              </div>
+            ) : null}
+            <svg
+              width="100%"
+              viewBox={`0 0 ${width} ${height}`}
+              preserveAspectRatio="xMidYMid meet"
+              style={{ display: 'block', cursor: 'crosshair' }}
+              onMouseMove={onSvgMove}
+              onMouseLeave={onSvgLeave}
+            >
+              <defs>
+                {chart.seriesPaths.map((p) => (
+                  <linearGradient key={p.gradId} id={p.gradId} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={p.color} stopOpacity={0.16} />
+                    <stop offset="55%" stopColor={p.color} stopOpacity={0.05} />
+                    <stop offset="100%" stopColor={p.color} stopOpacity={0} />
+                  </linearGradient>
+                ))}
+              </defs>
+              <rect x={0} y={0} width={width} height={height} rx={10} fill="rgba(0,0,0,.2)" />
+              {chart.xLabels.map((xl, i) => (
+                <line
+                  key={`oxg-${i}`}
+                  x1={xl.x}
+                  y1={padT}
+                  x2={xl.x}
+                  y2={bottomY}
+                  stroke="rgba(148,163,184,.08)"
+                  strokeWidth={1}
+                />
+              ))}
+              {chart.yTicks.map((t, i) => (
+                <line
+                  key={`oy-${i}`}
+                  x1={padL}
+                  y1={t.y}
+                  x2={width - padR}
+                  y2={t.y}
+                  stroke="rgba(148,163,184,.2)"
+                  strokeDasharray="4 8"
+                  strokeWidth={1}
+                />
+              ))}
+              {tip != null ? (
+                <line
+                  x1={chart.xAt(tip.idx)}
+                  y1={padT}
+                  x2={chart.xAt(tip.idx)}
+                  y2={bottomY}
+                  stroke="rgba(56,189,248,.4)"
+                  strokeWidth={1.5}
+                  strokeDasharray="6 4"
+                />
+              ) : null}
+              {chart.seriesPaths.map((p) => {
+                const lineD = p.lineD
+                const pts = rows.map((_, i) => ({
+                  x: padL + (rows.length > 1 ? (innerW * i) / (rows.length - 1) : innerW / 2),
+                }))
+                const lastX = pts[pts.length - 1]?.x ?? padL
+                const firstX = pts[0]?.x ?? padL
+                const areaD = `${lineD} L ${lastX.toFixed(2)} ${bottomY.toFixed(2)} L ${firstX.toFixed(2)} ${bottomY.toFixed(2)} Z`
+                return <path key={p.label} d={areaD} fill={`url(#${p.gradId})`} opacity={0.5} />
+              })}
+              {chart.seriesPaths.map((p) => (
+                <path
+                  key={`oline-${p.label}`}
+                  d={p.lineD}
+                  stroke={p.color}
+                  strokeWidth={p.strokeWidth}
+                  fill="none"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  style={{ filter: `drop-shadow(0 0 6px ${p.color === '#f0f9ff' ? 'rgba(240,249,255,.45)' : `${p.color}55`})` }}
+                />
+              ))}
+              {tip != null
+                ? COMBINED_OCP_SERIES.map((s) => {
+                    const v = s.valueOf(rows[tip.idx])
+                    const cx = chart.xAt(tip.idx)
+                    const cy = chart.yAt(v)
+                    return (
+                      <circle
+                        key={`od-${s.label}`}
+                        cx={cx}
+                        cy={cy}
+                        r={s.strokeWidth > 3 ? 5.5 : 5}
+                        fill={s.color}
+                        stroke="rgba(15,23,42,.92)"
+                        strokeWidth={2}
+                      />
+                    )
+                  })
+                : null}
+              {chart.yTicks.map((t, i) => (
+                <text
+                  key={`oyl-${i}`}
+                  x={padL - 10}
+                  y={t.y + 4}
+                  textAnchor="end"
+                  fill="#cbd5e1"
+                  fontSize={11}
+                  fontFamily="system-ui, sans-serif"
+                >
+                  {t.v.toFixed(1)}%
+                </text>
+              ))}
+              <text x={padL} y={padT - 2} fill="#64748b" fontSize={10} fontFamily="system-ui, sans-serif">
+                % ocupada
+              </text>
+              <line
+                x1={padL}
+                y1={bottomY}
+                x2={width - padR}
+                y2={bottomY}
+                stroke="rgba(148,163,184,.45)"
+                strokeWidth={1.5}
+              />
+              <line
+                x1={padL}
+                y1={padT}
+                x2={padL}
+                y2={bottomY}
+                stroke="rgba(148,163,184,.45)"
+                strokeWidth={1.5}
+              />
+              {chart.xLabels.map((xl, i) => (
+                <text
+                  key={`oxl-${i}`}
+                  x={xl.x}
+                  y={height - 12}
+                  textAnchor="middle"
+                  fill="#94a3b8"
+                  fontSize={10}
+                  fontFamily="system-ui, sans-serif"
+                >
+                  {xl.text}
+                </text>
+              ))}
+            </svg>
+          </div>
+          <div
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: 12,
+              marginTop: 12,
+              fontSize: 12,
+              paddingTop: 10,
+              borderTop: '1px solid rgba(255,255,255,.08)',
+              color: '#94a3b8',
+            }}
+          >
+            <span>
+              Faixa no gráfico: <strong style={{ color: '#e2e8f0' }}>{chart.min.toFixed(1)} %</strong> a{' '}
+              <strong style={{ color: '#e2e8f0' }}>{chart.max.toFixed(1)} %</strong>
+            </span>
+            <span style={{ color: '#64748b' }}>
+              {rows.length} lançamento(s) no histórico carregado
+            </span>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 type OcupResumoSalvo = {
   r: OcupRow
   totalPos: number
@@ -848,66 +1291,75 @@ function OcupacaoCamaras111213Secao({
       {resumoDia ? (
         <div
           style={{
-            borderRadius: 16,
-            padding: '20px 22px 22px',
+            borderRadius: 14,
+            padding: '12px 14px 14px',
             background: t.resumoGradient,
             border: t.resumoBorder,
-            boxShadow: '0 16px 52px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.1)',
+            boxShadow: '0 12px 40px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.08)',
           }}
         >
           <div
             style={{
-              fontSize: 11,
+              fontSize: 10,
               fontWeight: 700,
               textTransform: 'uppercase',
-              letterSpacing: '0.16em',
+              letterSpacing: '0.14em',
               color: t.tituloResumo,
-              marginBottom: 4,
+              marginBottom: 2,
               textAlign: 'center',
             }}
           >
             {labels.resumo}
           </div>
-          <div style={{ fontSize: 12, color: '#64748b', textAlign: 'center', marginBottom: 18 }}>
-            Último registro salvo (data do lançamento · horário · conferente)
+          <div style={{ fontSize: 10, color: '#64748b', textAlign: 'center', marginBottom: 10, lineHeight: 1.35 }}>
+            Último registro salvo (data · horário · conferente)
           </div>
 
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
-              gap: 20,
-              alignItems: 'start',
-              marginBottom: 20,
+              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+              gap: 10,
+              alignItems: 'center',
+              marginBottom: 14,
             }}
           >
-            <div>
-              <div style={{ fontSize: 11, color: '#64748b', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+            <div style={{ paddingRight: 4 }}>
+              <div
+                style={{
+                  fontSize: 10,
+                  color: '#64748b',
+                  marginBottom: 3,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.06em',
+                }}
+              >
                 Data do lançamento
               </div>
-              <div style={{ fontSize: 'clamp(26px, 5vw, 34px)', fontWeight: 800, color: '#f8fafc', lineHeight: 1.1 }}>
+              <div style={{ fontSize: 'clamp(20px, 3.8vw, 26px)', fontWeight: 800, color: '#f8fafc', lineHeight: 1.05 }}>
                 {formatDataBr(resumoDia.r.data_registro)}
               </div>
             </div>
             <div
               style={{
                 display: 'grid',
-                gap: 12,
-                padding: '12px 16px',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
+                gap: 8,
+                padding: '8px 10px',
                 background: 'rgba(0,0,0,.22)',
-                borderRadius: 12,
+                borderRadius: 10,
                 border: '1px solid rgba(255,255,255,.06)',
               }}
             >
               <div>
-                <div style={{ fontSize: 11, color: '#64748b', marginBottom: 4 }}>Horário do registro</div>
-                <div style={{ fontSize: 18, fontWeight: 700, color: '#e0f2fe', fontVariantNumeric: 'tabular-nums' }}>
+                <div style={{ fontSize: 10, color: '#64748b', marginBottom: 2 }}>Horário do registro</div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: '#e0f2fe', fontVariantNumeric: 'tabular-nums', lineHeight: 1.2 }}>
                   {formatHoraRegistro(resumoDia.r.created_at)}
                 </div>
               </div>
               <div>
-                <div style={{ fontSize: 11, color: '#64748b', marginBottom: 4 }}>Conferente</div>
-                <div style={{ fontSize: 17, fontWeight: 700, color: '#bae6fd' }}>{resumoDia.r.conferente_nome}</div>
+                <div style={{ fontSize: 10, color: '#64748b', marginBottom: 2 }}>Conferente</div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: '#bae6fd', lineHeight: 1.2 }}>{resumoDia.r.conferente_nome}</div>
               </div>
             </div>
           </div>
@@ -1616,91 +2068,6 @@ export default function ContagemDiariaAmbiental() {
             Ocupação (câmaras 11, 12 e 13)
           </div>
 
-          <div
-            style={{
-              fontSize: 12,
-              fontWeight: 700,
-              color: '#7dd3fc',
-              letterSpacing: '0.04em',
-              textTransform: 'uppercase',
-            }}
-          >
-            Evolução nos lançamentos
-          </div>
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
-              gap: 12,
-            }}
-          >
-            <div style={{ gridColumn: '1 / -1' }}>
-              <TinyLineChart
-                title="% Ocupada geral (11+12+13, inclui avaria)"
-                color="#38bdf8"
-                rows={ocupRowsChrono}
-                valueOf={ocupPercGeral}
-                valueSuffix="%"
-                decimals={1}
-                axisCaption="%"
-              />
-            </div>
-            <TinyLineChart
-              title="% Ocupada — Câmara 11"
-              color="#22c55e"
-              rows={ocupRowsChrono}
-              valueOf={ocupPercCam11}
-              valueSuffix="%"
-              decimals={1}
-              axisCaption="%"
-            />
-            <TinyLineChart
-              title="% Ocupada — Câmara 12"
-              color="#38bdf8"
-              rows={ocupRowsChrono}
-              valueOf={ocupPercCam12}
-              valueSuffix="%"
-              decimals={1}
-              axisCaption="%"
-            />
-            <TinyLineChart
-              title="% Ocupada — Câmara 13"
-              color="#f59e0b"
-              rows={ocupRowsChrono}
-              valueOf={ocupPercCam13}
-              valueSuffix="%"
-              decimals={1}
-              axisCaption="%"
-            />
-            <div
-              style={{
-                gridColumn: '1 / -1',
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
-                gap: 12,
-              }}
-            >
-              <TinyLineChart
-                title="Avaria — quantidade (posições)"
-                color="#fb923c"
-                rows={ocupRowsChrono}
-                valueOf={(r) => r.avaria_acrescimo_ocupacao}
-                valueSuffix=" pos."
-                decimals={0}
-                axisCaption="pos."
-              />
-              <TinyLineChart
-                title="Avaria — % do total de posições"
-                color="#fdba74"
-                rows={ocupRowsChrono}
-                valueOf={ocupAvariaPercTotal}
-                valueSuffix="%"
-                decimals={1}
-                axisCaption="%"
-              />
-            </div>
-          </div>
-
           <OcupacaoCamaras111213Secao
             labels={{
               resumo: 'Resumo do dia',
@@ -1729,6 +2096,118 @@ export default function ContagemDiariaAmbiental() {
             conferentesLoading={conferentesLoading}
             conferentes={conferentes}
           />
+
+          <div
+            style={{
+              borderRadius: 16,
+              padding: '18px 18px 22px',
+              background:
+                'linear-gradient(152deg, rgba(8,47,72,.42) 0%, rgba(15,23,42,.94) 40%, rgba(17,24,39,.98) 100%)',
+              border: '1px solid rgba(56,189,248,.32)',
+              boxShadow: '0 18px 56px rgba(0,0,0,.38), inset 0 1px 0 rgba(255,255,255,.07)',
+            }}
+          >
+            <div
+              style={{
+                fontSize: 11,
+                fontWeight: 700,
+                color: '#7dd3fc',
+                letterSpacing: '0.14em',
+                textTransform: 'uppercase',
+                marginBottom: 6,
+              }}
+            >
+              Histórico visual
+            </div>
+            <div style={{ fontSize: 17, fontWeight: 800, color: '#f8fafc', marginBottom: 8, letterSpacing: '-0.02em' }}>
+              Evolução da ocupação nos lançamentos
+            </div>
+            <p style={{ fontSize: 12, color: '#94a3b8', lineHeight: 1.55, margin: '0 0 18px', maxWidth: 920 }}>
+              O gráfico agrupado mostra a curva <strong style={{ color: '#e2e8f0' }}>geral</strong> (com avaria) e as
+              três câmaras lado a lado — passe o mouse para ver conferente, horário e avaria naquele ponto. Abaixo, cada
+              série em detalhe, com eixo temporal mais denso e a variação entre o primeiro e o último registro exibido.
+            </p>
+
+            <CombinedOcupacaoChart rows={ocupRowsChrono} />
+
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 300px), 1fr))',
+                gap: 14,
+                marginTop: 18,
+              }}
+            >
+              <div style={{ gridColumn: '1 / -1' }}>
+                <TinyLineChart
+                  title="% Ocupada geral (11+12+13, inclui avaria)"
+                  color="#38bdf8"
+                  rows={ocupRowsChrono}
+                  valueOf={ocupPercGeral}
+                  valueSuffix="%"
+                  decimals={1}
+                  axisCaption="%"
+                  denseTimeline
+                  showSeriesInsight
+                />
+              </div>
+              <TinyLineChart
+                title="% Ocupada — Câmara 11"
+                color="#22c55e"
+                rows={ocupRowsChrono}
+                valueOf={ocupPercCam11}
+                valueSuffix="%"
+                decimals={1}
+                axisCaption="%"
+                denseTimeline
+                showSeriesInsight
+              />
+              <TinyLineChart
+                title="% Ocupada — Câmara 12"
+                color="#38bdf8"
+                rows={ocupRowsChrono}
+                valueOf={ocupPercCam12}
+                valueSuffix="%"
+                decimals={1}
+                axisCaption="%"
+                denseTimeline
+                showSeriesInsight
+              />
+              <TinyLineChart
+                title="% Ocupada — Câmara 13"
+                color="#f59e0b"
+                rows={ocupRowsChrono}
+                valueOf={ocupPercCam13}
+                valueSuffix="%"
+                decimals={1}
+                axisCaption="%"
+                denseTimeline
+                showSeriesInsight
+              />
+              <TinyLineChart
+                title="Avaria — quantidade (posições)"
+                color="#fb923c"
+                rows={ocupRowsChrono}
+                valueOf={(r) => r.avaria_acrescimo_ocupacao}
+                valueSuffix=" pos."
+                decimals={0}
+                axisCaption="pos."
+                denseTimeline
+                showSeriesInsight
+              />
+              <TinyLineChart
+                title="Avaria — % do total de posições"
+                color="#fdba74"
+                rows={ocupRowsChrono}
+                valueOf={ocupAvariaPercTotal}
+                valueSuffix="%"
+                decimals={1}
+                axisCaption="%"
+                denseTimeline
+                showSeriesInsight
+              />
+            </div>
+          </div>
         </div>
       )}
     </div>
