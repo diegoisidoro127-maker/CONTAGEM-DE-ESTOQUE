@@ -1,4 +1,7 @@
--- Limpeza mensal: apaga TODO o histórico de temperatura e ocupação (inclui ocupação de avaria).
+-- Limpeza mensal — apaga TODO o histórico:
+--   • temperatura (câm. 11/12/13)
+--   • ocupação regular (câm. 6/7/8)
+--   • ocupação de avaria (câm. 6/7/8, tabela contagem_ocupacao_avaria_camaras)
 --
 -- Agendamento: dia 1 de cada mês, 00:05 horário de Brasília → cron UTC '5 3 1 * *'.
 --
@@ -8,7 +11,7 @@
 --    contagem_ocupacao_avaria_camaras (rode create_contagem_ocupacao_avaria_camaras.sql se ainda não tiver).
 -- 3) Rode este arquivo inteiro no SQL Editor.
 --
--- Atenção: operação destrutiva — não há retenção parcial; todas as linhas das três tabelas são removidas.
+-- Atenção: operação destrutiva — não há retenção parcial; todas as linhas das três tabelas acima são removidas.
 
 create extension if not exists pg_cron with schema extensions;
 
@@ -29,6 +32,7 @@ begin
   delete from public.contagem_ocupacao_camaras;
   get diagnostics n_ocup = row_count;
 
+  -- Ocupação de avaria (mesma estrutura da ocupação regular; histórico próprio).
   delete from public.contagem_ocupacao_avaria_camaras;
   get diagnostics n_avaria = row_count;
 
