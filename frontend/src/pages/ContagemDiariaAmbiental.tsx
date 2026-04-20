@@ -166,6 +166,17 @@ function formatAxisDateChart(ymd: string) {
   return ymd
 }
 
+/** Metadados opcionais para tooltip (linhas de temperatura/ocupação no Supabase). */
+function rowMetaForTooltip(r: { data_registro: string }): { conferente?: string; hora?: string } {
+  const o = r as Record<string, unknown>
+  const nome = o.conferente_nome
+  const created = o.created_at
+  return {
+    conferente: typeof nome === 'string' && nome.trim() ? nome : undefined,
+    hora: typeof created === 'string' && created.trim() ? formatHoraRegistro(created) : undefined,
+  }
+}
+
 /** Curva suave tipo Catmull-Rom → cúbicas de Bézier. */
 function smoothLinePath(points: { x: number; y: number }[]): string {
   const n = points.length
@@ -243,6 +254,7 @@ function TinyLineChart<T extends { data_registro: string }>({
   const innerW = width - padL - padR
   const innerH = height - padT - padB
   const bottomY = padT + innerH
+  const [tip, setTip] = useState<{ idx: number; pxPct: number } | null>(null)
 
   const capAxis = axisCaption ?? valueSuffix
   const fmt = (v: number) => v.toFixed(decimals)
@@ -284,8 +296,44 @@ function TinyLineChart<T extends { data_registro: string }>({
     const firstVal = values[0]
     const lastVal = values[values.length - 1]
     const lastPt = pts[pts.length - 1]
-    return { lineD, areaD, yTicks, xLabels, min, max, avg, firstVal, lastVal, lastPt, delta: lastVal - firstVal }
+    return {
+      lineD,
+      areaD,
+      yTicks,
+      xLabels,
+      min,
+      max,
+      avg,
+      firstVal,
+      lastVal,
+      lastPt,
+      delta: lastVal - firstVal,
+      xAt,
+      yAt,
+    }
   }, [rows, valueOf, innerW, innerH, padL, padT, bottomY, denseTimeline])
+
+  const onSvgMove = useCallback(
+    (e: React.MouseEvent<SVGSVGElement>) => {
+      if (!rows.length || !geom) return
+      const svg = e.currentTarget
+      const rect = svg.getBoundingClientRect()
+      const vx = ((e.clientX - rect.left) / Math.max(1, rect.width)) * width
+      const n = rows.length
+      if (vx < padL || vx > width - padR) {
+        setTip(null)
+        return
+      }
+      const step = n > 1 ? innerW / (n - 1) : 0
+      let idx = n <= 1 ? 0 : Math.round((vx - padL) / step)
+      idx = Math.max(0, Math.min(n - 1, idx))
+      const xCenter = padL + step * idx
+      setTip({ idx, pxPct: (xCenter / width) * 100 })
+    },
+    [rows.length, geom, width, padL, padR, innerW],
+  )
+
+  const onSvgLeave = useCallback(() => setTip(null), [])
 
   return (
     <div style={chartCardStyle}>
@@ -294,7 +342,56 @@ function TinyLineChart<T extends { data_registro: string }>({
         <div style={{ fontSize: 13, color: 'var(--text, #9ca3af)' }}>Sem dados ainda.</div>
       ) : (
         <>
-          <svg width="100%" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid meet" style={{ display: 'block' }}>
+          <div style={{ position: 'relative' }}>
+            {tip != null && rows[tip.idx] ? (
+              <div
+                style={{
+                  position: 'absolute',
+                  left: `${tip.pxPct}%`,
+                  top: 4,
+                  transform: 'translateX(-50%)',
+                  zIndex: 2,
+                  pointerEvents: 'none',
+                  minWidth: 200,
+                  maxWidth: 280,
+                  padding: '10px 12px',
+                  borderRadius: 12,
+                  background: 'rgba(15,23,42,.96)',
+                  border: `1px solid ${color}55`,
+                  boxShadow: '0 12px 36px rgba(0,0,0,.5)',
+                  fontSize: 12,
+                }}
+              >
+                <div style={{ fontWeight: 700, color: '#e0f2fe', marginBottom: 6 }}>
+                  {formatAxisDateChart(rows[tip.idx].data_registro)}
+                </div>
+                {(() => {
+                  const m = rowMetaForTooltip(rows[tip.idx])
+                  return m.conferente || m.hora ? (
+                    <div style={{ fontSize: 11, color: '#64748b', marginBottom: 8, lineHeight: 1.4 }}>
+                      {m.conferente ? <span style={{ color: '#94a3b8' }}>{m.conferente}</span> : null}
+                      {m.conferente && m.hora ? <span style={{ color: '#475569' }}> · </span> : null}
+                      {m.hora ? <span>{m.hora}</span> : null}
+                    </div>
+                  ) : null
+                })()}
+                <div style={{ color }}>
+                  Valor:{' '}
+                  <strong style={{ fontVariantNumeric: 'tabular-nums' }}>
+                    {fmt(valueOf(rows[tip.idx]))}
+                    {valueSuffix}
+                  </strong>
+                </div>
+              </div>
+            ) : null}
+            <svg
+              width="100%"
+              viewBox={`0 0 ${width} ${height}`}
+              preserveAspectRatio="xMidYMid meet"
+              style={{ display: 'block', cursor: 'crosshair' }}
+              onMouseMove={onSvgMove}
+              onMouseLeave={onSvgLeave}
+            >
             <defs>
               <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor={color} stopOpacity={0.28} />
@@ -327,6 +424,17 @@ function TinyLineChart<T extends { data_registro: string }>({
               />
             ))}
             <path d={geom.areaD} fill={`url(#${gradId})`} />
+            {tip != null ? (
+              <line
+                x1={geom.xAt(tip.idx)}
+                y1={padT}
+                x2={geom.xAt(tip.idx)}
+                y2={bottomY}
+                stroke="rgba(148,163,184,.35)"
+                strokeWidth={1.5}
+                strokeDasharray="5 4"
+              />
+            ) : null}
             <path
               d={geom.lineD}
               stroke={color}
@@ -336,7 +444,16 @@ function TinyLineChart<T extends { data_registro: string }>({
               strokeLinejoin="round"
               style={{ filter: `drop-shadow(0 0 8px ${color}66)` }}
             />
-            {showSeriesInsight && geom.lastPt ? (
+            {tip != null ? (
+              <circle
+                cx={geom.xAt(tip.idx)}
+                cy={geom.yAt(valueOf(rows[tip.idx]))}
+                r={6}
+                fill={color}
+                stroke="rgba(15,23,42,.92)"
+                strokeWidth={2}
+              />
+            ) : showSeriesInsight && geom.lastPt ? (
               <circle
                 cx={geom.lastPt.x}
                 cy={geom.lastPt.y}
@@ -398,7 +515,8 @@ function TinyLineChart<T extends { data_registro: string }>({
                 {xl.text}
               </text>
             ))}
-          </svg>
+            </svg>
+          </div>
           <div
             style={{
               display: 'flex',
