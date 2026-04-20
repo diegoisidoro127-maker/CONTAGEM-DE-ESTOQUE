@@ -1409,75 +1409,75 @@ function OcupacaoCamaras111213Secao({
       {resumoDia ? (
         <div
           style={{
-            borderRadius: 14,
-            padding: '12px 14px 14px',
+            borderRadius: 12,
+            padding: '8px 12px 10px',
             background: t.resumoGradient,
             border: t.resumoBorder,
-            boxShadow: '0 12px 40px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.08)',
+            boxShadow: '0 8px 28px rgba(0,0,0,.3), inset 0 1px 0 rgba(255,255,255,.06)',
           }}
         >
           <div
             style={{
-              fontSize: 10,
+              fontSize: 9,
               fontWeight: 700,
               textTransform: 'uppercase',
-              letterSpacing: '0.14em',
+              letterSpacing: '0.12em',
               color: t.tituloResumo,
-              marginBottom: 2,
+              marginBottom: 1,
               textAlign: 'center',
             }}
           >
             {labels.resumo}
           </div>
-          <div style={{ fontSize: 10, color: '#64748b', textAlign: 'center', marginBottom: 10, lineHeight: 1.35 }}>
+          <div style={{ fontSize: 9, color: '#64748b', textAlign: 'center', marginBottom: 6, lineHeight: 1.3 }}>
             Último registro salvo (data · horário · conferente)
           </div>
 
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-              gap: 10,
+              gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+              gap: 8,
               alignItems: 'center',
-              marginBottom: 14,
+              marginBottom: 10,
             }}
           >
-            <div style={{ paddingRight: 4 }}>
+            <div style={{ paddingRight: 2 }}>
               <div
                 style={{
-                  fontSize: 10,
+                  fontSize: 9,
                   color: '#64748b',
-                  marginBottom: 3,
+                  marginBottom: 2,
                   textTransform: 'uppercase',
                   letterSpacing: '0.06em',
                 }}
               >
                 Data do lançamento
               </div>
-              <div style={{ fontSize: 'clamp(20px, 3.8vw, 26px)', fontWeight: 800, color: '#f8fafc', lineHeight: 1.05 }}>
+              <div style={{ fontSize: 'clamp(17px, 3.2vw, 22px)', fontWeight: 800, color: '#f8fafc', lineHeight: 1.05 }}>
                 {formatDataBr(resumoDia.r.data_registro)}
               </div>
             </div>
             <div
               style={{
                 display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
-                gap: 8,
-                padding: '8px 10px',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))',
+                gap: 6,
+                padding: '6px 8px',
                 background: 'rgba(0,0,0,.22)',
-                borderRadius: 10,
+                borderRadius: 8,
                 border: '1px solid rgba(255,255,255,.06)',
               }}
             >
               <div>
-                <div style={{ fontSize: 10, color: '#64748b', marginBottom: 2 }}>Horário do registro</div>
-                <div style={{ fontSize: 15, fontWeight: 700, color: '#e0f2fe', fontVariantNumeric: 'tabular-nums', lineHeight: 1.2 }}>
+                <div style={{ fontSize: 9, color: '#64748b', marginBottom: 1 }}>Horário do registro</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#e0f2fe', fontVariantNumeric: 'tabular-nums', lineHeight: 1.15 }}>
                   {formatHoraRegistro(resumoDia.r.created_at)}
                 </div>
               </div>
               <div>
-                <div style={{ fontSize: 10, color: '#64748b', marginBottom: 2 }}>Conferente</div>
-                <div style={{ fontSize: 15, fontWeight: 700, color: '#bae6fd', lineHeight: 1.2 }}>{resumoDia.r.conferente_nome}</div>
+                <div style={{ fontSize: 9, color: '#64748b', marginBottom: 1 }}>Conferente</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#bae6fd', lineHeight: 1.15 }}>{resumoDia.r.conferente_nome}</div>
               </div>
             </div>
           </div>
@@ -1486,49 +1486,49 @@ function OcupacaoCamaras111213Secao({
             style={{
               display: 'grid',
               gridTemplateColumns: '1fr',
-              gap: 14,
-              marginBottom: 18,
+              gap: 8,
+              marginBottom: 10,
             }}
           >
             <div
               style={{
                 background: 'rgba(0,0,0,.28)',
-                borderRadius: 14,
-                padding: '16px 18px',
+                borderRadius: 10,
+                padding: '8px 12px',
                 border: t.kpiOcupBorder,
-                boxShadow: '0 4px 24px rgba(0,0,0,.25)',
+                boxShadow: '0 2px 14px rgba(0,0,0,.2)',
                 display: 'grid',
                 gap: 0,
               }}
             >
-              <div style={{ fontSize: 11, color: t.kpiOcupTitulo, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>
+              <div style={{ fontSize: 10, color: t.kpiOcupTitulo, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 5 }}>
                 Ocupação
               </div>
               <div
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-                  gap: 14,
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
+                  gap: 8,
                   alignItems: 'center',
-                  padding: '14px 0',
+                  padding: '6px 0',
                   borderTop: '1px solid rgba(56,189,248,.2)',
                   borderBottom: '1px solid rgba(56,189,248,.2)',
                 }}
               >
                 <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: 10, color: '#64748b', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Posições ocupadas</div>
-                  <div style={{ fontSize: 28, fontWeight: 800, color: '#f8fafc', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
+                  <div style={{ fontSize: 9, color: '#64748b', marginBottom: 2, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Posições ocupadas</div>
+                  <div style={{ fontSize: 22, fontWeight: 800, color: '#f8fafc', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
                     {resumoDia.totalOcup}
                   </div>
                 </div>
                 <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: 10, color: '#64748b', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.06em' }}>% Ocupada</div>
-                  <div style={{ fontSize: 32, fontWeight: 800, color: t.kpiOcupValor, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
+                  <div style={{ fontSize: 9, color: '#64748b', marginBottom: 2, textTransform: 'uppercase', letterSpacing: '0.05em' }}>% Ocupada</div>
+                  <div style={{ fontSize: 26, fontWeight: 800, color: t.kpiOcupValor, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
                     {resumoDia.percOcup.toFixed(1)}%
                   </div>
                 </div>
               </div>
-              <div style={{ fontSize: 11, color: '#64748b', lineHeight: 1.45, marginTop: 12 }}>
+              <div style={{ fontSize: 10, color: '#64748b', lineHeight: 1.35, marginTop: 6 }}>
                 Base: <strong style={{ color: '#94a3b8' }}>{resumoDia.totalPos}</strong> posições totais (câm. 11+12+13). O total ocupado inclui o acréscimo de avaria.
               </div>
             </div>
@@ -1536,42 +1536,42 @@ function OcupacaoCamaras111213Secao({
             <div
               style={{
                 background: 'rgba(0,0,0,.28)',
-                borderRadius: 14,
-                padding: '16px 18px',
+                borderRadius: 10,
+                padding: '8px 12px',
                 border: '1px solid rgba(52,211,153,.4)',
-                boxShadow: '0 4px 24px rgba(0,0,0,.25)',
+                boxShadow: '0 2px 14px rgba(0,0,0,.2)',
                 display: 'grid',
                 gap: 0,
               }}
             >
-              <div style={{ fontSize: 11, color: '#6ee7b7', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>
+              <div style={{ fontSize: 10, color: '#6ee7b7', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 5 }}>
                 Livres
               </div>
               <div
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-                  gap: 14,
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
+                  gap: 8,
                   alignItems: 'center',
-                  padding: '14px 0',
+                  padding: '6px 0',
                   borderTop: '1px solid rgba(52,211,153,.25)',
                   borderBottom: '1px solid rgba(52,211,153,.25)',
                 }}
               >
                 <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: 10, color: '#64748b', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Posições livres</div>
-                  <div style={{ fontSize: 28, fontWeight: 800, color: '#ecfdf5', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
+                  <div style={{ fontSize: 9, color: '#64748b', marginBottom: 2, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Posições livres</div>
+                  <div style={{ fontSize: 22, fontWeight: 800, color: '#ecfdf5', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
                     {resumoDia.totalVaz}
                   </div>
                 </div>
                 <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: 10, color: '#64748b', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.06em' }}>% Livre</div>
-                  <div style={{ fontSize: 32, fontWeight: 800, color: '#34d399', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
+                  <div style={{ fontSize: 9, color: '#64748b', marginBottom: 2, textTransform: 'uppercase', letterSpacing: '0.05em' }}>% Livre</div>
+                  <div style={{ fontSize: 26, fontWeight: 800, color: '#34d399', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
                     {resumoDia.percLivre.toFixed(1)}%
                   </div>
                 </div>
               </div>
-              <div style={{ fontSize: 11, color: '#64748b', lineHeight: 1.45, marginTop: 12 }}>
+              <div style={{ fontSize: 10, color: '#64748b', lineHeight: 1.35, marginTop: 6 }}>
                 Soma das vagas vazias informadas nas três câmaras; percentual sobre o total do armazém ({resumoDia.totalPos} pos.).
               </div>
             </div>
@@ -1579,38 +1579,38 @@ function OcupacaoCamaras111213Secao({
             <div
               style={{
                 background: 'rgba(0,0,0,.28)',
-                borderRadius: 14,
-                padding: '16px 18px',
+                borderRadius: 10,
+                padding: '8px 12px',
                 border: '1px solid rgba(249,115,22,.45)',
-                boxShadow: '0 4px 24px rgba(0,0,0,.25)',
+                boxShadow: '0 2px 14px rgba(0,0,0,.2)',
                 display: 'grid',
                 gap: 0,
               }}
             >
-              <div style={{ fontSize: 11, color: t.avariaDestaque, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>
+              <div style={{ fontSize: 10, color: t.avariaDestaque, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 5 }}>
                 Avaria (acréscimo na ocupação)
               </div>
               <div
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-                  gap: 14,
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
+                  gap: 8,
                   alignItems: 'center',
-                  padding: '14px 0',
+                  padding: '6px 0',
                   borderTop: '1px solid rgba(249,115,22,.28)',
                   borderBottom: '1px solid rgba(249,115,22,.28)',
                 }}
               >
                 <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: 10, color: '#64748b', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Quantidade</div>
-                  <div style={{ fontSize: 28, fontWeight: 800, color: t.avariaDestaque, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
+                  <div style={{ fontSize: 9, color: '#64748b', marginBottom: 2, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Quantidade</div>
+                  <div style={{ fontSize: 22, fontWeight: 800, color: t.avariaDestaque, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
                     {resumoDia.r.avaria_acrescimo_ocupacao}
-                    <span style={{ fontSize: 14, fontWeight: 700, color: '#fdba74', marginLeft: 6 }}>pos.</span>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: '#fdba74', marginLeft: 4 }}>pos.</span>
                   </div>
                 </div>
                 <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: 10, color: '#64748b', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.06em' }}>% sobre o armazém</div>
-                  <div style={{ fontSize: 32, fontWeight: 800, color: '#fb923c', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
+                  <div style={{ fontSize: 9, color: '#64748b', marginBottom: 2, textTransform: 'uppercase', letterSpacing: '0.05em' }}>% sobre o armazém</div>
+                  <div style={{ fontSize: 26, fontWeight: 800, color: '#fb923c', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
                     {resumoDia.totalPos > 0
                       ? ((resumoDia.r.avaria_acrescimo_ocupacao / resumoDia.totalPos) * 100).toFixed(1)
                       : '0.0'}
@@ -1618,16 +1618,16 @@ function OcupacaoCamaras111213Secao({
                   </div>
                 </div>
               </div>
-              <div style={{ fontSize: 11, color: '#64748b', lineHeight: 1.45, marginTop: 12 }}>
+              <div style={{ fontSize: 10, color: '#64748b', lineHeight: 1.35, marginTop: 6 }}>
                 Valor somado ao total de ocupadas no mesmo lançamento. Percentual calculado sobre as {resumoDia.totalPos} posições totais.
               </div>
             </div>
           </div>
 
-          <div style={{ fontSize: 12, fontWeight: 700, color: '#94a3b8', marginBottom: 10, letterSpacing: '0.04em' }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', marginBottom: 6, letterSpacing: '0.03em' }}>
             Detalhe por câmara (último registro)
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8 }}>
             {(
               [
                 { id: 11, v: resumoDia.r.camara11_vazias, cap: OCUP_TOTAL.camara11 },
@@ -1642,14 +1642,14 @@ function OcupacaoCamaras111213Secao({
                   key={c.id}
                   style={{
                     background: 'rgba(0,0,0,.2)',
-                    borderRadius: 12,
-                    padding: '12px 14px',
+                    borderRadius: 10,
+                    padding: '8px 10px',
                     border: t.camBorda,
                   }}
                 >
-                  <div style={{ fontWeight: 700, color: t.camTitulo, marginBottom: 2 }}>Câmara {c.id}</div>
-                  <div style={{ fontSize: 11, color: '#64748b', marginBottom: 10 }}>{c.cap} posições no total</div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 8 }}>
+                  <div style={{ fontWeight: 700, color: t.camTitulo, marginBottom: 1, fontSize: 12 }}>Câmara {c.id}</div>
+                  <div style={{ fontSize: 10, color: '#64748b', marginBottom: 6 }}>{c.cap} posições no total</div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 6 }}>
                     <span>
                       <span style={{ color: '#6ee7b7' }}>Vazias</span> <strong style={{ color: '#ecfdf5' }}>{c.v}</strong>
                     </span>
@@ -1657,7 +1657,7 @@ function OcupacaoCamaras111213Secao({
                       <span style={{ color: t.ocupSpan }}>Ocupadas</span> <strong style={{ color: '#f0f9ff' }}>{oc}</strong>
                     </span>
                   </div>
-                  <div style={{ height: 6, borderRadius: 999, background: 'rgba(255,255,255,.08)', overflow: 'hidden' }}>
+                  <div style={{ height: 5, borderRadius: 999, background: 'rgba(255,255,255,.08)', overflow: 'hidden' }}>
                     <div
                       style={{
                         height: '100%',
@@ -1667,7 +1667,7 @@ function OcupacaoCamaras111213Secao({
                       }}
                     />
                   </div>
-                  <div style={{ fontSize: 10, color: '#64748b', marginTop: 6, textAlign: 'right' }}>{pct.toFixed(0)}% ocupada nesta câmara</div>
+                  <div style={{ fontSize: 9, color: '#64748b', marginTop: 4, textAlign: 'right' }}>{pct.toFixed(0)}% ocupada nesta câmara</div>
                 </div>
               )
             })}
