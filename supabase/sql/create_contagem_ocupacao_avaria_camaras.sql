@@ -1,3 +1,7 @@
+-- Legado / opcional: tabela separada de avaria. O app atual usa apenas
+-- contagem_ocupacao_camaras.avaria_acrescimo_ocupacao (ver alter_contagem_ocupacao_camaras_add_avaria_acrescimo.sql).
+-- Mantido para dados antigos ou purge mensal; novos lançamentos não dependem desta tabela.
+--
 -- Ocupação diária nas câmaras 6/7/8 — área de AVARIA (mesma lógica de vagas vazias que contagem_ocupacao_camaras).
 -- Rode no SQL Editor do Supabase após as tabelas principais já existirem.
 

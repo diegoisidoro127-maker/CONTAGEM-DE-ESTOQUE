@@ -29,6 +29,7 @@ create table if not exists public.contagem_ocupacao_camaras (
   camara6_vazias integer not null check (camara6_vazias >= 0),
   camara7_vazias integer not null check (camara7_vazias >= 0),
   camara8_vazias integer not null check (camara8_vazias >= 0),
+  avaria_acrescimo_ocupacao integer not null default 0 check (avaria_acrescimo_ocupacao >= 0),
   created_at timestamptz not null default now()
 );
 
@@ -36,7 +37,10 @@ create index if not exists idx_contagem_ocupacao_camaras_data
   on public.contagem_ocupacao_camaras (data_registro desc, created_at desc);
 
 comment on table public.contagem_ocupacao_camaras is
-  'Posições vazias por câmara no fechamento diário.';
+  'Posições vazias por câmara no fechamento diário; avaria_acrescimo_ocupacao soma ao total ocupado.';
+
+-- Instalações antigas: se a tabela já existia sem a coluna, rode:
+-- supabase/sql/alter_contagem_ocupacao_camaras_add_avaria_acrescimo.sql
 
 alter table public.contagem_temperatura_camaras enable row level security;
 alter table public.contagem_ocupacao_camaras enable row level security;
