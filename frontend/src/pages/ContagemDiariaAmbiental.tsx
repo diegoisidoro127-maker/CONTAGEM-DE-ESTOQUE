@@ -486,18 +486,21 @@ export default function ContagemDiariaAmbiental() {
 
           <div style={{ border: '1px solid var(--border, #2e303a)', borderRadius: 12, padding: 12, overflowX: 'auto' }}>
             <div style={{ fontWeight: 700, marginBottom: 10, color: '#22c55e' }}>Histórico de registros (temperatura)</div>
-            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 420 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640 }}>
               <thead>
                 <tr>
                   <th style={th}>Conferente</th>
                   <th style={th}>Data</th>
                   <th style={th}>Hora do registro</th>
+                  <th style={{ ...th, color: '#22c55e' }}>Câm. 11 (°C)</th>
+                  <th style={{ ...th, color: '#38bdf8' }}>Câm. 12 (°C)</th>
+                  <th style={{ ...th, color: '#f59e0b' }}>Câm. 13 (°C)</th>
                 </tr>
               </thead>
               <tbody>
                 {tempHistoricoDesc.length === 0 ? (
                   <tr>
-                    <td colSpan={3} style={{ ...td, color: 'var(--text, #9ca3af)' }}>
+                    <td colSpan={6} style={{ ...td, color: 'var(--text, #9ca3af)' }}>
                       Nenhum registro ainda.
                     </td>
                   </tr>
@@ -507,6 +510,9 @@ export default function ContagemDiariaAmbiental() {
                       <td style={td}>{r.conferente_nome}</td>
                       <td style={td}>{formatDataBr(r.data_registro)}</td>
                       <td style={td}>{formatHoraRegistro(r.created_at)}</td>
+                      <td style={{ ...td, fontVariantNumeric: 'tabular-nums' }}>{r.camara11_temp.toFixed(1)}</td>
+                      <td style={{ ...td, fontVariantNumeric: 'tabular-nums' }}>{r.camara12_temp.toFixed(1)}</td>
+                      <td style={{ ...td, fontVariantNumeric: 'tabular-nums' }}>{r.camara13_temp.toFixed(1)}</td>
                     </tr>
                   ))
                 )}
