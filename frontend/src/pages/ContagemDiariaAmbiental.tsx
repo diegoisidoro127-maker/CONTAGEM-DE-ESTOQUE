@@ -3,6 +3,8 @@ import { supabase } from '../lib/supabaseClient'
 
 type TabKey = 'temperatura' | 'ocupacao'
 
+type Conferente = { id: string; nome: string }
+
 type TempRow = {
   id: string
   data_registro: string
@@ -117,14 +119,16 @@ export default function ContagemDiariaAmbiental() {
   const [error, setError] = useState<string | null>(null)
   const [ok, setOk] = useState<string | null>(null)
 
-  const [tempConferente, setTempConferente] = useState('')
+  const [conferentes, setConferentes] = useState<Conferente[]>([])
+  const [conferentesLoading, setConferentesLoading] = useState(true)
+  const [tempConferenteId, setTempConferenteId] = useState('')
   const [tempData, setTempData] = useState(todayYmd())
   const [cam11, setCam11] = useState('')
   const [cam12, setCam12] = useState('')
   const [cam13, setCam13] = useState('')
   const [tempRows, setTempRows] = useState<TempRow[]>([])
 
-  const [ocupConferente, setOcupConferente] = useState('')
+  const [ocupConferenteId, setOcupConferenteId] = useState('')
   const [ocupData, setOcupData] = useState(todayYmd())
   const [vazias6, setVazias6] = useState('')
   const [vazias7, setVazias7] = useState('')
@@ -140,6 +144,12 @@ export default function ContagemDiariaAmbiental() {
       .limit(60)
     if (qErr) throw qErr
     setTempRows((data || []).reverse().map((r) => ({ ...r, camara11_temp: asNum(r.camara11_temp), camara12_temp: asNum(r.camara12_temp), camara13_temp: asNum(r.camara13_temp) })))
+  }
+
+  async function loadConferentes() {
+    const { data, error: qErr } = await supabase.from('conferentes').select('id,nome').order('nome')
+    if (qErr) throw qErr
+    setConferentes(data ?? [])
   }
 
   async function loadOcupRows() {
@@ -164,13 +174,16 @@ export default function ContagemDiariaAmbiental() {
     void (async () => {
       setError(null)
       try {
-        await Promise.all([loadTempRows(), loadOcupRows()])
+        setConferentesLoading(true)
+        await Promise.all([loadTempRows(), loadOcupRows(), loadConferentes()])
       } catch (e) {
         setError(
           e instanceof Error
             ? `${e.message}. Se for tabela não encontrada, rode o SQL create_contagem_diaria_temperatura_ocupacao.sql.`
             : 'Erro ao carregar dados.',
         )
+      } finally {
+        setConferentesLoading(false)
       }
     })()
   }, [])
@@ -178,8 +191,9 @@ export default function ContagemDiariaAmbiental() {
   async function salvarTemperatura() {
     setError(null)
     setOk(null)
-    if (!tempConferente.trim()) {
-      setError('Preencha o nome do conferente.')
+    const nomeConf = conferentes.find((c) => c.id === tempConferenteId)?.nome?.trim() ?? ''
+    if (!nomeConf) {
+      setError('Selecione o conferente.')
       return
     }
     if (!tempData) {
@@ -194,7 +208,7 @@ export default function ContagemDiariaAmbiental() {
     try {
       const payload = {
         data_registro: tempData,
-        conferente_nome: tempConferente.trim(),
+        conferente_nome: nomeConf,
         camara11_temp: asNum(cam11),
         camara12_temp: asNum(cam12),
         camara13_temp: asNum(cam13),
@@ -216,8 +230,9 @@ export default function ContagemDiariaAmbiental() {
   async function salvarOcupacao() {
     setError(null)
     setOk(null)
-    if (!ocupConferente.trim()) {
-      setError('Preencha o nome do conferente.')
+    const nomeConfOcup = conferentes.find((c) => c.id === ocupConferenteId)?.nome?.trim() ?? ''
+    if (!nomeConfOcup) {
+      setError('Selecione o conferente.')
       return
     }
     if (!ocupData) {
@@ -239,7 +254,7 @@ export default function ContagemDiariaAmbiental() {
     try {
       const payload = {
         data_registro: ocupData,
-        conferente_nome: ocupConferente.trim(),
+        conferente_nome: nomeConfOcup,
         camara6_vazias: v6,
         camara7_vazias: v7,
         camara8_vazias: v8,
@@ -330,7 +345,18 @@ export default function ContagemDiariaAmbiental() {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 10 }}>
               <label style={{ display: 'grid', gap: 5 }}>
                 <span>Conferente</span>
-                <input value={tempConferente} onChange={(e) => setTempConferente(e.target.value)} placeholder="Nome do conferente" />
+                <select
+                  value={tempConferenteId}
+                  onChange={(e) => setTempConferenteId(e.target.value)}
+                  disabled={conferentesLoading}
+                >
+                  <option value="">{conferentesLoading ? 'Carregando...' : 'Selecione...'}</option>
+                  {conferentes.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.nome}
+                    </option>
+                  ))}
+                </select>
               </label>
               <label style={{ display: 'grid', gap: 5 }}>
                 <span>Data</span>
@@ -372,7 +398,18 @@ export default function ContagemDiariaAmbiental() {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 10 }}>
               <label style={{ display: 'grid', gap: 5 }}>
                 <span>Conferente</span>
-                <input value={ocupConferente} onChange={(e) => setOcupConferente(e.target.value)} placeholder="Nome do conferente" />
+                <select
+                  value={ocupConferenteId}
+                  onChange={(e) => setOcupConferenteId(e.target.value)}
+                  disabled={conferentesLoading}
+                >
+                  <option value="">{conferentesLoading ? 'Carregando...' : 'Selecione...'}</option>
+                  {conferentes.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.nome}
+                    </option>
+                  ))}
+                </select>
               </label>
               <label style={{ display: 'grid', gap: 5 }}>
                 <span>Data</span>
