@@ -1516,15 +1516,15 @@ function OcupacaoCamaras111213Secao({
                 }}
               >
                 <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: 10, color: '#64748b', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.06em' }}>% Ocupada</div>
-                  <div style={{ fontSize: 32, fontWeight: 800, color: t.kpiOcupValor, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
-                    {resumoDia.percOcup.toFixed(1)}%
-                  </div>
-                </div>
-                <div style={{ textAlign: 'center' }}>
                   <div style={{ fontSize: 10, color: '#64748b', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Posições ocupadas</div>
                   <div style={{ fontSize: 28, fontWeight: 800, color: '#f8fafc', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
                     {resumoDia.totalOcup}
+                  </div>
+                </div>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: 10, color: '#64748b', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.06em' }}>% Ocupada</div>
+                  <div style={{ fontSize: 32, fontWeight: 800, color: t.kpiOcupValor, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
+                    {resumoDia.percOcup.toFixed(1)}%
                   </div>
                 </div>
               </div>
@@ -1559,15 +1559,15 @@ function OcupacaoCamaras111213Secao({
                 }}
               >
                 <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: 10, color: '#64748b', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.06em' }}>% Livre</div>
-                  <div style={{ fontSize: 32, fontWeight: 800, color: '#34d399', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
-                    {resumoDia.percLivre.toFixed(1)}%
-                  </div>
-                </div>
-                <div style={{ textAlign: 'center' }}>
                   <div style={{ fontSize: 10, color: '#64748b', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Posições livres</div>
                   <div style={{ fontSize: 28, fontWeight: 800, color: '#ecfdf5', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
                     {resumoDia.totalVaz}
+                  </div>
+                </div>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: 10, color: '#64748b', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.06em' }}>% Livre</div>
+                  <div style={{ fontSize: 32, fontWeight: 800, color: '#34d399', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
+                    {resumoDia.percLivre.toFixed(1)}%
                   </div>
                 </div>
               </div>
