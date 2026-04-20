@@ -1,6 +1,6 @@
 -- Limpeza mensal — apaga TODO o histórico:
 --   • temperatura (câm. 11/12/13)
---   • ocupação (câm. 6/7/8, inclui coluna avaria_acrescimo_ocupacao no mesmo registro)
+--   • ocupação (câm. 11/12/13, inclui coluna avaria_acrescimo_ocupacao no mesmo registro)
 --   • legado: contagem_ocupacao_avaria_camaras (tabela separada antiga, se existir)
 --
 -- Agendamento: dia 1 de cada mês, 00:05 horário de Brasília → cron UTC '5 3 1 * *'.

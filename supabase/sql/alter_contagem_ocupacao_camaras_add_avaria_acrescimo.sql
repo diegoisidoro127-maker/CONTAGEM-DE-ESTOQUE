@@ -8,6 +8,6 @@ alter table public.contagem_ocupacao_camaras
     check (avaria_acrescimo_ocupacao >= 0);
 
 comment on column public.contagem_ocupacao_camaras.avaria_acrescimo_ocupacao is
-  'Posições de avaria somadas ao total ocupado (além do cálculo pelas vagas vazias 6/7/8).';
+  'Posições de avaria somadas ao total ocupado (além do cálculo pelas vagas vazias 11/12/13).';
 
 commit;

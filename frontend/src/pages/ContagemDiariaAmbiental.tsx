@@ -19,18 +19,18 @@ type OcupRow = {
   id: string
   data_registro: string
   conferente_nome: string
-  camara6_vazias: number
-  camara7_vazias: number
-  camara8_vazias: number
+  camara11_vazias: number
+  camara12_vazias: number
+  camara13_vazias: number
   /** Somado ao total de ocupadas (além do cálculo pelas vazias). */
   avaria_acrescimo_ocupacao: number
   created_at: string
 }
 
 const OCUP_TOTAL = {
-  camara6: 68,
-  camara7: 136,
-  camara8: 140,
+  camara11: 68,
+  camara12: 136,
+  camara13: 140,
 } as const
 
 /** Linhas por página nos históricos (temperatura e ocupação). */
@@ -701,9 +701,9 @@ type OcupResumoSalvo = {
 }
 
 type OcupResumoRascunho = {
-  o6: number
-  o7: number
-  o8: number
+  o11: number
+  o12: number
+  o13: number
   totalPos: number
   totalOcup: number
   totalVaz: number
@@ -734,7 +734,7 @@ const TEMA_OCP = {
   avariaDestaque: '#fdba74',
 } as const
 
-function OcupacaoCamaras678Secao({
+function OcupacaoCamaras111213Secao({
   labels,
   resumoDia,
   resumoRascunho,
@@ -743,12 +743,12 @@ function OcupacaoCamaras678Secao({
   setConferenteId,
   dataYmd,
   setDataYmd,
-  v6,
-  setV6,
-  v7,
-  setV7,
-  v8,
-  setV8,
+  v11,
+  setV11,
+  v12,
+  setV12,
+  v13,
+  setV13,
   vAvaria,
   setVAvaria,
   onSalvar,
@@ -764,12 +764,12 @@ function OcupacaoCamaras678Secao({
   setConferenteId: (v: string) => void
   dataYmd: string
   setDataYmd: (v: string) => void
-  v6: string
-  setV6: (v: string) => void
-  v7: string
-  setV7: (v: string) => void
-  v8: string
-  setV8: (v: string) => void
+  v11: string
+  setV11: (v: string) => void
+  v12: string
+  setV12: (v: string) => void
+  v13: string
+  setV13: (v: string) => void
   vAvaria: string
   setVAvaria: (v: string) => void
   onSalvar: () => void
@@ -868,7 +868,7 @@ function OcupacaoCamaras678Secao({
               <div style={{ fontSize: 12, color: t.kpiOcupTitulo, fontWeight: 600, marginBottom: 8 }}>Ocupadas</div>
               <div style={{ fontSize: 30, fontWeight: 800, color: t.kpiOcupValor, lineHeight: 1 }}>{resumoDia.totalOcup}</div>
               <div style={{ fontSize: 11, color: '#64748b', marginTop: 8, lineHeight: 1.35 }}>
-                Das {resumoDia.totalPos} posições no total (câm. 6+7+8)
+                Das {resumoDia.totalPos} posições no total (câm. 11+12+13)
               </div>
             </div>
             <div
@@ -928,9 +928,9 @@ function OcupacaoCamaras678Secao({
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
             {(
               [
-                { id: 6, v: resumoDia.r.camara6_vazias, cap: OCUP_TOTAL.camara6 },
-                { id: 7, v: resumoDia.r.camara7_vazias, cap: OCUP_TOTAL.camara7 },
-                { id: 8, v: resumoDia.r.camara8_vazias, cap: OCUP_TOTAL.camara8 },
+                { id: 11, v: resumoDia.r.camara11_vazias, cap: OCUP_TOTAL.camara11 },
+                { id: 12, v: resumoDia.r.camara12_vazias, cap: OCUP_TOTAL.camara12 },
+                { id: 13, v: resumoDia.r.camara13_vazias, cap: OCUP_TOTAL.camara13 },
               ] as const
             ).map((c) => {
               const oc = c.cap - c.v
@@ -1005,23 +1005,32 @@ function OcupacaoCamaras678Secao({
             <span>Data</span>
             <input type="date" value={dataYmd} onChange={(e) => setDataYmd(e.target.value)} />
           </label>
+        </div>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+            gap: 10,
+            marginTop: 10,
+          }}
+        >
           <label style={{ display: 'grid', gap: 5 }}>
-            <span>Câmara 6 — vazias</span>
-            <input value={v6} onChange={(e) => setV6(e.target.value)} type="number" min="0" />
+            <span>Câmara 11 — vazias</span>
+            <input value={v11} onChange={(e) => setV11(e.target.value)} type="number" min="0" />
           </label>
           <label style={{ display: 'grid', gap: 5 }}>
-            <span>Câmara 7 — vazias</span>
-            <input value={v7} onChange={(e) => setV7(e.target.value)} type="number" min="0" />
+            <span>Câmara 12 — vazias</span>
+            <input value={v12} onChange={(e) => setV12(e.target.value)} type="number" min="0" />
           </label>
           <label style={{ display: 'grid', gap: 5 }}>
-            <span>Câmara 8 — vazias</span>
-            <input value={v8} onChange={(e) => setV8(e.target.value)} type="number" min="0" />
+            <span>Câmara 13 — vazias</span>
+            <input value={v13} onChange={(e) => setV13(e.target.value)} type="number" min="0" />
           </label>
           <label style={{ display: 'grid', gap: 5 }}>
             <span style={{ color: t.avariaDestaque }}>Avaria — acréscimo em ocupadas</span>
             <input value={vAvaria} onChange={(e) => setVAvaria(e.target.value)} type="number" min="0" placeholder="0" />
             <span style={{ fontSize: 11, color: '#64748b', fontWeight: 400 }}>
-              Somado ao total de posições ocupadas (registro único com as câmaras 6, 7 e 8).
+              Somado ao total de ocupadas (mesmo registro das câmaras 11, 12 e 13).
             </span>
           </label>
         </div>
@@ -1030,13 +1039,13 @@ function OcupacaoCamaras678Secao({
           <div style={{ fontWeight: 700, marginBottom: 8 }}>Resumo automático (rascunho)</div>
           <div style={{ display: 'grid', gap: 4, fontSize: 14 }}>
             <div>
-              Câmara 6: {resumoRascunho.o6} ocupadas / {asInt(v6)} vazias (total {OCUP_TOTAL.camara6})
+              Câmara 11: {resumoRascunho.o11} ocupadas / {asInt(v11)} vazias (total {OCUP_TOTAL.camara11})
             </div>
             <div>
-              Câmara 7: {resumoRascunho.o7} ocupadas / {asInt(v7)} vazias (total {OCUP_TOTAL.camara7})
+              Câmara 12: {resumoRascunho.o12} ocupadas / {asInt(v12)} vazias (total {OCUP_TOTAL.camara12})
             </div>
             <div>
-              Câmara 8: {resumoRascunho.o8} ocupadas / {asInt(v8)} vazias (total {OCUP_TOTAL.camara8})
+              Câmara 13: {resumoRascunho.o13} ocupadas / {asInt(v13)} vazias (total {OCUP_TOTAL.camara13})
             </div>
             <div style={{ color: t.avariaDestaque }}>
               Avaria (acréscimo): {resumoRascunho.avariaAcrescimo} posição(ões)
@@ -1074,9 +1083,9 @@ function OcupacaoCamaras678Secao({
             <tr>
               <th style={th}>Data</th>
               <th style={th}>Conferente</th>
-              <th style={th}>Cam 6 (vazias)</th>
-              <th style={th}>Cam 7 (vazias)</th>
-              <th style={th}>Cam 8 (vazias)</th>
+              <th style={th}>Cam 11 (vazias)</th>
+              <th style={th}>Cam 12 (vazias)</th>
+              <th style={th}>Cam 13 (vazias)</th>
               <th style={{ ...th, color: t.avariaDestaque }}>Avaria (+ ocup.)</th>
               <th style={th}>Livre</th>
               <th style={th}>Total ocupadas</th>
@@ -1092,8 +1101,8 @@ function OcupacaoCamaras678Secao({
               </tr>
             ) : (
               rowsPagina.map((r) => {
-                const totalPos = OCUP_TOTAL.camara6 + OCUP_TOTAL.camara7 + OCUP_TOTAL.camara8
-                const totalVaz = r.camara6_vazias + r.camara7_vazias + r.camara8_vazias
+                const totalPos = OCUP_TOTAL.camara11 + OCUP_TOTAL.camara12 + OCUP_TOTAL.camara13
+                const totalVaz = r.camara11_vazias + r.camara12_vazias + r.camara13_vazias
                 const av = r.avaria_acrescimo_ocupacao
                 const totalOcup = totalPos - totalVaz + av
                 const percOcup = totalPos > 0 ? (totalOcup / totalPos) * 100 : 0
@@ -1101,9 +1110,9 @@ function OcupacaoCamaras678Secao({
                   <tr key={r.id}>
                     <td style={td}>{formatDataBr(r.data_registro)}</td>
                     <td style={td}>{r.conferente_nome}</td>
-                    <td style={td}>{r.camara6_vazias}</td>
-                    <td style={td}>{r.camara7_vazias}</td>
-                    <td style={td}>{r.camara8_vazias}</td>
+                    <td style={td}>{r.camara11_vazias}</td>
+                    <td style={td}>{r.camara12_vazias}</td>
+                    <td style={td}>{r.camara13_vazias}</td>
                     <td style={{ ...td, color: t.avariaDestaque, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
                       {av}
                     </td>
@@ -1146,9 +1155,9 @@ export default function ContagemDiariaAmbiental() {
 
   const [ocupConferenteId, setOcupConferenteId] = useState('')
   const [ocupData, setOcupData] = useState(todayYmd())
-  const [vazias6, setVazias6] = useState('')
-  const [vazias7, setVazias7] = useState('')
-  const [vazias8, setVazias8] = useState('')
+  const [vazias11, setVazias11] = useState('')
+  const [vazias12, setVazias12] = useState('')
+  const [vazias13, setVazias13] = useState('')
   const [ocupAvariaAcrescimo, setOcupAvariaAcrescimo] = useState('')
   const [ocupRows, setOcupRows] = useState<OcupRow[]>([])
 
@@ -1173,7 +1182,7 @@ export default function ContagemDiariaAmbiental() {
     const { data, error: qErr } = await supabase
       .from('contagem_ocupacao_camaras')
       .select(
-        'id,data_registro,conferente_nome,camara6_vazias,camara7_vazias,camara8_vazias,avaria_acrescimo_ocupacao,created_at',
+        'id,data_registro,conferente_nome,camara11_vazias,camara12_vazias,camara13_vazias,avaria_acrescimo_ocupacao,created_at',
       )
       .order('data_registro', { ascending: false })
       .order('created_at', { ascending: false })
@@ -1182,9 +1191,9 @@ export default function ContagemDiariaAmbiental() {
     setOcupRows(
       (data || []).map((r) => ({
         ...r,
-        camara6_vazias: asNum(r.camara6_vazias),
-        camara7_vazias: asNum(r.camara7_vazias),
-        camara8_vazias: asNum(r.camara8_vazias),
+        camara11_vazias: asNum((r as { camara11_vazias?: unknown }).camara11_vazias),
+        camara12_vazias: asNum((r as { camara12_vazias?: unknown }).camara12_vazias),
+        camara13_vazias: asNum((r as { camara13_vazias?: unknown }).camara13_vazias),
         avaria_acrescimo_ocupacao: asNum(
           (r as { avaria_acrescimo_ocupacao?: unknown }).avaria_acrescimo_ocupacao,
         ),
@@ -1201,7 +1210,7 @@ export default function ContagemDiariaAmbiental() {
       } catch (e) {
         setError(
           e instanceof Error
-            ? `${e.message}. Confira os SQL: create_contagem_diaria_temperatura_ocupacao.sql e alter_contagem_ocupacao_camaras_add_avaria_acrescimo.sql.`
+            ? `${e.message}. Confira: create_contagem_diaria_temperatura_ocupacao.sql, alter_contagem_ocupacao_camaras_rename_vazias_678_para_111213.sql e alter_contagem_ocupacao_camaras_add_avaria_acrescimo.sql.`
             : 'Erro ao carregar dados.',
         )
       } finally {
@@ -1265,15 +1274,15 @@ export default function ContagemDiariaAmbiental() {
       setError('Selecione a data.')
       return
     }
-    if (vazias6.trim() === '' || vazias7.trim() === '' || vazias8.trim() === '') {
-      setError('Preencha as posições vazias das 3 câmaras.')
+    if (vazias11.trim() === '' || vazias12.trim() === '' || vazias13.trim() === '') {
+      setError('Preencha as posições vazias das câmaras 11, 12 e 13.')
       return
     }
-    const v6 = asInt(vazias6)
-    const v7 = asInt(vazias7)
-    const v8 = asInt(vazias8)
+    const n11 = asInt(vazias11)
+    const n12 = asInt(vazias12)
+    const n13 = asInt(vazias13)
     const avAc = ocupAvariaAcrescimo.trim() === '' ? 0 : asInt(ocupAvariaAcrescimo)
-    if (v6 > OCUP_TOTAL.camara6 || v7 > OCUP_TOTAL.camara7 || v8 > OCUP_TOTAL.camara8) {
+    if (n11 > OCUP_TOTAL.camara11 || n12 > OCUP_TOTAL.camara12 || n13 > OCUP_TOTAL.camara13) {
       setError('Uma ou mais câmaras têm vagas maiores que o total de posições.')
       return
     }
@@ -1282,9 +1291,9 @@ export default function ContagemDiariaAmbiental() {
       const payload = {
         data_registro: ocupData,
         conferente_nome: nomeConfOcup,
-        camara6_vazias: v6,
-        camara7_vazias: v7,
-        camara8_vazias: v8,
+        camara11_vazias: n11,
+        camara12_vazias: n12,
+        camara13_vazias: n13,
         avaria_acrescimo_ocupacao: avAc,
       }
       const { error: insErr } = await supabase.from('contagem_ocupacao_camaras').insert(payload)
@@ -1307,20 +1316,20 @@ export default function ContagemDiariaAmbiental() {
   )
 
   const ocupResumoAtual = useMemo(() => {
-    const v6 = asInt(vazias6)
-    const v7 = asInt(vazias7)
-    const v8 = asInt(vazias8)
-    const o6 = Math.max(0, OCUP_TOTAL.camara6 - v6)
-    const o7 = Math.max(0, OCUP_TOTAL.camara7 - v7)
-    const o8 = Math.max(0, OCUP_TOTAL.camara8 - v8)
-    const totalPos = OCUP_TOTAL.camara6 + OCUP_TOTAL.camara7 + OCUP_TOTAL.camara8
+    const v11 = asInt(vazias11)
+    const v12 = asInt(vazias12)
+    const v13 = asInt(vazias13)
+    const o11 = Math.max(0, OCUP_TOTAL.camara11 - v11)
+    const o12 = Math.max(0, OCUP_TOTAL.camara12 - v12)
+    const o13 = Math.max(0, OCUP_TOTAL.camara13 - v13)
+    const totalPos = OCUP_TOTAL.camara11 + OCUP_TOTAL.camara12 + OCUP_TOTAL.camara13
     const avariaAcrescimo = ocupAvariaAcrescimo.trim() === '' ? 0 : asInt(ocupAvariaAcrescimo)
-    const totalOcup = o6 + o7 + o8 + avariaAcrescimo
-    const totalVaz = v6 + v7 + v8
+    const totalOcup = o11 + o12 + o13 + avariaAcrescimo
+    const totalVaz = v11 + v12 + v13
     return {
-      o6,
-      o7,
-      o8,
+      o11,
+      o12,
+      o13,
       totalPos,
       totalOcup,
       totalVaz,
@@ -1328,14 +1337,14 @@ export default function ContagemDiariaAmbiental() {
       percOcup: totalPos > 0 ? (totalOcup / totalPos) * 100 : 0,
       percLivre: totalPos > 0 ? (totalVaz / totalPos) * 100 : 0,
     }
-  }, [vazias6, vazias7, vazias8, ocupAvariaAcrescimo])
+  }, [vazias11, vazias12, vazias13, ocupAvariaAcrescimo])
 
   /** Primeiro item = mais recente (data + horário do registro). */
   const ocupResumoDiaSalvo = useMemo(() => {
     const r = ocupRows[0]
     if (!r) return null
-    const totalPos = OCUP_TOTAL.camara6 + OCUP_TOTAL.camara7 + OCUP_TOTAL.camara8
-    const totalVaz = r.camara6_vazias + r.camara7_vazias + r.camara8_vazias
+    const totalPos = OCUP_TOTAL.camara11 + OCUP_TOTAL.camara12 + OCUP_TOTAL.camara13
+    const totalVaz = r.camara11_vazias + r.camara12_vazias + r.camara13_vazias
     const av = r.avaria_acrescimo_ocupacao
     const totalOcup = totalPos - totalVaz + av
     const percOcup = totalPos > 0 ? (totalOcup / totalPos) * 100 : 0
@@ -1497,12 +1506,12 @@ export default function ContagemDiariaAmbiental() {
               textTransform: 'uppercase',
             }}
           >
-            Ocupação (câmaras 6, 7 e 8)
+            Ocupação (câmaras 11, 12 e 13)
           </div>
-          <OcupacaoCamaras678Secao
+          <OcupacaoCamaras111213Secao
             labels={{
               resumo: 'Resumo do dia',
-              form: 'Lançar ocupação (vagas vazias por câmara + avaria, se houver)',
+              form: 'Lançar ocupação (vagas vazias nas câmaras 11, 12 e 13 + avaria, se houver)',
               tabela: 'Últimos lançamentos de ocupação',
               emptyHint:
                 'ainda não há lançamentos salvos. Preencha o formulário abaixo e salve para ver o resumo aqui.',
@@ -1514,12 +1523,12 @@ export default function ContagemDiariaAmbiental() {
             setConferenteId={setOcupConferenteId}
             dataYmd={ocupData}
             setDataYmd={setOcupData}
-            v6={vazias6}
-            setV6={setVazias6}
-            v7={vazias7}
-            setV7={setVazias7}
-            v8={vazias8}
-            setV8={setVazias8}
+            v11={vazias11}
+            setV11={setVazias11}
+            v12={vazias12}
+            setV12={setVazias12}
+            v13={vazias13}
+            setV13={setVazias13}
             vAvaria={ocupAvariaAcrescimo}
             setVAvaria={setOcupAvariaAcrescimo}
             onSalvar={salvarOcupacao}
