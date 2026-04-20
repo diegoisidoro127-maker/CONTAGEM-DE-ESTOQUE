@@ -5,12 +5,13 @@ import type React from 'react'
 import './App.css'
 import logoUltrapao from './assets/logo-ultrapao.png'
 import BaseProdutos from './pages/BaseProdutos'
+import ContagemDiariaAmbiental from './pages/ContagemDiariaAmbiental'
 import ContagemEstoque from './pages/ContagemEstoque'
 import LoginScreen from './pages/LoginScreen'
 import RelatorioContagem from './pages/RelatorioContagem'
 import { isSupabaseConfigured, supabase } from './lib/supabaseClient'
 
-type View = 'home' | 'contagem' | 'relatorio' | 'todas' | 'inventario' | 'baseDados'
+type View = 'home' | 'contagem' | 'relatorio' | 'todas' | 'inventario' | 'baseDados' | 'ambiental'
 type Theme = 'dark' | 'light'
 
 /** Evita tela vazia se algum filho lançar no render; mostra mensagem e opção de recarregar. */
@@ -245,6 +246,16 @@ export default function App() {
                 Contagem
               </button>
             ) : null}
+            {showContagemBtn ? (
+              <button
+                type="button"
+                onClick={() => setView('ambiental')}
+                style={viewNavBtnStyle(view === 'ambiental', NAV_ACCENT.ambiental)}
+              >
+                <NavIcon emoji="🌡️" anim="glow" />
+                Temp/Ocupação
+              </button>
+            ) : null}
             {showInventarioBtn ? (
               <button
                 type="button"
@@ -303,6 +314,10 @@ export default function App() {
             <PanelErrorBoundary>
               <ContagemEstoque key="contagem" />
             </PanelErrorBoundary>
+          ) : view === 'ambiental' ? (
+            <PanelErrorBoundary>
+              <ContagemDiariaAmbiental key="ambiental" />
+            </PanelErrorBoundary>
           ) : view === 'inventario' ? (
             <PanelErrorBoundary>
               <ContagemEstoque key="inventario" inventario />
@@ -324,6 +339,7 @@ export default function App() {
 const NAV_ACCENT = {
   inicio: '#ffd95c',
   contagem: '#4f8eff',
+  ambiental: '#22c55e',
   inventario: '#26c6da',
   relatorio: '#c084fc',
   todas: '#66bb6a',
