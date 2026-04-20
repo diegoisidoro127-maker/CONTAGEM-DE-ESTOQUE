@@ -1767,6 +1767,23 @@ function OcupacaoCamaras111213Secao({
           </p>
         </div>
 
+        <button
+          type="button"
+          onClick={() => void onSalvar()}
+          disabled={loading}
+          style={{
+            marginTop: 12,
+            padding: '10px 16px',
+            borderRadius: 8,
+            border: t.btnBorder,
+            background: t.btnBg,
+            color: t.btnColor,
+            fontWeight: 700,
+          }}
+        >
+          {loading ? 'Salvando...' : 'Salvar ocupação'}
+        </button>
+
         <div style={{ marginTop: 12, border: '1px solid var(--border, #2e303a)', borderRadius: 10, padding: 10 }}>
           <div style={{ fontWeight: 700, marginBottom: 8 }}>Resumo automático (rascunho)</div>
           <div style={{ display: 'grid', gap: 4, fontSize: 14 }}>
@@ -1789,23 +1806,6 @@ function OcupacaoCamaras111213Secao({
             </div>
           </div>
         </div>
-
-        <button
-          type="button"
-          onClick={() => void onSalvar()}
-          disabled={loading}
-          style={{
-            marginTop: 12,
-            padding: '10px 16px',
-            borderRadius: 8,
-            border: t.btnBorder,
-            background: t.btnBg,
-            color: t.btnColor,
-            fontWeight: 700,
-          }}
-        >
-          {loading ? 'Salvando...' : 'Salvar ocupação'}
-        </button>
       </div>
 
       <div style={{ border: '1px solid var(--border, #2e303a)', borderRadius: 12, padding: 12, overflowX: 'auto' }}>
