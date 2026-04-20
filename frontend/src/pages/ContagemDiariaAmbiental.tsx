@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useId, useMemo, useState, type CSSProperties } from 'react'
 import { supabase } from '../lib/supabaseClient'
 
 type TabKey = 'temperatura' | 'ocupacao'
@@ -89,6 +89,17 @@ function smoothLinePath(points: { x: number; y: number }[]): string {
   return d
 }
 
+/** Marcas lineares no eixo Y (mais legível que só 3 linhas). */
+function linearYTicks(safeMin: number, safeMax: number, yAt: (v: number) => number, count = 5) {
+  const ticks: { v: number; y: number }[] = []
+  for (let i = 0; i < count; i++) {
+    const t = count === 1 ? 0 : i / (count - 1)
+    const v = safeMax - (safeMax - safeMin) * t
+    ticks.push({ v, y: yAt(v) })
+  }
+  return ticks
+}
+
 const chartCardStyle: CSSProperties = {
   borderRadius: 14,
   padding: 12,
@@ -116,7 +127,7 @@ function TinyLineChart({
   const padL = 48
   const padR = 14
   const padT = 16
-  const padB = 40
+  const padB = 44
   const innerW = width - padL - padR
   const innerH = height - padT - padB
   const bottomY = padT + innerH
@@ -136,7 +147,7 @@ function TinyLineChart({
     const last = pts[pts.length - 1]
     const first = pts[0]
     const areaD = `${lineD} L ${last.x.toFixed(2)} ${bottomY.toFixed(2)} L ${first.x.toFixed(2)} ${bottomY.toFixed(2)} Z`
-    const yTicks = [safeMax, safeMin + rng / 2, safeMin].map((v) => ({ v, y: yAt(v) }))
+    const yTicks = linearYTicks(safeMin, safeMax, yAt, 5)
     const n = rows.length
     const xIdx =
       n <= 1 ? [0] : n === 2 ? [0, 1] : [0, Math.floor((n - 1) / 3), Math.floor((2 * (n - 1)) / 3), n - 1]
@@ -162,7 +173,18 @@ function TinyLineChart({
                 <stop offset="100%" stopColor={color} stopOpacity={0} />
               </linearGradient>
             </defs>
-            <rect x={0} y={0} width={width} height={height} rx={6} fill="rgba(0,0,0,.15)" />
+            <rect x={0} y={0} width={width} height={height} rx={8} fill="rgba(0,0,0,.18)" />
+            {geom.xLabels.map((xl, i) => (
+              <line
+                key={`xg-${i}`}
+                x1={xl.x}
+                y1={padT}
+                x2={xl.x}
+                y2={bottomY}
+                stroke="rgba(148,163,184,.08)"
+                strokeWidth={1}
+              />
+            ))}
             {geom.yTicks.map((t, i) => (
               <line
                 key={i}
@@ -170,8 +192,8 @@ function TinyLineChart({
                 y1={t.y}
                 x2={width - padR}
                 y2={t.y}
-                stroke="rgba(148,163,184,.14)"
-                strokeDasharray="5 6"
+                stroke="rgba(148,163,184,.2)"
+                strokeDasharray="4 8"
                 strokeWidth={1}
               />
             ))}
@@ -179,23 +201,23 @@ function TinyLineChart({
             <path
               d={geom.lineD}
               stroke={color}
-              strokeWidth={2.75}
+              strokeWidth={3}
               fill="none"
               strokeLinecap="round"
               strokeLinejoin="round"
-              style={{ filter: `drop-shadow(0 0 6px ${color}55)` }}
+              style={{ filter: `drop-shadow(0 0 8px ${color}66)` }}
             />
             {geom.yTicks.map((t, i) => (
               <text
                 key={`yl-${i}`}
-                x={padL - 8}
+                x={padL - 10}
                 y={t.y + 4}
                 textAnchor="end"
-                fill="#94a3b8"
-                fontSize={10}
+                fill="#cbd5e1"
+                fontSize={11}
                 fontFamily="system-ui, sans-serif"
               >
-                {t.v.toFixed(1)}°
+                {t.v.toFixed(1)}°C
               </text>
             ))}
             <line
@@ -203,25 +225,34 @@ function TinyLineChart({
               y1={bottomY}
               x2={width - padR}
               y2={bottomY}
-              stroke="rgba(148,163,184,.35)"
-              strokeWidth={1.2}
+              stroke="rgba(148,163,184,.45)"
+              strokeWidth={1.5}
             />
             <line
               x1={padL}
               y1={padT}
               x2={padL}
               y2={bottomY}
-              stroke="rgba(148,163,184,.35)"
-              strokeWidth={1.2}
+              stroke="rgba(148,163,184,.45)"
+              strokeWidth={1.5}
             />
+            <text
+              x={padL}
+              y={padT - 4}
+              fill="#64748b"
+              fontSize={10}
+              fontFamily="system-ui, sans-serif"
+            >
+              °C
+            </text>
             {geom.xLabels.map((xl, i) => (
               <text
                 key={`xl-${i}`}
                 x={xl.x}
-                y={height - 8}
+                y={height - 10}
                 textAnchor="middle"
-                fill="#64748b"
-                fontSize={9}
+                fill="#94a3b8"
+                fontSize={10}
                 fontFamily="system-ui, sans-serif"
               >
                 {xl.text}
@@ -230,25 +261,29 @@ function TinyLineChart({
           </svg>
           <div
             style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+              display: 'flex',
+              flexDirection: 'column',
               gap: 8,
+              alignItems: 'center',
               marginTop: 12,
-              fontSize: 11,
+              fontSize: 12,
               color: 'var(--text, #9ca3af)',
-              paddingTop: 8,
-              borderTop: '1px solid rgba(255,255,255,.06)',
+              paddingTop: 10,
+              borderTop: '1px solid rgba(255,255,255,.08)',
             }}
           >
-            <span style={{ textAlign: 'center' }}>
-              Min: <strong style={{ color: '#e2e8f0' }}>{geom.min.toFixed(1)}°C</strong>
-            </span>
-            <span style={{ textAlign: 'center' }}>
-              Max: <strong style={{ color: '#e2e8f0' }}>{geom.max.toFixed(1)}°C</strong>
-            </span>
-            <span style={{ textAlign: 'center' }}>
-              Média: <strong style={{ color: '#e2e8f0' }}>{geom.avg.toFixed(1)}°C</strong>
-            </span>
+            <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', maxWidth: 220, gap: 12 }}>
+              <span>Min.</span>
+              <strong style={{ color: '#e2e8f0', fontVariantNumeric: 'tabular-nums' }}>{geom.min.toFixed(1)} °C</strong>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', maxWidth: 220, gap: 12 }}>
+              <span>Máx.</span>
+              <strong style={{ color: '#e2e8f0', fontVariantNumeric: 'tabular-nums' }}>{geom.max.toFixed(1)} °C</strong>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', maxWidth: 220, gap: 12 }}>
+              <span>Média</span>
+              <strong style={{ color: '#e2e8f0', fontVariantNumeric: 'tabular-nums' }}>{geom.avg.toFixed(1)} °C</strong>
+            </div>
           </div>
         </>
       )}
@@ -265,14 +300,15 @@ const COMBINED_SERIES = [
 function CombinedTempChart({ rows }: { rows: TempRow[] }) {
   const uid = useId().replace(/:/g, '')
   const width = 1100
-  const height = 268
-  const padL = 52
-  const padR = 16
-  const padT = 18
-  const padB = 42
+  const height = 278
+  const padL = 54
+  const padR = 18
+  const padT = 20
+  const padB = 48
   const innerW = width - padL - padR
   const innerH = height - padT - padB
   const bottomY = padT + innerH
+  const [tip, setTip] = useState<{ idx: number; pxPct: number } | null>(null)
 
   const chart = useMemo(() => {
     if (!rows.length) return null
@@ -296,23 +332,45 @@ function CombinedTempChart({ rows }: { rows: TempRow[] }) {
         gradId: `cgrad-${uid}-${si}`,
       }
     })
-    const yTicks = [safeMax, safeMin + rng / 2, safeMin].map((v) => ({ v, y: yAt(v) }))
+    const yTicks = linearYTicks(safeMin, safeMax, yAt, 5)
     const n = rows.length
     const xIdx =
       n <= 1 ? [0] : n === 2 ? [0, 1] : [0, Math.floor((n - 1) / 3), Math.floor((2 * (n - 1)) / 3), n - 1]
     const xLabels = [...new Set(xIdx)]
       .sort((a, b) => a - b)
       .map((i) => ({ x: xAt(i), text: formatAxisDateChart(rows[i].data_registro) }))
-    return { seriesPaths, yTicks, xLabels, min, max }
+    return { seriesPaths, yTicks, xLabels, min, max, xAt, yAt }
   }, [rows, innerW, innerH, padL, padT, bottomY, uid])
+
+  const onSvgMove = useCallback(
+    (e: React.MouseEvent<SVGSVGElement>) => {
+      if (!rows.length || !chart) return
+      const svg = e.currentTarget
+      const rect = svg.getBoundingClientRect()
+      const vx = ((e.clientX - rect.left) / Math.max(1, rect.width)) * width
+      const n = rows.length
+      if (vx < padL || vx > width - padR) {
+        setTip(null)
+        return
+      }
+      const step = n > 1 ? innerW / (n - 1) : 0
+      let idx = n <= 1 ? 0 : Math.round((vx - padL) / step)
+      idx = Math.max(0, Math.min(n - 1, idx))
+      const xCenter = padL + step * idx
+      setTip({ idx, pxPct: (xCenter / width) * 100 })
+    },
+    [rows.length, chart, width, padL, padR, innerW],
+  )
+
+  const onSvgLeave = useCallback(() => setTip(null), [])
 
   return (
     <div style={chartCardStyle}>
       <div
         style={{
           fontWeight: 700,
-          marginBottom: 10,
-          fontSize: 16,
+          marginBottom: 8,
+          fontSize: 17,
           letterSpacing: '0.02em',
           background: 'linear-gradient(90deg, #a7f3d0, #6ee7b7)',
           WebkitBackgroundClip: 'text',
@@ -326,114 +384,234 @@ function CombinedTempChart({ rows }: { rows: TempRow[] }) {
         <div style={{ fontSize: 13, color: 'var(--text, #9ca3af)' }}>Sem dados ainda.</div>
       ) : (
         <>
-          <svg width="100%" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid meet" style={{ display: 'block' }}>
-            <defs>
-              {chart.seriesPaths.map((p) => (
-                <linearGradient key={p.gradId} id={p.gradId} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={p.color} stopOpacity={0.2} />
-                  <stop offset="70%" stopColor={p.color} stopOpacity={0.03} />
-                  <stop offset="100%" stopColor={p.color} stopOpacity={0} />
-                </linearGradient>
-              ))}
-            </defs>
-            <rect x={0} y={0} width={width} height={height} rx={8} fill="rgba(0,0,0,.12)" />
-            {chart.yTicks.map((t, i) => (
-              <line
-                key={i}
-                x1={padL}
-                y1={t.y}
-                x2={width - padR}
-                y2={t.y}
-                stroke="rgba(148,163,184,.12)"
-                strokeDasharray="5 6"
-                strokeWidth={1}
-              />
-            ))}
-            {chart.seriesPaths.map((p) => {
-              const lineD = p.lineD
-              const pts = rows.map((_, i) => ({
-                x: padL + (rows.length > 1 ? (innerW * i) / (rows.length - 1) : innerW / 2),
-              }))
-              const lastX = pts[pts.length - 1]?.x ?? padL
-              const firstX = pts[0]?.x ?? padL
-              const areaD = `${lineD} L ${lastX.toFixed(2)} ${bottomY.toFixed(2)} L ${firstX.toFixed(2)} ${bottomY.toFixed(2)} Z`
-              return <path key={p.label} d={areaD} fill={`url(#${p.gradId})`} opacity={0.85} />
-            })}
-            {chart.seriesPaths.map((p) => (
-              <path
-                key={`line-${p.label}`}
-                d={p.lineD}
-                stroke={p.color}
-                strokeWidth={2.5}
-                fill="none"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                style={{ filter: `drop-shadow(0 0 5px ${p.color}44)` }}
-              />
-            ))}
-            {chart.yTicks.map((t, i) => (
-              <text
-                key={`cyl-${i}`}
-                x={padL - 8}
-                y={t.y + 4}
-                textAnchor="end"
-                fill="#94a3b8"
-                fontSize={10}
-                fontFamily="system-ui, sans-serif"
-              >
-                {t.v.toFixed(1)}°
-              </text>
-            ))}
-            <line
-              x1={padL}
-              y1={bottomY}
-              x2={width - padR}
-              y2={bottomY}
-              stroke="rgba(148,163,184,.35)"
-              strokeWidth={1.2}
-            />
-            <line
-              x1={padL}
-              y1={padT}
-              x2={padL}
-              y2={bottomY}
-              stroke="rgba(148,163,184,.35)"
-              strokeWidth={1.2}
-            />
-            {chart.xLabels.map((xl, i) => (
-              <text
-                key={`cxl-${i}`}
-                x={xl.x}
-                y={height - 10}
-                textAnchor="middle"
-                fill="#64748b"
-                fontSize={9}
-                fontFamily="system-ui, sans-serif"
-              >
-                {xl.text}
-              </text>
-            ))}
-          </svg>
           <div
             style={{
               display: 'flex',
               flexWrap: 'wrap',
-              gap: 16,
-              marginTop: 12,
-              fontSize: 12,
-              paddingTop: 8,
-              borderTop: '1px solid rgba(255,255,255,.06)',
+              alignItems: 'center',
+              gap: 10,
+              marginBottom: 12,
+              padding: '10px 12px',
+              background: 'rgba(0,0,0,.2)',
+              borderRadius: 12,
+              border: '1px solid rgba(255,255,255,.06)',
             }}
           >
+            <span style={{ fontSize: 11, color: '#64748b', fontWeight: 600, marginRight: 4 }}>Legenda</span>
             {chart.seriesPaths.map((p) => (
-              <span key={p.label} style={{ color: p.color, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                <span style={{ width: 8, height: 8, borderRadius: 999, background: p.color, boxShadow: `0 0 8px ${p.color}` }} />
+              <span
+                key={p.label}
+                style={{
+                  color: '#e2e8f0',
+                  fontWeight: 600,
+                  fontSize: 12,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '6px 12px',
+                  borderRadius: 999,
+                  border: `1px solid ${p.color}55`,
+                  background: `${p.color}14`,
+                }}
+              >
+                <span style={{ width: 10, height: 10, borderRadius: 999, background: p.color, boxShadow: `0 0 10px ${p.color}` }} />
                 {p.label}
               </span>
             ))}
-            <span style={{ color: 'var(--text, #9ca3af)', marginLeft: 'auto' }}>
-              Escala: <strong style={{ color: '#cbd5e1' }}>{chart.min.toFixed(1)}°C</strong> —{' '}
-              <strong style={{ color: '#cbd5e1' }}>{chart.max.toFixed(1)}°C</strong>
+            <span style={{ fontSize: 12, color: '#64748b', marginLeft: 'auto' }}>
+              Passe o mouse no gráfico para ver valores por data
+            </span>
+          </div>
+
+          <div style={{ position: 'relative' }}>
+            {tip != null && rows[tip.idx] ? (
+              <div
+                style={{
+                  position: 'absolute',
+                  left: `${tip.pxPct}%`,
+                  top: 6,
+                  transform: 'translateX(-50%)',
+                  zIndex: 2,
+                  pointerEvents: 'none',
+                  minWidth: 200,
+                  padding: '10px 14px',
+                  borderRadius: 12,
+                  background: 'rgba(15,23,42,.94)',
+                  border: '1px solid rgba(56,189,248,.35)',
+                  boxShadow: '0 12px 40px rgba(0,0,0,.45)',
+                  fontSize: 12,
+                }}
+              >
+                <div style={{ fontWeight: 700, color: '#e0f2fe', marginBottom: 8 }}>
+                  {formatAxisDateChart(rows[tip.idx].data_registro)}
+                </div>
+                <div style={{ display: 'grid', gap: 6 }}>
+                  <div style={{ color: '#22c55e' }}>
+                    Câm. 11: <strong>{rows[tip.idx].camara11_temp.toFixed(1)} °C</strong>
+                  </div>
+                  <div style={{ color: '#38bdf8' }}>
+                    Câm. 12: <strong>{rows[tip.idx].camara12_temp.toFixed(1)} °C</strong>
+                  </div>
+                  <div style={{ color: '#f59e0b' }}>
+                    Câm. 13: <strong>{rows[tip.idx].camara13_temp.toFixed(1)} °C</strong>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+            <svg
+              width="100%"
+              viewBox={`0 0 ${width} ${height}`}
+              preserveAspectRatio="xMidYMid meet"
+              style={{ display: 'block', cursor: 'crosshair' }}
+              onMouseMove={onSvgMove}
+              onMouseLeave={onSvgLeave}
+            >
+              <defs>
+                {chart.seriesPaths.map((p) => (
+                  <linearGradient key={p.gradId} id={p.gradId} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={p.color} stopOpacity={0.14} />
+                    <stop offset="55%" stopColor={p.color} stopOpacity={0.04} />
+                    <stop offset="100%" stopColor={p.color} stopOpacity={0} />
+                  </linearGradient>
+                ))}
+              </defs>
+              <rect x={0} y={0} width={width} height={height} rx={10} fill="rgba(0,0,0,.16)" />
+              {chart.xLabels.map((xl, i) => (
+                <line
+                  key={`cxg-${i}`}
+                  x1={xl.x}
+                  y1={padT}
+                  x2={xl.x}
+                  y2={bottomY}
+                  stroke="rgba(148,163,184,.09)"
+                  strokeWidth={1}
+                />
+              ))}
+              {chart.yTicks.map((t, i) => (
+                <line
+                  key={i}
+                  x1={padL}
+                  y1={t.y}
+                  x2={width - padR}
+                  y2={t.y}
+                  stroke="rgba(148,163,184,.2)"
+                  strokeDasharray="4 8"
+                  strokeWidth={1}
+                />
+              ))}
+              {tip != null ? (
+                <line
+                  x1={chart.xAt(tip.idx)}
+                  y1={padT}
+                  x2={chart.xAt(tip.idx)}
+                  y2={bottomY}
+                  stroke="rgba(56,189,248,.35)"
+                  strokeWidth={1.5}
+                  strokeDasharray="6 4"
+                />
+              ) : null}
+              {chart.seriesPaths.map((p) => {
+                const lineD = p.lineD
+                const pts = rows.map((_, i) => ({
+                  x: padL + (rows.length > 1 ? (innerW * i) / (rows.length - 1) : innerW / 2),
+                }))
+                const lastX = pts[pts.length - 1]?.x ?? padL
+                const firstX = pts[0]?.x ?? padL
+                const areaD = `${lineD} L ${lastX.toFixed(2)} ${bottomY.toFixed(2)} L ${firstX.toFixed(2)} ${bottomY.toFixed(2)} Z`
+                return <path key={p.label} d={areaD} fill={`url(#${p.gradId})`} opacity={0.55} />
+              })}
+              {chart.seriesPaths.map((p) => (
+                <path
+                  key={`line-${p.label}`}
+                  d={p.lineD}
+                  stroke={p.color}
+                  strokeWidth={2.85}
+                  fill="none"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  style={{ filter: `drop-shadow(0 0 6px ${p.color}55)` }}
+                />
+              ))}
+              {tip != null
+                ? COMBINED_SERIES.map((s) => {
+                    const v = s.valueOf(rows[tip.idx])
+                    const cx = chart.xAt(tip.idx)
+                    const cy = chart.yAt(v)
+                    return (
+                      <circle
+                        key={`dot-${s.label}`}
+                        cx={cx}
+                        cy={cy}
+                        r={5}
+                        fill={s.color}
+                        stroke="rgba(15,23,42,.92)"
+                        strokeWidth={2}
+                      />
+                    )
+                  })
+                : null}
+              {chart.yTicks.map((t, i) => (
+                <text
+                  key={`cyl-${i}`}
+                  x={padL - 10}
+                  y={t.y + 4}
+                  textAnchor="end"
+                  fill="#cbd5e1"
+                  fontSize={11}
+                  fontFamily="system-ui, sans-serif"
+                >
+                  {t.v.toFixed(1)}°C
+                </text>
+              ))}
+              <text x={padL} y={padT - 2} fill="#64748b" fontSize={10} fontFamily="system-ui, sans-serif">
+                °C
+              </text>
+              <line
+                x1={padL}
+                y1={bottomY}
+                x2={width - padR}
+                y2={bottomY}
+                stroke="rgba(148,163,184,.45)"
+                strokeWidth={1.5}
+              />
+              <line
+                x1={padL}
+                y1={padT}
+                x2={padL}
+                y2={bottomY}
+                stroke="rgba(148,163,184,.45)"
+                strokeWidth={1.5}
+              />
+              {chart.xLabels.map((xl, i) => (
+                <text
+                  key={`cxl-${i}`}
+                  x={xl.x}
+                  y={height - 12}
+                  textAnchor="middle"
+                  fill="#94a3b8"
+                  fontSize={10}
+                  fontFamily="system-ui, sans-serif"
+                >
+                  {xl.text}
+                </text>
+              ))}
+            </svg>
+          </div>
+          <div
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: 12,
+              marginTop: 12,
+              fontSize: 12,
+              paddingTop: 10,
+              borderTop: '1px solid rgba(255,255,255,.08)',
+              color: '#94a3b8',
+            }}
+          >
+            <span>
+              Escala vertical: <strong style={{ color: '#e2e8f0' }}>{chart.min.toFixed(1)} °C</strong> a{' '}
+              <strong style={{ color: '#e2e8f0' }}>{chart.max.toFixed(1)} °C</strong>
             </span>
           </div>
         </>
@@ -774,6 +952,189 @@ export default function ContagemDiariaAmbiental() {
         </div>
       ) : (
         <div style={{ display: 'grid', gap: 14 }}>
+          {ocupResumoDiaSalvo ? (
+            <div
+              style={{
+                borderRadius: 16,
+                padding: '20px 22px 22px',
+                background: 'linear-gradient(145deg, rgba(14,165,233,.2) 0%, rgba(15,23,42,.96) 42%, rgba(8,47,72,.45) 100%)',
+                border: '1px solid rgba(56,189,248,.45)',
+                boxShadow: '0 16px 52px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.1)',
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.16em',
+                  color: '#7dd3fc',
+                  marginBottom: 4,
+                  textAlign: 'center',
+                }}
+              >
+                Resumo do dia
+              </div>
+              <div style={{ fontSize: 12, color: '#64748b', textAlign: 'center', marginBottom: 18 }}>
+                Último registro salvo no sistema (data do lançamento · horário · conferente)
+              </div>
+
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+                  gap: 20,
+                  alignItems: 'start',
+                  marginBottom: 20,
+                }}
+              >
+                <div>
+                  <div style={{ fontSize: 11, color: '#64748b', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                    Data do lançamento
+                  </div>
+                  <div style={{ fontSize: 'clamp(26px, 5vw, 34px)', fontWeight: 800, color: '#f8fafc', lineHeight: 1.1 }}>
+                    {formatDataBr(ocupResumoDiaSalvo.r.data_registro)}
+                  </div>
+                </div>
+                <div
+                  style={{
+                    display: 'grid',
+                    gap: 12,
+                    padding: '12px 16px',
+                    background: 'rgba(0,0,0,.22)',
+                    borderRadius: 12,
+                    border: '1px solid rgba(255,255,255,.06)',
+                  }}
+                >
+                  <div>
+                    <div style={{ fontSize: 11, color: '#64748b', marginBottom: 4 }}>Horário do registro</div>
+                    <div style={{ fontSize: 18, fontWeight: 700, color: '#e0f2fe', fontVariantNumeric: 'tabular-nums' }}>
+                      {formatHoraRegistro(ocupResumoDiaSalvo.r.created_at)}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, color: '#64748b', marginBottom: 4 }}>Conferente</div>
+                    <div style={{ fontSize: 17, fontWeight: 700, color: '#bae6fd' }}>{ocupResumoDiaSalvo.r.conferente_nome}</div>
+                  </div>
+                </div>
+              </div>
+
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+                  gap: 12,
+                  marginBottom: 18,
+                }}
+              >
+                <div
+                  style={{
+                    background: 'rgba(0,0,0,.22)',
+                    borderRadius: 12,
+                    padding: '16px 14px',
+                    border: '1px solid rgba(56,189,248,.28)',
+                    textAlign: 'center',
+                  }}
+                >
+                  <div style={{ fontSize: 12, color: '#7dd3fc', fontWeight: 600, marginBottom: 8 }}>Ocupadas</div>
+                  <div style={{ fontSize: 30, fontWeight: 800, color: '#38bdf8', lineHeight: 1 }}>{ocupResumoDiaSalvo.totalOcup}</div>
+                  <div style={{ fontSize: 11, color: '#64748b', marginTop: 8, lineHeight: 1.35 }}>
+                    Das {ocupResumoDiaSalvo.totalPos} posições no total (câm. 6+7+8)
+                  </div>
+                </div>
+                <div
+                  style={{
+                    background: 'rgba(0,0,0,.22)',
+                    borderRadius: 12,
+                    padding: '16px 14px',
+                    border: '1px solid rgba(52,211,153,.3)',
+                    textAlign: 'center',
+                  }}
+                >
+                  <div style={{ fontSize: 12, color: '#6ee7b7', fontWeight: 600, marginBottom: 8 }}>Livres</div>
+                  <div style={{ fontSize: 30, fontWeight: 800, color: '#34d399', lineHeight: 1 }}>{ocupResumoDiaSalvo.totalVaz}</div>
+                  <div style={{ fontSize: 11, color: '#64748b', marginTop: 8, lineHeight: 1.35 }}>
+                    Soma das vagas vazias informadas nas três câmaras
+                  </div>
+                </div>
+                <div
+                  style={{
+                    background: 'rgba(0,0,0,.22)',
+                    borderRadius: 12,
+                    padding: '16px 14px',
+                    border: '1px solid rgba(251,191,36,.28)',
+                    textAlign: 'center',
+                  }}
+                >
+                  <div style={{ fontSize: 12, color: '#fcd34d', fontWeight: 600, marginBottom: 8 }}>Percentual</div>
+                  <div style={{ fontSize: 30, fontWeight: 800, color: '#fbbf24', lineHeight: 1 }}>
+                    {ocupResumoDiaSalvo.percOcup.toFixed(0)}% <span style={{ fontSize: 14, fontWeight: 600, color: '#94a3b8' }}>ocup.</span>
+                  </div>
+                  <div style={{ fontSize: 11, color: '#a5b4fc', marginTop: 8 }}>Livre: {ocupResumoDiaSalvo.percLivre.toFixed(0)}%</div>
+                </div>
+              </div>
+
+              <div style={{ fontSize: 12, fontWeight: 700, color: '#94a3b8', marginBottom: 10, letterSpacing: '0.04em' }}>
+                Detalhe por câmara (último registro)
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
+                {(
+                  [
+                    { id: 6, v: ocupResumoDiaSalvo.r.camara6_vazias, cap: OCUP_TOTAL.camara6 },
+                    { id: 7, v: ocupResumoDiaSalvo.r.camara7_vazias, cap: OCUP_TOTAL.camara7 },
+                    { id: 8, v: ocupResumoDiaSalvo.r.camara8_vazias, cap: OCUP_TOTAL.camara8 },
+                  ] as const
+                ).map((c) => {
+                  const oc = c.cap - c.v
+                  const pct = c.cap > 0 ? (oc / c.cap) * 100 : 0
+                  return (
+                    <div
+                      key={c.id}
+                      style={{
+                        background: 'rgba(0,0,0,.2)',
+                        borderRadius: 12,
+                        padding: '12px 14px',
+                        border: '1px solid rgba(56,189,248,.15)',
+                      }}
+                    >
+                      <div style={{ fontWeight: 700, color: '#7dd3fc', marginBottom: 2 }}>Câmara {c.id}</div>
+                      <div style={{ fontSize: 11, color: '#64748b', marginBottom: 10 }}>{c.cap} posições no total</div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 8 }}>
+                        <span>
+                          <span style={{ color: '#6ee7b7' }}>Vazias</span>{' '}
+                          <strong style={{ color: '#ecfdf5' }}>{c.v}</strong>
+                        </span>
+                        <span>
+                          <span style={{ color: '#38bdf8' }}>Ocupadas</span>{' '}
+                          <strong style={{ color: '#f0f9ff' }}>{oc}</strong>
+                        </span>
+                      </div>
+                      <div style={{ height: 6, borderRadius: 999, background: 'rgba(255,255,255,.08)', overflow: 'hidden' }}>
+                        <div style={{ height: '100%', width: `${Math.min(100, Math.max(0, pct))}%`, borderRadius: 999, background: 'linear-gradient(90deg, #38bdf8, #0ea5e9)' }} />
+                      </div>
+                      <div style={{ fontSize: 10, color: '#64748b', marginTop: 6, textAlign: 'right' }}>{pct.toFixed(0)}% ocupada nesta câmara</div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          ) : (
+            <div
+              style={{
+                borderRadius: 14,
+                padding: '18px 20px',
+                background: 'rgba(15,23,42,.65)',
+                border: '1px dashed rgba(56,189,248,.35)',
+                color: '#94a3b8',
+                fontSize: 14,
+                textAlign: 'center',
+              }}
+            >
+              <strong style={{ color: '#7dd3fc' }}>Resumo do dia:</strong> ainda não há lançamentos de ocupação salvos. Preencha o
+              formulário abaixo e salve para ver o resumo aqui.
+            </div>
+          )}
+
           <div style={{ border: '1px solid var(--border, #2e303a)', borderRadius: 12, padding: 12 }}>
             <div style={{ fontWeight: 700, marginBottom: 10, color: '#38bdf8' }}>Lançar ocupação (somente posições vazias)</div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 10 }}>
@@ -811,7 +1172,7 @@ export default function ContagemDiariaAmbiental() {
             </div>
 
             <div style={{ marginTop: 12, border: '1px solid var(--border, #2e303a)', borderRadius: 10, padding: 10 }}>
-              <div style={{ fontWeight: 700, marginBottom: 8 }}>Resumo automático</div>
+              <div style={{ fontWeight: 700, marginBottom: 8 }}>Resumo automático (rascunho)</div>
               <div style={{ display: 'grid', gap: 4, fontSize: 14 }}>
                 <div>Câmara 6: {ocupResumoAtual.o6} ocupadas / {asInt(vazias6)} vazias (total {OCUP_TOTAL.camara6})</div>
                 <div>Câmara 7: {ocupResumoAtual.o7} ocupadas / {asInt(vazias7)} vazias (total {OCUP_TOTAL.camara7})</div>
@@ -832,125 +1193,6 @@ export default function ContagemDiariaAmbiental() {
               {loading ? 'Salvando...' : 'Salvar ocupação'}
             </button>
           </div>
-
-          {ocupResumoDiaSalvo ? (
-            <div
-              style={{
-                borderRadius: 16,
-                padding: '22px 24px',
-                marginBottom: 4,
-                background: 'linear-gradient(135deg, rgba(14,165,233,.18) 0%, rgba(15,23,42,.95) 45%, rgba(8,47,72,.4) 100%)',
-                border: '1px solid rgba(56,189,248,.4)',
-                boxShadow: '0 14px 48px rgba(0,0,0,.38), inset 0 1px 0 rgba(255,255,255,.09)',
-              }}
-            >
-              <div
-                style={{
-                  fontSize: 11,
-                  fontWeight: 700,
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.14em',
-                  color: '#7dd3fc',
-                  marginBottom: 8,
-                }}
-              >
-                Resumo do dia
-              </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', gap: '12px 20px', marginBottom: 18 }}>
-                <div style={{ fontSize: 30, fontWeight: 800, color: '#f0f9ff', lineHeight: 1.15 }}>
-                  {formatDataBr(ocupResumoDiaSalvo.r.data_registro)}
-                </div>
-                <div style={{ fontSize: 14, color: '#94a3b8' }}>
-                  Registro às <strong style={{ color: '#e0f2fe' }}>{formatHoraRegistro(ocupResumoDiaSalvo.r.created_at)}</strong>
-                  {' · '}
-                  Conferente: <strong style={{ color: '#e0f2fe' }}>{ocupResumoDiaSalvo.r.conferente_nome}</strong>
-                </div>
-              </div>
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-                  gap: 14,
-                }}
-              >
-                <div
-                  style={{
-                    background: 'rgba(0,0,0,.2)',
-                    borderRadius: 12,
-                    padding: '14px 16px',
-                    border: '1px solid rgba(56,189,248,.2)',
-                  }}
-                >
-                  <div style={{ fontSize: 12, color: '#7dd3fc', marginBottom: 6 }}>Posições ocupadas</div>
-                  <div style={{ fontSize: 26, fontWeight: 800, color: '#38bdf8' }}>{ocupResumoDiaSalvo.totalOcup}</div>
-                  <div style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>de {ocupResumoDiaSalvo.totalPos} totais</div>
-                </div>
-                <div
-                  style={{
-                    background: 'rgba(0,0,0,.2)',
-                    borderRadius: 12,
-                    padding: '14px 16px',
-                    border: '1px solid rgba(52,211,153,.25)',
-                  }}
-                >
-                  <div style={{ fontSize: 12, color: '#6ee7b7', marginBottom: 6 }}>Posições livres</div>
-                  <div style={{ fontSize: 26, fontWeight: 800, color: '#34d399' }}>{ocupResumoDiaSalvo.totalVaz}</div>
-                  <div style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>vagas vazias (soma das 3 câmaras)</div>
-                </div>
-                <div
-                  style={{
-                    background: 'rgba(0,0,0,.2)',
-                    borderRadius: 12,
-                    padding: '14px 16px',
-                    border: '1px solid rgba(251,191,36,.22)',
-                  }}
-                >
-                  <div style={{ fontSize: 12, color: '#fcd34d', marginBottom: 6 }}>% Ocupada</div>
-                  <div style={{ fontSize: 26, fontWeight: 800, color: '#fbbf24' }}>{ocupResumoDiaSalvo.percOcup.toFixed(0)}%</div>
-                  <div style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>% livre: {ocupResumoDiaSalvo.percLivre.toFixed(0)}%</div>
-                </div>
-              </div>
-              <div
-                style={{
-                  marginTop: 16,
-                  paddingTop: 14,
-                  borderTop: '1px solid rgba(255,255,255,.08)',
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-                  gap: 10,
-                  fontSize: 13,
-                  color: '#94a3b8',
-                }}
-              >
-                <div>
-                  <span style={{ color: '#38bdf8', fontWeight: 600 }}>Cam 6:</span> {ocupResumoDiaSalvo.r.camara6_vazias} vazias ·{' '}
-                  {OCUP_TOTAL.camara6 - ocupResumoDiaSalvo.r.camara6_vazias} ocupadas
-                </div>
-                <div>
-                  <span style={{ color: '#38bdf8', fontWeight: 600 }}>Cam 7:</span> {ocupResumoDiaSalvo.r.camara7_vazias} vazias ·{' '}
-                  {OCUP_TOTAL.camara7 - ocupResumoDiaSalvo.r.camara7_vazias} ocupadas
-                </div>
-                <div>
-                  <span style={{ color: '#38bdf8', fontWeight: 600 }}>Cam 8:</span> {ocupResumoDiaSalvo.r.camara8_vazias} vazias ·{' '}
-                  {OCUP_TOTAL.camara8 - ocupResumoDiaSalvo.r.camara8_vazias} ocupadas
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div
-              style={{
-                borderRadius: 14,
-                padding: '18px 20px',
-                marginBottom: 4,
-                background: 'rgba(15,23,42,.6)',
-                border: '1px dashed rgba(56,189,248,.3)',
-                color: '#94a3b8',
-                fontSize: 14,
-              }}
-            >
-              <strong style={{ color: '#7dd3fc' }}>Resumo do dia:</strong> ainda não há lançamentos de ocupação salvos.
-            </div>
-          )}
 
           <div style={{ border: '1px solid var(--border, #2e303a)', borderRadius: 12, padding: 12, overflowX: 'auto' }}>
             <div style={{ fontWeight: 700, marginBottom: 10 }}>Últimos lançamentos de ocupação</div>
