@@ -855,71 +855,88 @@ function OcupacaoCamaras111213Secao({
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 12, marginBottom: 18 }}>
-            <div
-              style={{
-                background: 'rgba(0,0,0,.22)',
-                borderRadius: 12,
-                padding: '16px 14px',
-                border: t.kpiOcupBorder,
-                textAlign: 'center',
-              }}
-            >
-              <div style={{ fontSize: 12, color: t.kpiOcupTitulo, fontWeight: 600, marginBottom: 8 }}>Ocupadas</div>
-              <div style={{ fontSize: 30, fontWeight: 800, color: t.kpiOcupValor, lineHeight: 1 }}>{resumoDia.totalOcup}</div>
-              <div style={{ fontSize: 11, color: '#64748b', marginTop: 8, lineHeight: 1.35 }}>
-                Das {resumoDia.totalPos} posições no total (câm. 11+12+13)
-              </div>
-            </div>
-            <div
-              style={{
-                background: 'rgba(0,0,0,.22)',
-                borderRadius: 12,
-                padding: '16px 14px',
-                border: '1px solid rgba(52,211,153,.3)',
-                textAlign: 'center',
-              }}
-            >
-              <div style={{ fontSize: 12, color: '#6ee7b7', fontWeight: 600, marginBottom: 8 }}>Livres</div>
-              <div style={{ fontSize: 30, fontWeight: 800, color: '#34d399', lineHeight: 1 }}>{resumoDia.totalVaz}</div>
-              <div style={{ fontSize: 11, color: '#64748b', marginTop: 8, lineHeight: 1.35 }}>
-                Soma das vagas vazias informadas nas três câmaras
-              </div>
-            </div>
-            <div
-              style={{
-                background: 'rgba(0,0,0,.22)',
-                borderRadius: 12,
-                padding: '16px 14px',
-                border: '1px solid rgba(251,191,36,.28)',
-                textAlign: 'center',
-              }}
-            >
-              <div style={{ fontSize: 12, color: '#fcd34d', fontWeight: 600, marginBottom: 8 }}>Percentual</div>
-              <div style={{ fontSize: 30, fontWeight: 800, color: '#fbbf24', lineHeight: 1 }}>
-                {resumoDia.percOcup.toFixed(0)}% <span style={{ fontSize: 14, fontWeight: 600, color: '#94a3b8' }}>ocup.</span>
-              </div>
-              <div style={{ fontSize: 11, color: '#a5b4fc', marginTop: 8 }}>Livre: {resumoDia.percLivre.toFixed(0)}%</div>
-            </div>
-          </div>
-
           <div
             style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+              gap: 12,
               marginBottom: 18,
-              padding: '10px 14px',
-              borderRadius: 10,
-              background: 'rgba(249,115,22,.12)',
-              border: '1px solid rgba(249,115,22,.35)',
-              textAlign: 'center',
-              fontSize: 13,
-              color: '#cbd5e1',
             }}
           >
-            Avaria somada à ocupação:{' '}
-            <strong style={{ color: t.avariaDestaque, fontVariantNumeric: 'tabular-nums' }}>
-              {resumoDia.r.avaria_acrescimo_ocupacao}
-            </strong>{' '}
-            posição(ões)
+            <div
+              style={{
+                background: 'rgba(0,0,0,.22)',
+                borderRadius: 12,
+                padding: '18px 16px',
+                border: t.kpiOcupBorder,
+                textAlign: 'center',
+                display: 'grid',
+                gap: 6,
+              }}
+            >
+              <div style={{ fontSize: 11, color: t.kpiOcupTitulo, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                Ocupação
+              </div>
+              <div style={{ fontSize: 34, fontWeight: 800, color: t.kpiOcupValor, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
+                {resumoDia.percOcup.toFixed(1)}%
+              </div>
+              <div style={{ fontSize: 12, color: '#94a3b8', lineHeight: 1.4 }}>
+                <strong style={{ color: '#e2e8f0', fontVariantNumeric: 'tabular-nums' }}>{resumoDia.totalOcup}</strong> posições ocupadas
+              </div>
+              <div style={{ fontSize: 11, color: '#64748b', lineHeight: 1.35 }}>
+                Sobre {resumoDia.totalPos} posições totais (câm. 11+12+13), inclui acréscimo de avaria no total ocupado.
+              </div>
+            </div>
+            <div
+              style={{
+                background: 'rgba(0,0,0,.22)',
+                borderRadius: 12,
+                padding: '18px 16px',
+                border: '1px solid rgba(52,211,153,.35)',
+                textAlign: 'center',
+                display: 'grid',
+                gap: 6,
+              }}
+            >
+              <div style={{ fontSize: 11, color: '#6ee7b7', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                Livres
+              </div>
+              <div style={{ fontSize: 34, fontWeight: 800, color: '#34d399', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
+                {resumoDia.percLivre.toFixed(1)}%
+              </div>
+              <div style={{ fontSize: 12, color: '#94a3b8', lineHeight: 1.4 }}>
+                <strong style={{ color: '#ecfdf5', fontVariantNumeric: 'tabular-nums' }}>{resumoDia.totalVaz}</strong> posições livres
+              </div>
+              <div style={{ fontSize: 11, color: '#64748b', lineHeight: 1.35 }}>Percentual sobre o total de posições do armazém.</div>
+            </div>
+            <div
+              style={{
+                background: 'rgba(0,0,0,.22)',
+                borderRadius: 12,
+                padding: '18px 16px',
+                border: '1px solid rgba(249,115,22,.4)',
+                textAlign: 'center',
+                display: 'grid',
+                gap: 6,
+              }}
+            >
+              <div style={{ fontSize: 11, color: t.avariaDestaque, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                Avaria
+              </div>
+              <div style={{ fontSize: 34, fontWeight: 800, color: t.avariaDestaque, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
+                {resumoDia.r.avaria_acrescimo_ocupacao}
+                <span style={{ fontSize: 15, fontWeight: 700, color: '#fdba74', marginLeft: 4 }}>pos.</span>
+              </div>
+              <div style={{ fontSize: 22, fontWeight: 800, color: '#fb923c', fontVariantNumeric: 'tabular-nums' }}>
+                {resumoDia.totalPos > 0
+                  ? ((resumoDia.r.avaria_acrescimo_ocupacao / resumoDia.totalPos) * 100).toFixed(1)
+                  : '0.0'}
+                %
+              </div>
+              <div style={{ fontSize: 11, color: '#64748b', lineHeight: 1.35 }}>
+                Quantidade somada à ocupação · percentual sobre as {resumoDia.totalPos} posições totais.
+              </div>
+            </div>
           </div>
 
           <div style={{ fontSize: 12, fontWeight: 700, color: '#94a3b8', marginBottom: 10, letterSpacing: '0.04em' }}>
@@ -1006,33 +1023,109 @@ function OcupacaoCamaras111213Secao({
             <input type="date" value={dataYmd} onChange={(e) => setDataYmd(e.target.value)} />
           </label>
         </div>
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
-            gap: 10,
-            marginTop: 10,
-          }}
-        >
-          <label style={{ display: 'grid', gap: 5 }}>
-            <span>Câmara 11 — vazias</span>
-            <input value={v11} onChange={(e) => setV11(e.target.value)} type="number" min="0" />
-          </label>
-          <label style={{ display: 'grid', gap: 5 }}>
-            <span>Câmara 12 — vazias</span>
-            <input value={v12} onChange={(e) => setV12(e.target.value)} type="number" min="0" />
-          </label>
-          <label style={{ display: 'grid', gap: 5 }}>
-            <span>Câmara 13 — vazias</span>
-            <input value={v13} onChange={(e) => setV13(e.target.value)} type="number" min="0" />
-          </label>
-          <label style={{ display: 'grid', gap: 5 }}>
-            <span style={{ color: t.avariaDestaque }}>Avaria — acréscimo em ocupadas</span>
-            <input value={vAvaria} onChange={(e) => setVAvaria(e.target.value)} type="number" min="0" placeholder="0" />
-            <span style={{ fontSize: 11, color: '#64748b', fontWeight: 400 }}>
-              Somado ao total de ocupadas (mesmo registro das câmaras 11, 12 e 13).
-            </span>
-          </label>
+        <div style={{ marginTop: 12 }}>
+          <div
+            style={{
+              fontSize: 12,
+              fontWeight: 600,
+              color: '#94a3b8',
+              marginBottom: 8,
+              letterSpacing: '0.02em',
+            }}
+          >
+            Vagas vazias e avaria
+          </div>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
+              gap: 12,
+              width: '100%',
+              maxWidth: 'min(720px, 100%)',
+            }}
+          >
+            <label style={{ display: 'grid', gap: 6, minWidth: 0, alignContent: 'start' }}>
+              <span style={{ fontSize: 13, lineHeight: 1.3 }}>Câmara 11 — vazias</span>
+              <input
+                value={v11}
+                onChange={(e) => setV11(e.target.value)}
+                type="number"
+                min="0"
+                style={{
+                  width: '100%',
+                  maxWidth: '100%',
+                  boxSizing: 'border-box',
+                  padding: '10px 12px',
+                  borderRadius: 8,
+                  minHeight: 42,
+                }}
+              />
+            </label>
+            <label style={{ display: 'grid', gap: 6, minWidth: 0, alignContent: 'start' }}>
+              <span style={{ fontSize: 13, lineHeight: 1.3 }}>Câmara 12 — vazias</span>
+              <input
+                value={v12}
+                onChange={(e) => setV12(e.target.value)}
+                type="number"
+                min="0"
+                style={{
+                  width: '100%',
+                  maxWidth: '100%',
+                  boxSizing: 'border-box',
+                  padding: '10px 12px',
+                  borderRadius: 8,
+                  minHeight: 42,
+                }}
+              />
+            </label>
+            <label style={{ display: 'grid', gap: 6, minWidth: 0, alignContent: 'start' }}>
+              <span style={{ fontSize: 13, lineHeight: 1.3 }}>Câmara 13 — vazias</span>
+              <input
+                value={v13}
+                onChange={(e) => setV13(e.target.value)}
+                type="number"
+                min="0"
+                style={{
+                  width: '100%',
+                  maxWidth: '100%',
+                  boxSizing: 'border-box',
+                  padding: '10px 12px',
+                  borderRadius: 8,
+                  minHeight: 42,
+                }}
+              />
+            </label>
+            <label style={{ display: 'grid', gap: 6, minWidth: 0, alignContent: 'start' }}>
+              <span style={{ fontSize: 13, lineHeight: 1.3, color: t.avariaDestaque }}>Avaria — acréscimo</span>
+              <input
+                value={vAvaria}
+                onChange={(e) => setVAvaria(e.target.value)}
+                type="number"
+                min="0"
+                placeholder="0"
+                style={{
+                  width: '100%',
+                  maxWidth: '100%',
+                  boxSizing: 'border-box',
+                  padding: '10px 12px',
+                  borderRadius: 8,
+                  minHeight: 42,
+                }}
+              />
+            </label>
+          </div>
+          <p
+            style={{
+              fontSize: 11,
+              color: '#64748b',
+              margin: '10px 0 0',
+              maxWidth: 'min(720px, 100%)',
+              lineHeight: 1.45,
+            }}
+          >
+            O valor de <strong style={{ color: t.avariaDestaque }}>Avaria</strong> soma-se ao total de ocupadas no mesmo
+            lançamento (câmaras 11, 12 e 13).
+          </p>
         </div>
 
         <div style={{ marginTop: 12, border: '1px solid var(--border, #2e303a)', borderRadius: 10, padding: 10 }}>
