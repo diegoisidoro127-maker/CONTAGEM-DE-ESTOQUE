@@ -1485,83 +1485,141 @@ function OcupacaoCamaras111213Secao({
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-              gap: 12,
+              gridTemplateColumns: '1fr',
+              gap: 14,
               marginBottom: 18,
             }}
           >
             <div
               style={{
-                background: 'rgba(0,0,0,.22)',
-                borderRadius: 12,
-                padding: '18px 16px',
+                background: 'rgba(0,0,0,.28)',
+                borderRadius: 14,
+                padding: '16px 18px',
                 border: t.kpiOcupBorder,
-                textAlign: 'center',
+                boxShadow: '0 4px 24px rgba(0,0,0,.25)',
                 display: 'grid',
-                gap: 6,
+                gap: 0,
               }}
             >
-              <div style={{ fontSize: 11, color: t.kpiOcupTitulo, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+              <div style={{ fontSize: 11, color: t.kpiOcupTitulo, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>
                 Ocupação
               </div>
-              <div style={{ fontSize: 34, fontWeight: 800, color: t.kpiOcupValor, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
-                {resumoDia.percOcup.toFixed(1)}%
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+                  gap: 14,
+                  alignItems: 'center',
+                  padding: '14px 0',
+                  borderTop: '1px solid rgba(56,189,248,.2)',
+                  borderBottom: '1px solid rgba(56,189,248,.2)',
+                }}
+              >
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: 10, color: '#64748b', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.06em' }}>% Ocupada</div>
+                  <div style={{ fontSize: 32, fontWeight: 800, color: t.kpiOcupValor, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
+                    {resumoDia.percOcup.toFixed(1)}%
+                  </div>
+                </div>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: 10, color: '#64748b', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Posições ocupadas</div>
+                  <div style={{ fontSize: 28, fontWeight: 800, color: '#f8fafc', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
+                    {resumoDia.totalOcup}
+                  </div>
+                </div>
               </div>
-              <div style={{ fontSize: 12, color: '#94a3b8', lineHeight: 1.4 }}>
-                <strong style={{ color: '#e2e8f0', fontVariantNumeric: 'tabular-nums' }}>{resumoDia.totalOcup}</strong> posições ocupadas
-              </div>
-              <div style={{ fontSize: 11, color: '#64748b', lineHeight: 1.35 }}>
-                Sobre {resumoDia.totalPos} posições totais (câm. 11+12+13), inclui acréscimo de avaria no total ocupado.
+              <div style={{ fontSize: 11, color: '#64748b', lineHeight: 1.45, marginTop: 12 }}>
+                Base: <strong style={{ color: '#94a3b8' }}>{resumoDia.totalPos}</strong> posições totais (câm. 11+12+13). O total ocupado inclui o acréscimo de avaria.
               </div>
             </div>
+
             <div
               style={{
-                background: 'rgba(0,0,0,.22)',
-                borderRadius: 12,
-                padding: '18px 16px',
-                border: '1px solid rgba(52,211,153,.35)',
-                textAlign: 'center',
+                background: 'rgba(0,0,0,.28)',
+                borderRadius: 14,
+                padding: '16px 18px',
+                border: '1px solid rgba(52,211,153,.4)',
+                boxShadow: '0 4px 24px rgba(0,0,0,.25)',
                 display: 'grid',
-                gap: 6,
+                gap: 0,
               }}
             >
-              <div style={{ fontSize: 11, color: '#6ee7b7', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+              <div style={{ fontSize: 11, color: '#6ee7b7', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>
                 Livres
               </div>
-              <div style={{ fontSize: 34, fontWeight: 800, color: '#34d399', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
-                {resumoDia.percLivre.toFixed(1)}%
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+                  gap: 14,
+                  alignItems: 'center',
+                  padding: '14px 0',
+                  borderTop: '1px solid rgba(52,211,153,.25)',
+                  borderBottom: '1px solid rgba(52,211,153,.25)',
+                }}
+              >
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: 10, color: '#64748b', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.06em' }}>% Livre</div>
+                  <div style={{ fontSize: 32, fontWeight: 800, color: '#34d399', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
+                    {resumoDia.percLivre.toFixed(1)}%
+                  </div>
+                </div>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: 10, color: '#64748b', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Posições livres</div>
+                  <div style={{ fontSize: 28, fontWeight: 800, color: '#ecfdf5', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
+                    {resumoDia.totalVaz}
+                  </div>
+                </div>
               </div>
-              <div style={{ fontSize: 12, color: '#94a3b8', lineHeight: 1.4 }}>
-                <strong style={{ color: '#ecfdf5', fontVariantNumeric: 'tabular-nums' }}>{resumoDia.totalVaz}</strong> posições livres
+              <div style={{ fontSize: 11, color: '#64748b', lineHeight: 1.45, marginTop: 12 }}>
+                Soma das vagas vazias informadas nas três câmaras; percentual sobre o total do armazém ({resumoDia.totalPos} pos.).
               </div>
-              <div style={{ fontSize: 11, color: '#64748b', lineHeight: 1.35 }}>Percentual sobre o total de posições do armazém.</div>
             </div>
+
             <div
               style={{
-                background: 'rgba(0,0,0,.22)',
-                borderRadius: 12,
-                padding: '18px 16px',
-                border: '1px solid rgba(249,115,22,.4)',
-                textAlign: 'center',
+                background: 'rgba(0,0,0,.28)',
+                borderRadius: 14,
+                padding: '16px 18px',
+                border: '1px solid rgba(249,115,22,.45)',
+                boxShadow: '0 4px 24px rgba(0,0,0,.25)',
                 display: 'grid',
-                gap: 6,
+                gap: 0,
               }}
             >
-              <div style={{ fontSize: 11, color: t.avariaDestaque, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                Avaria
+              <div style={{ fontSize: 11, color: t.avariaDestaque, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>
+                Avaria (acréscimo na ocupação)
               </div>
-              <div style={{ fontSize: 34, fontWeight: 800, color: t.avariaDestaque, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
-                {resumoDia.r.avaria_acrescimo_ocupacao}
-                <span style={{ fontSize: 15, fontWeight: 700, color: '#fdba74', marginLeft: 4 }}>pos.</span>
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+                  gap: 14,
+                  alignItems: 'center',
+                  padding: '14px 0',
+                  borderTop: '1px solid rgba(249,115,22,.28)',
+                  borderBottom: '1px solid rgba(249,115,22,.28)',
+                }}
+              >
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: 10, color: '#64748b', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Quantidade</div>
+                  <div style={{ fontSize: 28, fontWeight: 800, color: t.avariaDestaque, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
+                    {resumoDia.r.avaria_acrescimo_ocupacao}
+                    <span style={{ fontSize: 14, fontWeight: 700, color: '#fdba74', marginLeft: 6 }}>pos.</span>
+                  </div>
+                </div>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: 10, color: '#64748b', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.06em' }}>% sobre o armazém</div>
+                  <div style={{ fontSize: 32, fontWeight: 800, color: '#fb923c', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
+                    {resumoDia.totalPos > 0
+                      ? ((resumoDia.r.avaria_acrescimo_ocupacao / resumoDia.totalPos) * 100).toFixed(1)
+                      : '0.0'}
+                    %
+                  </div>
+                </div>
               </div>
-              <div style={{ fontSize: 22, fontWeight: 800, color: '#fb923c', fontVariantNumeric: 'tabular-nums' }}>
-                {resumoDia.totalPos > 0
-                  ? ((resumoDia.r.avaria_acrescimo_ocupacao / resumoDia.totalPos) * 100).toFixed(1)
-                  : '0.0'}
-                %
-              </div>
-              <div style={{ fontSize: 11, color: '#64748b', lineHeight: 1.35 }}>
-                Quantidade somada à ocupação · percentual sobre as {resumoDia.totalPos} posições totais.
+              <div style={{ fontSize: 11, color: '#64748b', lineHeight: 1.45, marginTop: 12 }}>
+                Valor somado ao total de ocupadas no mesmo lançamento. Percentual calculado sobre as {resumoDia.totalPos} posições totais.
               </div>
             </div>
           </div>
