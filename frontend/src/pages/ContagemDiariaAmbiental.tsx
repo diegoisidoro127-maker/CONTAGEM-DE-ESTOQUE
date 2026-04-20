@@ -31,6 +31,75 @@ const OCUP_TOTAL = {
   camara8: 140,
 } as const
 
+/** Linhas por página nos históricos (temperatura e ocupação). */
+const HIST_PAGE_SIZE = 5
+
+function HistoricoPaginacaoBar({
+  page,
+  totalItems,
+  pageSize,
+  onPageChange,
+  accent,
+}: {
+  page: number
+  totalItems: number
+  pageSize: number
+  onPageChange: (p: number) => void
+  accent: string
+}) {
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize))
+  const canPrev = page > 1
+  const canNext = page < totalPages
+  if (totalItems === 0) return null
+  const btn = (disabled: boolean): CSSProperties => ({
+    padding: '6px 12px',
+    borderRadius: 6,
+    border: `1px solid ${disabled ? 'var(--border, #2e303a)' : accent}`,
+    background: disabled ? 'transparent' : 'rgba(255,255,255,.06)',
+    color: disabled ? '#64748b' : accent,
+    cursor: disabled ? 'not-allowed' : 'pointer',
+    fontSize: 13,
+    fontWeight: 600,
+  })
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flexWrap: 'wrap',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 10,
+        marginTop: 12,
+      }}
+    >
+      <span style={{ fontSize: 13, color: '#94a3b8' }}>
+        Página {page} de {totalPages} · {totalItems} registro(s)
+      </span>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button type="button" disabled={!canPrev} style={btn(!canPrev)} onClick={() => onPageChange(page - 1)}>
+          Anterior
+        </button>
+        <button type="button" disabled={!canNext} style={btn(!canNext)} onClick={() => onPageChange(page + 1)}>
+          Próxima
+        </button>
+      </div>
+    </div>
+  )
+}
+
+const th: CSSProperties = {
+  textAlign: 'left',
+  padding: '8px 10px',
+  borderBottom: '1px solid var(--border, #2e303a)',
+  fontSize: 13,
+}
+
+const td: CSSProperties = {
+  padding: '8px 10px',
+  borderBottom: '1px solid var(--border, #2e303a)',
+  fontSize: 13,
+}
+
 function todayYmd() {
   return new Date().toISOString().slice(0, 10)
 }
@@ -620,7 +689,428 @@ function CombinedTempChart({ rows }: { rows: TempRow[] }) {
   )
 }
 
+type OcupResumoSalvo = {
+  r: OcupRow
+  totalPos: number
+  totalVaz: number
+  totalOcup: number
+  percOcup: number
+  percLivre: number
+}
+
+type OcupResumoRascunho = {
+  o6: number
+  o7: number
+  o8: number
+  totalPos: number
+  totalOcup: number
+  totalVaz: number
+  percOcup: number
+  percLivre: number
+}
+
+const TEMA_OCP_SECAO = {
+  normal: {
+    resumoGradient:
+      'linear-gradient(145deg, rgba(14,165,233,.2) 0%, rgba(15,23,42,.96) 42%, rgba(8,47,72,.45) 100%)',
+    resumoBorder: '1px solid rgba(56,189,248,.45)',
+    tituloResumo: '#7dd3fc',
+    kpiOcupBorder: '1px solid rgba(56,189,248,.28)',
+    kpiOcupTitulo: '#7dd3fc',
+    kpiOcupValor: '#38bdf8',
+    camTitulo: '#7dd3fc',
+    camBorda: '1px solid rgba(56,189,248,.15)',
+    barFill: 'linear-gradient(90deg, #38bdf8, #0ea5e9)',
+    ocupSpan: '#38bdf8',
+    emptyBorder: '1px dashed rgba(56,189,248,.35)',
+    emptyStrong: '#7dd3fc',
+    formTitulo: '#38bdf8',
+    btnBorder: '1px solid #0ea5e9',
+    btnBg: '#38bdf8',
+    btnColor: '#082f49',
+    tabelaLivre: '#6ee7b7',
+  },
+  avaria: {
+    resumoGradient:
+      'linear-gradient(145deg, rgba(249,115,22,.22) 0%, rgba(15,23,42,.96) 42%, rgba(60,24,8,.42) 100%)',
+    resumoBorder: '1px solid rgba(249,115,22,.5)',
+    tituloResumo: '#fdba74',
+    kpiOcupBorder: '1px solid rgba(249,115,22,.35)',
+    kpiOcupTitulo: '#fed7aa',
+    kpiOcupValor: '#fb923c',
+    camTitulo: '#fdba74',
+    camBorda: '1px solid rgba(249,115,22,.2)',
+    barFill: 'linear-gradient(90deg, #fb923c, #ea580c)',
+    ocupSpan: '#fb923c',
+    emptyBorder: '1px dashed rgba(249,115,22,.4)',
+    emptyStrong: '#fdba74',
+    formTitulo: '#fb923c',
+    btnBorder: '1px solid #ea580c',
+    btnBg: '#f97316',
+    btnColor: '#431407',
+    tabelaLivre: '#fdba74',
+  },
+} as const
+
+function OcupacaoCamaras678Secao({
+  variant,
+  labels,
+  resumoDia,
+  resumoRascunho,
+  rows,
+  conferenteId,
+  setConferenteId,
+  dataYmd,
+  setDataYmd,
+  v6,
+  setV6,
+  v7,
+  setV7,
+  v8,
+  setV8,
+  onSalvar,
+  loading,
+  conferentesLoading,
+  conferentes,
+}: {
+  variant: keyof typeof TEMA_OCP_SECAO
+  labels: { resumo: string; form: string; tabela: string; emptyHint: string }
+  resumoDia: OcupResumoSalvo | null
+  resumoRascunho: OcupResumoRascunho
+  rows: OcupRow[]
+  conferenteId: string
+  setConferenteId: (v: string) => void
+  dataYmd: string
+  setDataYmd: (v: string) => void
+  v6: string
+  setV6: (v: string) => void
+  v7: string
+  setV7: (v: string) => void
+  v8: string
+  setV8: (v: string) => void
+  onSalvar: () => void
+  loading: boolean
+  conferentesLoading: boolean
+  conferentes: Conferente[]
+}) {
+  const t = TEMA_OCP_SECAO[variant]
+  const [histPage, setHistPage] = useState(1)
+  useEffect(() => {
+    setHistPage(1)
+  }, [rows])
+  const rowsPagina = useMemo(
+    () => rows.slice((histPage - 1) * HIST_PAGE_SIZE, histPage * HIST_PAGE_SIZE),
+    [rows, histPage],
+  )
+  return (
+    <>
+      {resumoDia ? (
+        <div
+          style={{
+            borderRadius: 16,
+            padding: '20px 22px 22px',
+            background: t.resumoGradient,
+            border: t.resumoBorder,
+            boxShadow: '0 16px 52px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.1)',
+          }}
+        >
+          <div
+            style={{
+              fontSize: 11,
+              fontWeight: 700,
+              textTransform: 'uppercase',
+              letterSpacing: '0.16em',
+              color: t.tituloResumo,
+              marginBottom: 4,
+              textAlign: 'center',
+            }}
+          >
+            {labels.resumo}
+          </div>
+          <div style={{ fontSize: 12, color: '#64748b', textAlign: 'center', marginBottom: 18 }}>
+            Último registro salvo (data do lançamento · horário · conferente)
+          </div>
+
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+              gap: 20,
+              alignItems: 'start',
+              marginBottom: 20,
+            }}
+          >
+            <div>
+              <div style={{ fontSize: 11, color: '#64748b', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                Data do lançamento
+              </div>
+              <div style={{ fontSize: 'clamp(26px, 5vw, 34px)', fontWeight: 800, color: '#f8fafc', lineHeight: 1.1 }}>
+                {formatDataBr(resumoDia.r.data_registro)}
+              </div>
+            </div>
+            <div
+              style={{
+                display: 'grid',
+                gap: 12,
+                padding: '12px 16px',
+                background: 'rgba(0,0,0,.22)',
+                borderRadius: 12,
+                border: '1px solid rgba(255,255,255,.06)',
+              }}
+            >
+              <div>
+                <div style={{ fontSize: 11, color: '#64748b', marginBottom: 4 }}>Horário do registro</div>
+                <div style={{ fontSize: 18, fontWeight: 700, color: '#e0f2fe', fontVariantNumeric: 'tabular-nums' }}>
+                  {formatHoraRegistro(resumoDia.r.created_at)}
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: '#64748b', marginBottom: 4 }}>Conferente</div>
+                <div style={{ fontSize: 17, fontWeight: 700, color: '#bae6fd' }}>{resumoDia.r.conferente_nome}</div>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 12, marginBottom: 18 }}>
+            <div
+              style={{
+                background: 'rgba(0,0,0,.22)',
+                borderRadius: 12,
+                padding: '16px 14px',
+                border: t.kpiOcupBorder,
+                textAlign: 'center',
+              }}
+            >
+              <div style={{ fontSize: 12, color: t.kpiOcupTitulo, fontWeight: 600, marginBottom: 8 }}>Ocupadas</div>
+              <div style={{ fontSize: 30, fontWeight: 800, color: t.kpiOcupValor, lineHeight: 1 }}>{resumoDia.totalOcup}</div>
+              <div style={{ fontSize: 11, color: '#64748b', marginTop: 8, lineHeight: 1.35 }}>
+                Das {resumoDia.totalPos} posições no total (câm. 6+7+8)
+              </div>
+            </div>
+            <div
+              style={{
+                background: 'rgba(0,0,0,.22)',
+                borderRadius: 12,
+                padding: '16px 14px',
+                border: '1px solid rgba(52,211,153,.3)',
+                textAlign: 'center',
+              }}
+            >
+              <div style={{ fontSize: 12, color: '#6ee7b7', fontWeight: 600, marginBottom: 8 }}>Livres</div>
+              <div style={{ fontSize: 30, fontWeight: 800, color: '#34d399', lineHeight: 1 }}>{resumoDia.totalVaz}</div>
+              <div style={{ fontSize: 11, color: '#64748b', marginTop: 8, lineHeight: 1.35 }}>
+                Soma das vagas vazias informadas nas três câmaras
+              </div>
+            </div>
+            <div
+              style={{
+                background: 'rgba(0,0,0,.22)',
+                borderRadius: 12,
+                padding: '16px 14px',
+                border: '1px solid rgba(251,191,36,.28)',
+                textAlign: 'center',
+              }}
+            >
+              <div style={{ fontSize: 12, color: '#fcd34d', fontWeight: 600, marginBottom: 8 }}>Percentual</div>
+              <div style={{ fontSize: 30, fontWeight: 800, color: '#fbbf24', lineHeight: 1 }}>
+                {resumoDia.percOcup.toFixed(0)}% <span style={{ fontSize: 14, fontWeight: 600, color: '#94a3b8' }}>ocup.</span>
+              </div>
+              <div style={{ fontSize: 11, color: '#a5b4fc', marginTop: 8 }}>Livre: {resumoDia.percLivre.toFixed(0)}%</div>
+            </div>
+          </div>
+
+          <div style={{ fontSize: 12, fontWeight: 700, color: '#94a3b8', marginBottom: 10, letterSpacing: '0.04em' }}>
+            Detalhe por câmara (último registro)
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
+            {(
+              [
+                { id: 6, v: resumoDia.r.camara6_vazias, cap: OCUP_TOTAL.camara6 },
+                { id: 7, v: resumoDia.r.camara7_vazias, cap: OCUP_TOTAL.camara7 },
+                { id: 8, v: resumoDia.r.camara8_vazias, cap: OCUP_TOTAL.camara8 },
+              ] as const
+            ).map((c) => {
+              const oc = c.cap - c.v
+              const pct = c.cap > 0 ? (oc / c.cap) * 100 : 0
+              return (
+                <div
+                  key={c.id}
+                  style={{
+                    background: 'rgba(0,0,0,.2)',
+                    borderRadius: 12,
+                    padding: '12px 14px',
+                    border: t.camBorda,
+                  }}
+                >
+                  <div style={{ fontWeight: 700, color: t.camTitulo, marginBottom: 2 }}>Câmara {c.id}</div>
+                  <div style={{ fontSize: 11, color: '#64748b', marginBottom: 10 }}>{c.cap} posições no total</div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 8 }}>
+                    <span>
+                      <span style={{ color: '#6ee7b7' }}>Vazias</span> <strong style={{ color: '#ecfdf5' }}>{c.v}</strong>
+                    </span>
+                    <span>
+                      <span style={{ color: t.ocupSpan }}>Ocupadas</span> <strong style={{ color: '#f0f9ff' }}>{oc}</strong>
+                    </span>
+                  </div>
+                  <div style={{ height: 6, borderRadius: 999, background: 'rgba(255,255,255,.08)', overflow: 'hidden' }}>
+                    <div
+                      style={{
+                        height: '100%',
+                        width: `${Math.min(100, Math.max(0, pct))}%`,
+                        borderRadius: 999,
+                        background: t.barFill,
+                      }}
+                    />
+                  </div>
+                  <div style={{ fontSize: 10, color: '#64748b', marginTop: 6, textAlign: 'right' }}>{pct.toFixed(0)}% ocupada nesta câmara</div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      ) : (
+        <div
+          style={{
+            borderRadius: 14,
+            padding: '18px 20px',
+            background: 'rgba(15,23,42,.65)',
+            border: t.emptyBorder,
+            color: '#94a3b8',
+            fontSize: 14,
+            textAlign: 'center',
+          }}
+        >
+          <strong style={{ color: t.emptyStrong }}>{labels.resumo}:</strong> {labels.emptyHint}
+        </div>
+      )}
+
+      <div style={{ border: '1px solid var(--border, #2e303a)', borderRadius: 12, padding: 12 }}>
+        <div style={{ fontWeight: 700, marginBottom: 10, color: t.formTitulo }}>{labels.form}</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 10 }}>
+          <label style={{ display: 'grid', gap: 5 }}>
+            <span>Conferente</span>
+            <select value={conferenteId} onChange={(e) => setConferenteId(e.target.value)} disabled={conferentesLoading}>
+              <option value="">{conferentesLoading ? 'Carregando...' : 'Selecione...'}</option>
+              {conferentes.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.nome}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label style={{ display: 'grid', gap: 5 }}>
+            <span>Data</span>
+            <input type="date" value={dataYmd} onChange={(e) => setDataYmd(e.target.value)} />
+          </label>
+          <label style={{ display: 'grid', gap: 5 }}>
+            <span>Câmara 6 — vazias</span>
+            <input value={v6} onChange={(e) => setV6(e.target.value)} type="number" min="0" />
+          </label>
+          <label style={{ display: 'grid', gap: 5 }}>
+            <span>Câmara 7 — vazias</span>
+            <input value={v7} onChange={(e) => setV7(e.target.value)} type="number" min="0" />
+          </label>
+          <label style={{ display: 'grid', gap: 5 }}>
+            <span>Câmara 8 — vazias</span>
+            <input value={v8} onChange={(e) => setV8(e.target.value)} type="number" min="0" />
+          </label>
+        </div>
+
+        <div style={{ marginTop: 12, border: '1px solid var(--border, #2e303a)', borderRadius: 10, padding: 10 }}>
+          <div style={{ fontWeight: 700, marginBottom: 8 }}>Resumo automático (rascunho)</div>
+          <div style={{ display: 'grid', gap: 4, fontSize: 14 }}>
+            <div>
+              Câmara 6: {resumoRascunho.o6} ocupadas / {asInt(v6)} vazias (total {OCUP_TOTAL.camara6})
+            </div>
+            <div>
+              Câmara 7: {resumoRascunho.o7} ocupadas / {asInt(v7)} vazias (total {OCUP_TOTAL.camara7})
+            </div>
+            <div>
+              Câmara 8: {resumoRascunho.o8} ocupadas / {asInt(v8)} vazias (total {OCUP_TOTAL.camara8})
+            </div>
+            <div style={{ marginTop: 4, fontWeight: 700 }}>
+              Total: {resumoRascunho.totalOcup} ocupadas / {resumoRascunho.totalVaz} vazias | % Ocupada:{' '}
+              {resumoRascunho.percOcup.toFixed(0)}% | % Livre: {resumoRascunho.percLivre.toFixed(0)}%
+            </div>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => void onSalvar()}
+          disabled={loading}
+          style={{
+            marginTop: 12,
+            padding: '10px 16px',
+            borderRadius: 8,
+            border: t.btnBorder,
+            background: t.btnBg,
+            color: t.btnColor,
+            fontWeight: 700,
+          }}
+        >
+          {loading ? 'Salvando...' : variant === 'avaria' ? 'Salvar ocupação (avaria)' : 'Salvar ocupação'}
+        </button>
+      </div>
+
+      <div style={{ border: '1px solid var(--border, #2e303a)', borderRadius: 12, padding: 12, overflowX: 'auto' }}>
+        <div style={{ fontWeight: 700, marginBottom: 10 }}>{labels.tabela}</div>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
+          <thead>
+            <tr>
+              <th style={th}>Data</th>
+              <th style={th}>Conferente</th>
+              <th style={th}>Cam 6 (vazias)</th>
+              <th style={th}>Cam 7 (vazias)</th>
+              <th style={th}>Cam 8 (vazias)</th>
+              <th style={th}>Livre</th>
+              <th style={th}>Total ocupadas</th>
+              <th style={th}>% Ocupada</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.length === 0 ? (
+              <tr>
+                <td colSpan={8} style={{ ...td, color: 'var(--text, #9ca3af)' }}>
+                  Nenhum lançamento ainda.
+                </td>
+              </tr>
+            ) : (
+              rowsPagina.map((r) => {
+                const totalPos = OCUP_TOTAL.camara6 + OCUP_TOTAL.camara7 + OCUP_TOTAL.camara8
+                const totalVaz = r.camara6_vazias + r.camara7_vazias + r.camara8_vazias
+                const totalOcup = totalPos - totalVaz
+                const percOcup = totalPos > 0 ? (totalOcup / totalPos) * 100 : 0
+                return (
+                  <tr key={r.id}>
+                    <td style={td}>{formatDataBr(r.data_registro)}</td>
+                    <td style={td}>{r.conferente_nome}</td>
+                    <td style={td}>{r.camara6_vazias}</td>
+                    <td style={td}>{r.camara7_vazias}</td>
+                    <td style={td}>{r.camara8_vazias}</td>
+                    <td style={{ ...td, color: t.tabelaLivre, fontWeight: 600 }}>{totalVaz}</td>
+                    <td style={td}>{totalOcup}</td>
+                    <td style={td}>{percOcup.toFixed(0)}%</td>
+                  </tr>
+                )
+              })
+            )}
+          </tbody>
+        </table>
+        <HistoricoPaginacaoBar
+          page={histPage}
+          totalItems={rows.length}
+          pageSize={HIST_PAGE_SIZE}
+          onPageChange={setHistPage}
+          accent={t.formTitulo}
+        />
+      </div>
+    </>
+  )
+}
+
 export default function ContagemDiariaAmbiental() {
+  const [tempHistPage, setTempHistPage] = useState(1)
   const [tab, setTab] = useState<TabKey>('temperatura')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -642,13 +1132,20 @@ export default function ContagemDiariaAmbiental() {
   const [vazias8, setVazias8] = useState('')
   const [ocupRows, setOcupRows] = useState<OcupRow[]>([])
 
+  const [avConferenteId, setAvConferenteId] = useState('')
+  const [avData, setAvData] = useState(todayYmd())
+  const [avVazias6, setAvVazias6] = useState('')
+  const [avVazias7, setAvVazias7] = useState('')
+  const [avVazias8, setAvVazias8] = useState('')
+  const [avRows, setAvRows] = useState<OcupRow[]>([])
+
   async function loadTempRows() {
     const { data, error: qErr } = await supabase
       .from('contagem_temperatura_camaras')
       .select('id,data_registro,conferente_nome,camara11_temp,camara12_temp,camara13_temp,created_at')
       .order('data_registro', { ascending: false })
       .order('created_at', { ascending: false })
-      .limit(60)
+      .limit(2000)
     if (qErr) throw qErr
     setTempRows((data || []).reverse().map((r) => ({ ...r, camara11_temp: asNum(r.camara11_temp), camara12_temp: asNum(r.camara12_temp), camara13_temp: asNum(r.camara13_temp) })))
   }
@@ -665,9 +1162,27 @@ export default function ContagemDiariaAmbiental() {
       .select('id,data_registro,conferente_nome,camara6_vazias,camara7_vazias,camara8_vazias,created_at')
       .order('data_registro', { ascending: false })
       .order('created_at', { ascending: false })
-      .limit(40)
+      .limit(2000)
     if (qErr) throw qErr
     setOcupRows(
+      (data || []).map((r) => ({
+        ...r,
+        camara6_vazias: asNum(r.camara6_vazias),
+        camara7_vazias: asNum(r.camara7_vazias),
+        camara8_vazias: asNum(r.camara8_vazias),
+      })),
+    )
+  }
+
+  async function loadAvariaRows() {
+    const { data, error: qErr } = await supabase
+      .from('contagem_ocupacao_avaria_camaras')
+      .select('id,data_registro,conferente_nome,camara6_vazias,camara7_vazias,camara8_vazias,created_at')
+      .order('data_registro', { ascending: false })
+      .order('created_at', { ascending: false })
+      .limit(2000)
+    if (qErr) throw qErr
+    setAvRows(
       (data || []).map((r) => ({
         ...r,
         camara6_vazias: asNum(r.camara6_vazias),
@@ -682,11 +1197,11 @@ export default function ContagemDiariaAmbiental() {
       setError(null)
       try {
         setConferentesLoading(true)
-        await Promise.all([loadTempRows(), loadOcupRows(), loadConferentes()])
+        await Promise.all([loadTempRows(), loadOcupRows(), loadAvariaRows(), loadConferentes()])
       } catch (e) {
         setError(
           e instanceof Error
-            ? `${e.message}. Se for tabela não encontrada, rode o SQL create_contagem_diaria_temperatura_ocupacao.sql.`
+            ? `${e.message}. Confira os SQL: create_contagem_diaria_temperatura_ocupacao.sql e create_contagem_ocupacao_avaria_camaras.sql.`
             : 'Erro ao carregar dados.',
         )
       } finally {
@@ -694,6 +1209,10 @@ export default function ContagemDiariaAmbiental() {
       }
     })()
   }, [])
+
+  useEffect(() => {
+    setTempHistPage(1)
+  }, [tempRows])
 
   async function salvarTemperatura() {
     setError(null)
@@ -777,8 +1296,56 @@ export default function ContagemDiariaAmbiental() {
     }
   }
 
+  async function salvarOcupacaoAvaria() {
+    setError(null)
+    setOk(null)
+    const nome = conferentes.find((c) => c.id === avConferenteId)?.nome?.trim() ?? ''
+    if (!nome) {
+      setError('Selecione o conferente (avaria).')
+      return
+    }
+    if (!avData) {
+      setError('Selecione a data (avaria).')
+      return
+    }
+    if (avVazias6.trim() === '' || avVazias7.trim() === '' || avVazias8.trim() === '') {
+      setError('Preencha as posições vazias das 3 câmaras (avaria).')
+      return
+    }
+    const v6 = asInt(avVazias6)
+    const v7 = asInt(avVazias7)
+    const v8 = asInt(avVazias8)
+    if (v6 > OCUP_TOTAL.camara6 || v7 > OCUP_TOTAL.camara7 || v8 > OCUP_TOTAL.camara8) {
+      setError('Avaria: uma ou mais câmaras têm vagas maiores que o total de posições.')
+      return
+    }
+    setLoading(true)
+    try {
+      const payload = {
+        data_registro: avData,
+        conferente_nome: nome,
+        camara6_vazias: v6,
+        camara7_vazias: v7,
+        camara8_vazias: v8,
+      }
+      const { error: insErr } = await supabase.from('contagem_ocupacao_avaria_camaras').insert(payload)
+      if (insErr) throw insErr
+      await loadAvariaRows()
+      setOk('Ocupação de avaria salva com sucesso.')
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erro ao salvar ocupação de avaria.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   /** Mais recentes primeiro — para histórico em tabela. */
   const tempHistoricoDesc = useMemo(() => [...tempRows].reverse(), [tempRows])
+  const tempHistoricoPagina = useMemo(
+    () =>
+      tempHistoricoDesc.slice((tempHistPage - 1) * HIST_PAGE_SIZE, tempHistPage * HIST_PAGE_SIZE),
+    [tempHistoricoDesc, tempHistPage],
+  )
 
   const ocupResumoAtual = useMemo(() => {
     const v6 = asInt(vazias6)
@@ -813,6 +1380,39 @@ export default function ContagemDiariaAmbiental() {
     const percLivre = totalPos > 0 ? (totalVaz / totalPos) * 100 : 0
     return { r, totalPos, totalVaz, totalOcup, percOcup, percLivre }
   }, [ocupRows])
+
+  const avResumoAtual = useMemo(() => {
+    const v6 = asInt(avVazias6)
+    const v7 = asInt(avVazias7)
+    const v8 = asInt(avVazias8)
+    const o6 = Math.max(0, OCUP_TOTAL.camara6 - v6)
+    const o7 = Math.max(0, OCUP_TOTAL.camara7 - v7)
+    const o8 = Math.max(0, OCUP_TOTAL.camara8 - v8)
+    const totalPos = OCUP_TOTAL.camara6 + OCUP_TOTAL.camara7 + OCUP_TOTAL.camara8
+    const totalOcup = o6 + o7 + o8
+    const totalVaz = v6 + v7 + v8
+    return {
+      o6,
+      o7,
+      o8,
+      totalPos,
+      totalOcup,
+      totalVaz,
+      percOcup: totalPos > 0 ? (totalOcup / totalPos) * 100 : 0,
+      percLivre: totalPos > 0 ? (totalVaz / totalPos) * 100 : 0,
+    }
+  }, [avVazias6, avVazias7, avVazias8])
+
+  const avResumoDiaSalvo = useMemo((): OcupResumoSalvo | null => {
+    const r = avRows[0]
+    if (!r) return null
+    const totalPos = OCUP_TOTAL.camara6 + OCUP_TOTAL.camara7 + OCUP_TOTAL.camara8
+    const totalVaz = r.camara6_vazias + r.camara7_vazias + r.camara8_vazias
+    const totalOcup = totalPos - totalVaz
+    const percOcup = totalPos > 0 ? (totalOcup / totalPos) * 100 : 0
+    const percLivre = totalPos > 0 ? (totalVaz / totalPos) * 100 : 0
+    return { r, totalPos, totalVaz, totalOcup, percOcup, percLivre }
+  }, [avRows])
 
   return (
     <div style={{ maxWidth: 1360, margin: '0 auto', padding: '0 16px 22px', width: '100%', boxSizing: 'border-box' }}>
@@ -935,7 +1535,7 @@ export default function ContagemDiariaAmbiental() {
                     </td>
                   </tr>
                 ) : (
-                  tempHistoricoDesc.map((r) => (
+                  tempHistoricoPagina.map((r) => (
                     <tr key={r.id}>
                       <td style={td}>{r.conferente_nome}</td>
                       <td style={td}>{formatDataBr(r.data_registro)}</td>
@@ -948,304 +1548,98 @@ export default function ContagemDiariaAmbiental() {
                 )}
               </tbody>
             </table>
+            <HistoricoPaginacaoBar
+              page={tempHistPage}
+              totalItems={tempHistoricoDesc.length}
+              pageSize={HIST_PAGE_SIZE}
+              onPageChange={setTempHistPage}
+              accent="#22c55e"
+            />
           </div>
         </div>
       ) : (
         <div style={{ display: 'grid', gap: 14 }}>
-          {ocupResumoDiaSalvo ? (
-            <div
-              style={{
-                borderRadius: 16,
-                padding: '20px 22px 22px',
-                background: 'linear-gradient(145deg, rgba(14,165,233,.2) 0%, rgba(15,23,42,.96) 42%, rgba(8,47,72,.45) 100%)',
-                border: '1px solid rgba(56,189,248,.45)',
-                boxShadow: '0 16px 52px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.1)',
-              }}
-            >
-              <div
-                style={{
-                  fontSize: 11,
-                  fontWeight: 700,
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.16em',
-                  color: '#7dd3fc',
-                  marginBottom: 4,
-                  textAlign: 'center',
-                }}
-              >
-                Resumo do dia
-              </div>
-              <div style={{ fontSize: 12, color: '#64748b', textAlign: 'center', marginBottom: 18 }}>
-                Último registro salvo no sistema (data do lançamento · horário · conferente)
-              </div>
-
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
-                  gap: 20,
-                  alignItems: 'start',
-                  marginBottom: 20,
-                }}
-              >
-                <div>
-                  <div style={{ fontSize: 11, color: '#64748b', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                    Data do lançamento
-                  </div>
-                  <div style={{ fontSize: 'clamp(26px, 5vw, 34px)', fontWeight: 800, color: '#f8fafc', lineHeight: 1.1 }}>
-                    {formatDataBr(ocupResumoDiaSalvo.r.data_registro)}
-                  </div>
-                </div>
-                <div
-                  style={{
-                    display: 'grid',
-                    gap: 12,
-                    padding: '12px 16px',
-                    background: 'rgba(0,0,0,.22)',
-                    borderRadius: 12,
-                    border: '1px solid rgba(255,255,255,.06)',
-                  }}
-                >
-                  <div>
-                    <div style={{ fontSize: 11, color: '#64748b', marginBottom: 4 }}>Horário do registro</div>
-                    <div style={{ fontSize: 18, fontWeight: 700, color: '#e0f2fe', fontVariantNumeric: 'tabular-nums' }}>
-                      {formatHoraRegistro(ocupResumoDiaSalvo.r.created_at)}
-                    </div>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 11, color: '#64748b', marginBottom: 4 }}>Conferente</div>
-                    <div style={{ fontSize: 17, fontWeight: 700, color: '#bae6fd' }}>{ocupResumoDiaSalvo.r.conferente_nome}</div>
-                  </div>
-                </div>
-              </div>
-
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
-                  gap: 12,
-                  marginBottom: 18,
-                }}
-              >
-                <div
-                  style={{
-                    background: 'rgba(0,0,0,.22)',
-                    borderRadius: 12,
-                    padding: '16px 14px',
-                    border: '1px solid rgba(56,189,248,.28)',
-                    textAlign: 'center',
-                  }}
-                >
-                  <div style={{ fontSize: 12, color: '#7dd3fc', fontWeight: 600, marginBottom: 8 }}>Ocupadas</div>
-                  <div style={{ fontSize: 30, fontWeight: 800, color: '#38bdf8', lineHeight: 1 }}>{ocupResumoDiaSalvo.totalOcup}</div>
-                  <div style={{ fontSize: 11, color: '#64748b', marginTop: 8, lineHeight: 1.35 }}>
-                    Das {ocupResumoDiaSalvo.totalPos} posições no total (câm. 6+7+8)
-                  </div>
-                </div>
-                <div
-                  style={{
-                    background: 'rgba(0,0,0,.22)',
-                    borderRadius: 12,
-                    padding: '16px 14px',
-                    border: '1px solid rgba(52,211,153,.3)',
-                    textAlign: 'center',
-                  }}
-                >
-                  <div style={{ fontSize: 12, color: '#6ee7b7', fontWeight: 600, marginBottom: 8 }}>Livres</div>
-                  <div style={{ fontSize: 30, fontWeight: 800, color: '#34d399', lineHeight: 1 }}>{ocupResumoDiaSalvo.totalVaz}</div>
-                  <div style={{ fontSize: 11, color: '#64748b', marginTop: 8, lineHeight: 1.35 }}>
-                    Soma das vagas vazias informadas nas três câmaras
-                  </div>
-                </div>
-                <div
-                  style={{
-                    background: 'rgba(0,0,0,.22)',
-                    borderRadius: 12,
-                    padding: '16px 14px',
-                    border: '1px solid rgba(251,191,36,.28)',
-                    textAlign: 'center',
-                  }}
-                >
-                  <div style={{ fontSize: 12, color: '#fcd34d', fontWeight: 600, marginBottom: 8 }}>Percentual</div>
-                  <div style={{ fontSize: 30, fontWeight: 800, color: '#fbbf24', lineHeight: 1 }}>
-                    {ocupResumoDiaSalvo.percOcup.toFixed(0)}% <span style={{ fontSize: 14, fontWeight: 600, color: '#94a3b8' }}>ocup.</span>
-                  </div>
-                  <div style={{ fontSize: 11, color: '#a5b4fc', marginTop: 8 }}>Livre: {ocupResumoDiaSalvo.percLivre.toFixed(0)}%</div>
-                </div>
-              </div>
-
-              <div style={{ fontSize: 12, fontWeight: 700, color: '#94a3b8', marginBottom: 10, letterSpacing: '0.04em' }}>
-                Detalhe por câmara (último registro)
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
-                {(
-                  [
-                    { id: 6, v: ocupResumoDiaSalvo.r.camara6_vazias, cap: OCUP_TOTAL.camara6 },
-                    { id: 7, v: ocupResumoDiaSalvo.r.camara7_vazias, cap: OCUP_TOTAL.camara7 },
-                    { id: 8, v: ocupResumoDiaSalvo.r.camara8_vazias, cap: OCUP_TOTAL.camara8 },
-                  ] as const
-                ).map((c) => {
-                  const oc = c.cap - c.v
-                  const pct = c.cap > 0 ? (oc / c.cap) * 100 : 0
-                  return (
-                    <div
-                      key={c.id}
-                      style={{
-                        background: 'rgba(0,0,0,.2)',
-                        borderRadius: 12,
-                        padding: '12px 14px',
-                        border: '1px solid rgba(56,189,248,.15)',
-                      }}
-                    >
-                      <div style={{ fontWeight: 700, color: '#7dd3fc', marginBottom: 2 }}>Câmara {c.id}</div>
-                      <div style={{ fontSize: 11, color: '#64748b', marginBottom: 10 }}>{c.cap} posições no total</div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 8 }}>
-                        <span>
-                          <span style={{ color: '#6ee7b7' }}>Vazias</span>{' '}
-                          <strong style={{ color: '#ecfdf5' }}>{c.v}</strong>
-                        </span>
-                        <span>
-                          <span style={{ color: '#38bdf8' }}>Ocupadas</span>{' '}
-                          <strong style={{ color: '#f0f9ff' }}>{oc}</strong>
-                        </span>
-                      </div>
-                      <div style={{ height: 6, borderRadius: 999, background: 'rgba(255,255,255,.08)', overflow: 'hidden' }}>
-                        <div style={{ height: '100%', width: `${Math.min(100, Math.max(0, pct))}%`, borderRadius: 999, background: 'linear-gradient(90deg, #38bdf8, #0ea5e9)' }} />
-                      </div>
-                      <div style={{ fontSize: 10, color: '#64748b', marginTop: 6, textAlign: 'right' }}>{pct.toFixed(0)}% ocupada nesta câmara</div>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-          ) : (
-            <div
-              style={{
-                borderRadius: 14,
-                padding: '18px 20px',
-                background: 'rgba(15,23,42,.65)',
-                border: '1px dashed rgba(56,189,248,.35)',
-                color: '#94a3b8',
-                fontSize: 14,
-                textAlign: 'center',
-              }}
-            >
-              <strong style={{ color: '#7dd3fc' }}>Resumo do dia:</strong> ainda não há lançamentos de ocupação salvos. Preencha o
-              formulário abaixo e salve para ver o resumo aqui.
-            </div>
-          )}
-
-          <div style={{ border: '1px solid var(--border, #2e303a)', borderRadius: 12, padding: 12 }}>
-            <div style={{ fontWeight: 700, marginBottom: 10, color: '#38bdf8' }}>Lançar ocupação (somente posições vazias)</div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 10 }}>
-              <label style={{ display: 'grid', gap: 5 }}>
-                <span>Conferente</span>
-                <select
-                  value={ocupConferenteId}
-                  onChange={(e) => setOcupConferenteId(e.target.value)}
-                  disabled={conferentesLoading}
-                >
-                  <option value="">{conferentesLoading ? 'Carregando...' : 'Selecione...'}</option>
-                  {conferentes.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.nome}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label style={{ display: 'grid', gap: 5 }}>
-                <span>Data</span>
-                <input type="date" value={ocupData} onChange={(e) => setOcupData(e.target.value)} />
-              </label>
-              <label style={{ display: 'grid', gap: 5 }}>
-                <span>Câmara 6 — vazias</span>
-                <input value={vazias6} onChange={(e) => setVazias6(e.target.value)} type="number" min="0" />
-              </label>
-              <label style={{ display: 'grid', gap: 5 }}>
-                <span>Câmara 7 — vazias</span>
-                <input value={vazias7} onChange={(e) => setVazias7(e.target.value)} type="number" min="0" />
-              </label>
-              <label style={{ display: 'grid', gap: 5 }}>
-                <span>Câmara 8 — vazias</span>
-                <input value={vazias8} onChange={(e) => setVazias8(e.target.value)} type="number" min="0" />
-              </label>
-            </div>
-
-            <div style={{ marginTop: 12, border: '1px solid var(--border, #2e303a)', borderRadius: 10, padding: 10 }}>
-              <div style={{ fontWeight: 700, marginBottom: 8 }}>Resumo automático (rascunho)</div>
-              <div style={{ display: 'grid', gap: 4, fontSize: 14 }}>
-                <div>Câmara 6: {ocupResumoAtual.o6} ocupadas / {asInt(vazias6)} vazias (total {OCUP_TOTAL.camara6})</div>
-                <div>Câmara 7: {ocupResumoAtual.o7} ocupadas / {asInt(vazias7)} vazias (total {OCUP_TOTAL.camara7})</div>
-                <div>Câmara 8: {ocupResumoAtual.o8} ocupadas / {asInt(vazias8)} vazias (total {OCUP_TOTAL.camara8})</div>
-                <div style={{ marginTop: 4, fontWeight: 700 }}>
-                  Total: {ocupResumoAtual.totalOcup} ocupadas / {ocupResumoAtual.totalVaz} vazias
-                  {' '}| % Ocupada: {ocupResumoAtual.percOcup.toFixed(0)}% | % Livre: {ocupResumoAtual.percLivre.toFixed(0)}%
-                </div>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => void salvarOcupacao()}
-              disabled={loading}
-              style={{ marginTop: 12, padding: '10px 16px', borderRadius: 8, border: '1px solid #0ea5e9', background: '#38bdf8', color: '#082f49', fontWeight: 700 }}
-            >
-              {loading ? 'Salvando...' : 'Salvar ocupação'}
-            </button>
+          <div
+            style={{
+              fontSize: 13,
+              fontWeight: 700,
+              color: '#94a3b8',
+              letterSpacing: '0.06em',
+              textTransform: 'uppercase',
+            }}
+          >
+            Ocupação regular (câmaras 6, 7 e 8)
           </div>
+          <OcupacaoCamaras678Secao
+            variant="normal"
+            labels={{
+              resumo: 'Resumo do dia',
+              form: 'Lançar ocupação (somente posições vazias)',
+              tabela: 'Últimos lançamentos de ocupação',
+              emptyHint:
+                'ainda não há lançamentos salvos. Preencha o formulário abaixo e salve para ver o resumo aqui.',
+            }}
+            resumoDia={ocupResumoDiaSalvo}
+            resumoRascunho={ocupResumoAtual}
+            rows={ocupRows}
+            conferenteId={ocupConferenteId}
+            setConferenteId={setOcupConferenteId}
+            dataYmd={ocupData}
+            setDataYmd={setOcupData}
+            v6={vazias6}
+            setV6={setVazias6}
+            v7={vazias7}
+            setV7={setVazias7}
+            v8={vazias8}
+            setV8={setVazias8}
+            onSalvar={salvarOcupacao}
+            loading={loading}
+            conferentesLoading={conferentesLoading}
+            conferentes={conferentes}
+          />
 
-          <div style={{ border: '1px solid var(--border, #2e303a)', borderRadius: 12, padding: 12, overflowX: 'auto' }}>
-            <div style={{ fontWeight: 700, marginBottom: 10 }}>Últimos lançamentos de ocupação</div>
-            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
-              <thead>
-                <tr>
-                  <th style={th}>Data</th>
-                  <th style={th}>Conferente</th>
-                  <th style={th}>Cam 6 (vazias)</th>
-                  <th style={th}>Cam 7 (vazias)</th>
-                  <th style={th}>Cam 8 (vazias)</th>
-                  <th style={th}>Livre</th>
-                  <th style={th}>Total ocupadas</th>
-                  <th style={th}>% Ocupada</th>
-                </tr>
-              </thead>
-              <tbody>
-                {ocupRows.map((r) => {
-                  const totalPos = OCUP_TOTAL.camara6 + OCUP_TOTAL.camara7 + OCUP_TOTAL.camara8
-                  const totalVaz = r.camara6_vazias + r.camara7_vazias + r.camara8_vazias
-                  const totalOcup = totalPos - totalVaz
-                  const percOcup = totalPos > 0 ? (totalOcup / totalPos) * 100 : 0
-                  return (
-                    <tr key={r.id}>
-                      <td style={td}>{formatDataBr(r.data_registro)}</td>
-                      <td style={td}>{r.conferente_nome}</td>
-                      <td style={td}>{r.camara6_vazias}</td>
-                      <td style={td}>{r.camara7_vazias}</td>
-                      <td style={td}>{r.camara8_vazias}</td>
-                      <td style={{ ...td, color: '#6ee7b7', fontWeight: 600 }}>{totalVaz}</td>
-                      <td style={td}>{totalOcup}</td>
-                      <td style={td}>{percOcup.toFixed(0)}%</td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+          <div style={{ borderTop: '1px solid rgba(255,255,255,.08)', paddingTop: 8, marginTop: 4 }} />
+
+          <div
+            style={{
+              fontSize: 13,
+              fontWeight: 700,
+              color: '#fdba74',
+              letterSpacing: '0.06em',
+              textTransform: 'uppercase',
+            }}
+          >
+            Ocupação — avaria (câmaras 6, 7 e 8)
           </div>
+          <OcupacaoCamaras678Secao
+            variant="avaria"
+            labels={{
+              resumo: 'Resumo do dia (avaria)',
+              form: 'Lançar ocupação de avaria (informe as posições vazias nas câmaras 6, 7 e 8)',
+              tabela: 'Últimos lançamentos — ocupação avaria',
+              emptyHint:
+                'ainda não há lançamentos de avaria. Se necessário, rode o SQL create_contagem_ocupacao_avaria_camaras.sql no Supabase. Preencha o formulário abaixo e salve.',
+            }}
+            resumoDia={avResumoDiaSalvo}
+            resumoRascunho={avResumoAtual}
+            rows={avRows}
+            conferenteId={avConferenteId}
+            setConferenteId={setAvConferenteId}
+            dataYmd={avData}
+            setDataYmd={setAvData}
+            v6={avVazias6}
+            setV6={setAvVazias6}
+            v7={avVazias7}
+            setV7={setAvVazias7}
+            v8={avVazias8}
+            setV8={setAvVazias8}
+            onSalvar={salvarOcupacaoAvaria}
+            loading={loading}
+            conferentesLoading={conferentesLoading}
+            conferentes={conferentes}
+          />
         </div>
       )}
     </div>
   )
-}
-
-const th: CSSProperties = {
-  textAlign: 'left',
-  padding: '8px 10px',
-  borderBottom: '1px solid var(--border, #2e303a)',
-  fontSize: 13,
-}
-
-const td: CSSProperties = {
-  padding: '8px 10px',
-  borderBottom: '1px solid var(--border, #2e303a)',
-  fontSize: 13,
 }
