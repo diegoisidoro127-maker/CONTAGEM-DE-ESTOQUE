@@ -33,6 +33,33 @@ const OCUP_TOTAL = {
   camara13: 140,
 } as const
 
+const OCUP_TOTAL_POSICOES = OCUP_TOTAL.camara11 + OCUP_TOTAL.camara12 + OCUP_TOTAL.camara13
+
+function ocupPercGeral(r: OcupRow): number {
+  const totalVaz = r.camara11_vazias + r.camara12_vazias + r.camara13_vazias
+  const totalOcup = OCUP_TOTAL_POSICOES - totalVaz + r.avaria_acrescimo_ocupacao
+  return OCUP_TOTAL_POSICOES > 0 ? (totalOcup / OCUP_TOTAL_POSICOES) * 100 : 0
+}
+
+function ocupPercCam11(r: OcupRow): number {
+  const c = OCUP_TOTAL.camara11
+  return c > 0 ? ((c - r.camara11_vazias) / c) * 100 : 0
+}
+
+function ocupPercCam12(r: OcupRow): number {
+  const c = OCUP_TOTAL.camara12
+  return c > 0 ? ((c - r.camara12_vazias) / c) * 100 : 0
+}
+
+function ocupPercCam13(r: OcupRow): number {
+  const c = OCUP_TOTAL.camara13
+  return c > 0 ? ((c - r.camara13_vazias) / c) * 100 : 0
+}
+
+function ocupAvariaPercTotal(r: OcupRow): number {
+  return OCUP_TOTAL_POSICOES > 0 ? (r.avaria_acrescimo_ocupacao / OCUP_TOTAL_POSICOES) * 100 : 0
+}
+
 /** Linhas por página nos históricos (temperatura e ocupação). */
 const HIST_PAGE_SIZE = 5
 
@@ -180,16 +207,24 @@ const chartCardStyle: CSSProperties = {
   boxShadow: '0 8px 32px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.05)',
 }
 
-function TinyLineChart({
+function TinyLineChart<T extends { data_registro: string }>({
   title,
   color,
   rows,
   valueOf,
+  valueSuffix = '°C',
+  decimals = 1,
+  axisCaption,
 }: {
   title: string
   color: string
-  rows: TempRow[]
-  valueOf: (r: TempRow) => number
+  rows: T[]
+  valueOf: (r: T) => number
+  /** Sufixo nos eixos e no rodapé (ex.: °C, %, pos.). */
+  valueSuffix?: string
+  decimals?: number
+  /** Texto curto no canto do gráfico; default = valueSuffix. */
+  axisCaption?: string
 }) {
   const uid = useId().replace(/:/g, '')
   const gradId = `tgrad-${uid}`
@@ -202,6 +237,9 @@ function TinyLineChart({
   const innerW = width - padL - padR
   const innerH = height - padT - padB
   const bottomY = padT + innerH
+
+  const capAxis = axisCaption ?? valueSuffix
+  const fmt = (v: number) => v.toFixed(decimals)
 
   const geom = useMemo(() => {
     const values = rows.map(valueOf)
@@ -288,7 +326,8 @@ function TinyLineChart({
                 fontSize={11}
                 fontFamily="system-ui, sans-serif"
               >
-                {t.v.toFixed(1)}°C
+                {fmt(t.v)}
+                {valueSuffix}
               </text>
             ))}
             <line
@@ -314,7 +353,7 @@ function TinyLineChart({
               fontSize={10}
               fontFamily="system-ui, sans-serif"
             >
-              °C
+              {capAxis}
             </text>
             {geom.xLabels.map((xl, i) => (
               <text
@@ -345,15 +384,24 @@ function TinyLineChart({
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', maxWidth: 220, gap: 12 }}>
               <span>Min.</span>
-              <strong style={{ color: '#e2e8f0', fontVariantNumeric: 'tabular-nums' }}>{geom.min.toFixed(1)} °C</strong>
+              <strong style={{ color: '#e2e8f0', fontVariantNumeric: 'tabular-nums' }}>
+                {fmt(geom.min)}
+                {valueSuffix}
+              </strong>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', maxWidth: 220, gap: 12 }}>
               <span>Máx.</span>
-              <strong style={{ color: '#e2e8f0', fontVariantNumeric: 'tabular-nums' }}>{geom.max.toFixed(1)} °C</strong>
+              <strong style={{ color: '#e2e8f0', fontVariantNumeric: 'tabular-nums' }}>
+                {fmt(geom.max)}
+                {valueSuffix}
+              </strong>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', maxWidth: 220, gap: 12 }}>
               <span>Média</span>
-              <strong style={{ color: '#e2e8f0', fontVariantNumeric: 'tabular-nums' }}>{geom.avg.toFixed(1)} °C</strong>
+              <strong style={{ color: '#e2e8f0', fontVariantNumeric: 'tabular-nums' }}>
+                {fmt(geom.avg)}
+                {valueSuffix}
+              </strong>
             </div>
           </div>
         </>
@@ -1408,6 +1456,9 @@ export default function ContagemDiariaAmbiental() {
     return { r, totalPos, totalVaz, totalOcup, percOcup, percLivre }
   }, [ocupRows])
 
+  /** Ordem cronológica para eixo X dos gráficos (mais antigo → mais recente). */
+  const ocupRowsChrono = useMemo(() => [...ocupRows].reverse(), [ocupRows])
+
   return (
     <div style={{ maxWidth: 1360, margin: '0 auto', padding: '0 16px 22px', width: '100%', boxSizing: 'border-box' }}>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
@@ -1564,6 +1615,92 @@ export default function ContagemDiariaAmbiental() {
           >
             Ocupação (câmaras 11, 12 e 13)
           </div>
+
+          <div
+            style={{
+              fontSize: 12,
+              fontWeight: 700,
+              color: '#7dd3fc',
+              letterSpacing: '0.04em',
+              textTransform: 'uppercase',
+            }}
+          >
+            Evolução nos lançamentos
+          </div>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+              gap: 12,
+            }}
+          >
+            <div style={{ gridColumn: '1 / -1' }}>
+              <TinyLineChart
+                title="% Ocupada geral (11+12+13, inclui avaria)"
+                color="#38bdf8"
+                rows={ocupRowsChrono}
+                valueOf={ocupPercGeral}
+                valueSuffix="%"
+                decimals={1}
+                axisCaption="%"
+              />
+            </div>
+            <TinyLineChart
+              title="% Ocupada — Câmara 11"
+              color="#22c55e"
+              rows={ocupRowsChrono}
+              valueOf={ocupPercCam11}
+              valueSuffix="%"
+              decimals={1}
+              axisCaption="%"
+            />
+            <TinyLineChart
+              title="% Ocupada — Câmara 12"
+              color="#38bdf8"
+              rows={ocupRowsChrono}
+              valueOf={ocupPercCam12}
+              valueSuffix="%"
+              decimals={1}
+              axisCaption="%"
+            />
+            <TinyLineChart
+              title="% Ocupada — Câmara 13"
+              color="#f59e0b"
+              rows={ocupRowsChrono}
+              valueOf={ocupPercCam13}
+              valueSuffix="%"
+              decimals={1}
+              axisCaption="%"
+            />
+            <div
+              style={{
+                gridColumn: '1 / -1',
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+                gap: 12,
+              }}
+            >
+              <TinyLineChart
+                title="Avaria — quantidade (posições)"
+                color="#fb923c"
+                rows={ocupRowsChrono}
+                valueOf={(r) => r.avaria_acrescimo_ocupacao}
+                valueSuffix=" pos."
+                decimals={0}
+                axisCaption="pos."
+              />
+              <TinyLineChart
+                title="Avaria — % do total de posições"
+                color="#fdba74"
+                rows={ocupRowsChrono}
+                valueOf={ocupAvariaPercTotal}
+                valueSuffix="%"
+                decimals={1}
+                axisCaption="%"
+              />
+            </div>
+          </div>
+
           <OcupacaoCamaras111213Secao
             labels={{
               resumo: 'Resumo do dia',
