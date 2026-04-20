@@ -60,9 +60,12 @@ function formatHoraRegistro(iso: string) {
   return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 }
 
-function formatAxisDateShort(ymd: string) {
-  if (!ymd || ymd.length < 10) return ''
-  return `${ymd.slice(8, 10)}/${ymd.slice(5, 7)}`
+/** Data no eixo dos gráficos: dd/mm/aaaa (aproveita o mesmo formato do restante da tela). */
+function formatAxisDateChart(ymd: string) {
+  if (!ymd) return ''
+  if (/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return formatDataBr(ymd)
+  if (ymd.length >= 10) return `${ymd.slice(8, 10)}/${ymd.slice(5, 7)}/${ymd.slice(0, 4)}`
+  return ymd
 }
 
 /** Curva suave tipo Catmull-Rom → cúbicas de Bézier. */
@@ -89,6 +92,7 @@ function smoothLinePath(points: { x: number; y: number }[]): string {
 const chartCardStyle: CSSProperties = {
   borderRadius: 14,
   padding: 12,
+  minWidth: 0,
   background: 'linear-gradient(165deg, rgba(36,38,48,.95) 0%, rgba(24,25,32,.98) 100%)',
   border: '1px solid rgba(255,255,255,.07)',
   boxShadow: '0 8px 32px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.05)',
@@ -107,12 +111,12 @@ function TinyLineChart({
 }) {
   const uid = useId().replace(/:/g, '')
   const gradId = `tgrad-${uid}`
-  const width = 380
-  const height = 210
-  const padL = 46
-  const padR = 12
+  const width = 520
+  const height = 218
+  const padL = 48
+  const padR = 14
   const padT = 16
-  const padB = 34
+  const padB = 40
   const innerW = width - padL - padR
   const innerH = height - padT - padB
   const bottomY = padT + innerH
@@ -138,7 +142,7 @@ function TinyLineChart({
       n <= 1 ? [0] : n === 2 ? [0, 1] : [0, Math.floor((n - 1) / 3), Math.floor((2 * (n - 1)) / 3), n - 1]
     const xLabels = [...new Set(xIdx)]
       .sort((a, b) => a - b)
-      .map((i) => ({ x: xAt(i), text: formatAxisDateShort(rows[i].data_registro) }))
+      .map((i) => ({ x: xAt(i), text: formatAxisDateChart(rows[i].data_registro) }))
     const avg = values.reduce((a, b) => a + b, 0) / values.length
     return { lineD, areaD, yTicks, xLabels, min, max, avg }
   }, [rows, valueOf, innerW, innerH, padL, padT, bottomY])
@@ -214,10 +218,10 @@ function TinyLineChart({
               <text
                 key={`xl-${i}`}
                 x={xl.x}
-                y={height - 10}
+                y={height - 8}
                 textAnchor="middle"
                 fill="#64748b"
-                fontSize={10}
+                fontSize={9}
                 fontFamily="system-ui, sans-serif"
               >
                 {xl.text}
@@ -226,23 +230,23 @@ function TinyLineChart({
           </svg>
           <div
             style={{
-              display: 'flex',
-              gap: 14,
-              flexWrap: 'wrap',
+              display: 'grid',
+              gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+              gap: 8,
               marginTop: 12,
-              fontSize: 12,
+              fontSize: 11,
               color: 'var(--text, #9ca3af)',
-              paddingTop: 4,
+              paddingTop: 8,
               borderTop: '1px solid rgba(255,255,255,.06)',
             }}
           >
-            <span>
+            <span style={{ textAlign: 'center' }}>
               Min: <strong style={{ color: '#e2e8f0' }}>{geom.min.toFixed(1)}°C</strong>
             </span>
-            <span>
+            <span style={{ textAlign: 'center' }}>
               Max: <strong style={{ color: '#e2e8f0' }}>{geom.max.toFixed(1)}°C</strong>
             </span>
-            <span>
+            <span style={{ textAlign: 'center' }}>
               Média: <strong style={{ color: '#e2e8f0' }}>{geom.avg.toFixed(1)}°C</strong>
             </span>
           </div>
@@ -260,12 +264,12 @@ const COMBINED_SERIES = [
 
 function CombinedTempChart({ rows }: { rows: TempRow[] }) {
   const uid = useId().replace(/:/g, '')
-  const width = 680
-  const height = 248
-  const padL = 50
-  const padR = 14
+  const width = 1100
+  const height = 268
+  const padL = 52
+  const padR = 16
   const padT = 18
-  const padB = 36
+  const padB = 42
   const innerW = width - padL - padR
   const innerH = height - padT - padB
   const bottomY = padT + innerH
@@ -298,12 +302,12 @@ function CombinedTempChart({ rows }: { rows: TempRow[] }) {
       n <= 1 ? [0] : n === 2 ? [0, 1] : [0, Math.floor((n - 1) / 3), Math.floor((2 * (n - 1)) / 3), n - 1]
     const xLabels = [...new Set(xIdx)]
       .sort((a, b) => a - b)
-      .map((i) => ({ x: xAt(i), text: formatAxisDateShort(rows[i].data_registro) }))
+      .map((i) => ({ x: xAt(i), text: formatAxisDateChart(rows[i].data_registro) }))
     return { seriesPaths, yTicks, xLabels, min, max }
   }, [rows, innerW, innerH, padL, padT, bottomY, uid])
 
   return (
-    <div style={{ ...chartCardStyle, gridColumn: '1 / -1' }}>
+    <div style={chartCardStyle}>
       <div
         style={{
           fontWeight: 700,
@@ -400,10 +404,10 @@ function CombinedTempChart({ rows }: { rows: TempRow[] }) {
               <text
                 key={`cxl-${i}`}
                 x={xl.x}
-                y={height - 12}
+                y={height - 10}
                 textAnchor="middle"
                 fill="#64748b"
-                fontSize={10}
+                fontSize={9}
                 fontFamily="system-ui, sans-serif"
               >
                 {xl.text}
@@ -633,7 +637,7 @@ export default function ContagemDiariaAmbiental() {
   }, [ocupRows])
 
   return (
-    <div style={{ maxWidth: 1100, margin: '0 auto', padding: '0 14px 18px' }}>
+    <div style={{ maxWidth: 1360, margin: '0 auto', padding: '0 16px 22px', width: '100%', boxSizing: 'border-box' }}>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
         <button
           type="button"
@@ -725,12 +729,12 @@ export default function ContagemDiariaAmbiental() {
             </button>
           </div>
 
-          <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))' }}>
+          <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(3, minmax(0, 1fr))' }}>
             <TinyLineChart title="Câmara 11" color="#22c55e" rows={tempRows} valueOf={(r) => r.camara11_temp} />
             <TinyLineChart title="Câmara 12" color="#38bdf8" rows={tempRows} valueOf={(r) => r.camara12_temp} />
             <TinyLineChart title="Câmara 13" color="#f59e0b" rows={tempRows} valueOf={(r) => r.camara13_temp} />
-            <CombinedTempChart rows={tempRows} />
           </div>
+          <CombinedTempChart rows={tempRows} />
 
           <div style={{ border: '1px solid var(--border, #2e303a)', borderRadius: 12, padding: 12, overflowX: 'auto' }}>
             <div style={{ fontWeight: 700, marginBottom: 10, color: '#22c55e' }}>Histórico de registros (temperatura)</div>
