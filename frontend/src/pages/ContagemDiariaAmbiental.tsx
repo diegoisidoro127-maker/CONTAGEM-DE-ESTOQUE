@@ -778,6 +778,15 @@ function OcupacaoCamaras111213Secao({
   conferentes: Conferente[]
 }) {
   const t = TEMA_OCP
+  const inOcupNum: CSSProperties = {
+    width: '100%',
+    boxSizing: 'border-box',
+    padding: '5px 10px',
+    borderRadius: 6,
+    minHeight: 30,
+    fontSize: 14,
+    lineHeight: 1.25,
+  }
   const [histPage, setHistPage] = useState(1)
   useEffect(() => {
     setHistPage(1)
@@ -1023,14 +1032,15 @@ function OcupacaoCamaras111213Secao({
             <input type="date" value={dataYmd} onChange={(e) => setDataYmd(e.target.value)} />
           </label>
         </div>
-        <div style={{ marginTop: 12 }}>
+        <div style={{ marginTop: 10 }}>
           <div
             style={{
-              fontSize: 12,
+              fontSize: 11,
               fontWeight: 600,
               color: '#94a3b8',
-              marginBottom: 8,
-              letterSpacing: '0.02em',
+              marginBottom: 6,
+              letterSpacing: '0.04em',
+              textTransform: 'uppercase',
             }}
           >
             Vagas vazias e avaria
@@ -1039,88 +1049,41 @@ function OcupacaoCamaras111213Secao({
             style={{
               display: 'grid',
               gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
-              gap: 12,
+              gap: '8px 10px',
               width: '100%',
-              maxWidth: 'min(720px, 100%)',
+              alignItems: 'end',
             }}
           >
-            <label style={{ display: 'grid', gap: 6, minWidth: 0, alignContent: 'start' }}>
-              <span style={{ fontSize: 13, lineHeight: 1.3 }}>Câmara 11 — vazias</span>
-              <input
-                value={v11}
-                onChange={(e) => setV11(e.target.value)}
-                type="number"
-                min="0"
-                style={{
-                  width: '100%',
-                  maxWidth: '100%',
-                  boxSizing: 'border-box',
-                  padding: '10px 12px',
-                  borderRadius: 8,
-                  minHeight: 42,
-                }}
-              />
+            <label style={{ display: 'grid', gap: 4, minWidth: 0, alignContent: 'start' }}>
+              <span style={{ fontSize: 12, lineHeight: 1.25, color: '#cbd5e1' }}>Câm. 11 — vazias</span>
+              <input value={v11} onChange={(e) => setV11(e.target.value)} type="number" min="0" style={inOcupNum} />
             </label>
-            <label style={{ display: 'grid', gap: 6, minWidth: 0, alignContent: 'start' }}>
-              <span style={{ fontSize: 13, lineHeight: 1.3 }}>Câmara 12 — vazias</span>
-              <input
-                value={v12}
-                onChange={(e) => setV12(e.target.value)}
-                type="number"
-                min="0"
-                style={{
-                  width: '100%',
-                  maxWidth: '100%',
-                  boxSizing: 'border-box',
-                  padding: '10px 12px',
-                  borderRadius: 8,
-                  minHeight: 42,
-                }}
-              />
+            <label style={{ display: 'grid', gap: 4, minWidth: 0, alignContent: 'start' }}>
+              <span style={{ fontSize: 12, lineHeight: 1.25, color: '#cbd5e1' }}>Câm. 12 — vazias</span>
+              <input value={v12} onChange={(e) => setV12(e.target.value)} type="number" min="0" style={inOcupNum} />
             </label>
-            <label style={{ display: 'grid', gap: 6, minWidth: 0, alignContent: 'start' }}>
-              <span style={{ fontSize: 13, lineHeight: 1.3 }}>Câmara 13 — vazias</span>
-              <input
-                value={v13}
-                onChange={(e) => setV13(e.target.value)}
-                type="number"
-                min="0"
-                style={{
-                  width: '100%',
-                  maxWidth: '100%',
-                  boxSizing: 'border-box',
-                  padding: '10px 12px',
-                  borderRadius: 8,
-                  minHeight: 42,
-                }}
-              />
+            <label style={{ display: 'grid', gap: 4, minWidth: 0, alignContent: 'start' }}>
+              <span style={{ fontSize: 12, lineHeight: 1.25, color: '#cbd5e1' }}>Câm. 13 — vazias</span>
+              <input value={v13} onChange={(e) => setV13(e.target.value)} type="number" min="0" style={inOcupNum} />
             </label>
-            <label style={{ display: 'grid', gap: 6, minWidth: 0, alignContent: 'start' }}>
-              <span style={{ fontSize: 13, lineHeight: 1.3, color: t.avariaDestaque }}>Avaria — acréscimo</span>
+            <label style={{ display: 'grid', gap: 4, minWidth: 0, alignContent: 'start' }}>
+              <span style={{ fontSize: 12, lineHeight: 1.25, color: t.avariaDestaque }}>Avaria — acréscimo</span>
               <input
                 value={vAvaria}
                 onChange={(e) => setVAvaria(e.target.value)}
                 type="number"
                 min="0"
                 placeholder="0"
-                style={{
-                  width: '100%',
-                  maxWidth: '100%',
-                  boxSizing: 'border-box',
-                  padding: '10px 12px',
-                  borderRadius: 8,
-                  minHeight: 42,
-                }}
+                style={inOcupNum}
               />
             </label>
           </div>
           <p
             style={{
-              fontSize: 11,
+              fontSize: 10,
               color: '#64748b',
-              margin: '10px 0 0',
-              maxWidth: 'min(720px, 100%)',
-              lineHeight: 1.45,
+              margin: '8px 0 0',
+              lineHeight: 1.4,
             }}
           >
             O valor de <strong style={{ color: t.avariaDestaque }}>Avaria</strong> soma-se ao total de ocupadas no mesmo
