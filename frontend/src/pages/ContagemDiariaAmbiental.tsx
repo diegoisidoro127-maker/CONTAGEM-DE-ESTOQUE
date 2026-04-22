@@ -344,6 +344,13 @@ function useScrollChartModalToEnd(active: boolean, contentKey: string, container
   }, [active, contentKey])
 }
 
+/** Tooltip acima do gráfico: evita corte nas bordas (pxPct = % da largura do SVG). */
+function chartTooltipOuterStyle(pxPct: number): Pick<CSSProperties, 'left' | 'right' | 'transform'> {
+  if (pxPct >= 74) return { left: 'auto', right: 6, transform: 'none' }
+  if (pxPct <= 26) return { left: 6, transform: 'none' }
+  return { left: `${pxPct}%`, transform: 'translateX(-50%)' }
+}
+
 type TinyChartLayout = {
   width: number
   height: number
@@ -440,7 +447,8 @@ function buildTinyLineGeom<T extends { data_registro: string }>(
 }
 
 const TINY_LAYOUT_CARD: TinyChartLayout = { width: 520, height: 218, padL: 48, padR: 14, padT: 16, padB: 44 }
-const TINY_LAYOUT_MODAL: TinyChartLayout = { width: 1080, height: 440, padL: 64, padR: 24, padT: 26, padB: 68 }
+/** Largura/pad direito maiores no modal: área útil igual ao card, sobra margem para rótulos e tooltip. */
+const TINY_LAYOUT_MODAL: TinyChartLayout = { width: 1140, height: 440, padL: 64, padR: 84, padT: 26, padB: 76 }
 
 function TinyLineChart<T extends { data_registro: string }>({
   title,
@@ -547,6 +555,7 @@ function TinyLineChart<T extends { data_registro: string }>({
             ref={modalScrollRef}
             style={{
               ...chartCardStyle,
+              padding: '12px 28px 22px 12px',
               width: 'min(1180px, 96vw)',
               maxHeight: '92vh',
               overflow: 'auto',
@@ -586,13 +595,12 @@ function TinyLineChart<T extends { data_registro: string }>({
                     <div
                       style={{
                         position: 'absolute',
-                        left: `${tip.pxPct}%`,
                         top: 4,
-                        transform: 'translateX(-50%)',
+                        ...chartTooltipOuterStyle(tip.pxPct),
                         zIndex: 2,
                         pointerEvents: 'none',
                         minWidth: 200,
-                        maxWidth: 300,
+                        maxWidth: 320,
                         padding: '10px 12px',
                         borderRadius: 12,
                         background: 'rgba(15,23,42,.96)',
@@ -866,13 +874,12 @@ function TinyLineChart<T extends { data_registro: string }>({
               <div
                 style={{
                   position: 'absolute',
-                  left: `${tip.pxPct}%`,
                   top: 4,
-                  transform: 'translateX(-50%)',
+                  ...chartTooltipOuterStyle(tip.pxPct),
                   zIndex: 2,
                   pointerEvents: 'none',
                   minWidth: 200,
-                  maxWidth: 280,
+                  maxWidth: 300,
                   padding: '10px 12px',
                   borderRadius: 12,
                   background: 'rgba(15,23,42,.96)',
@@ -1174,7 +1181,7 @@ type CombTempLayout = {
 }
 
 const COMB_TEMP_LAYOUT_CARD: CombTempLayout = { width: 1100, height: 278, padL: 54, padR: 18, padT: 20, padB: 48 }
-const COMB_TEMP_LAYOUT_MODAL: CombTempLayout = { width: 1240, height: 400, padL: 60, padR: 22, padT: 24, padB: 68 }
+const COMB_TEMP_LAYOUT_MODAL: CombTempLayout = { width: 1300, height: 400, padL: 60, padR: 82, padT: 24, padB: 76 }
 
 function buildCombinedTempChartModel(
   rows: TempRow[],
@@ -1315,7 +1322,8 @@ function CombinedTempChart({ rows }: { rows: TempRow[] }) {
             ref={combTempModalScrollRef}
             style={{
               ...chartCardStyle,
-              width: 'min(1240px, 98vw)',
+              padding: '12px 28px 22px 12px',
+              width: 'min(1320px, 98vw)',
               maxHeight: '94vh',
               overflow: 'auto',
               border: '1px solid rgba(52,211,153,.35)',
@@ -1397,12 +1405,12 @@ function CombinedTempChart({ rows }: { rows: TempRow[] }) {
                 <div
                   style={{
                     position: 'absolute',
-                    left: `${tip.pxPct}%`,
                     top: 6,
-                    transform: 'translateX(-50%)',
+                    ...chartTooltipOuterStyle(tip.pxPct),
                     zIndex: 2,
                     pointerEvents: 'none',
                     minWidth: 220,
+                    maxWidth: 340,
                     padding: '10px 14px',
                     borderRadius: 12,
                     background: 'rgba(15,23,42,.94)',
@@ -1733,12 +1741,12 @@ function CombinedTempChart({ rows }: { rows: TempRow[] }) {
               <div
                 style={{
                   position: 'absolute',
-                  left: `${tip.pxPct}%`,
                   top: 6,
-                  transform: 'translateX(-50%)',
+                  ...chartTooltipOuterStyle(tip.pxPct),
                   zIndex: 2,
                   pointerEvents: 'none',
                   minWidth: 200,
+                  maxWidth: 320,
                   padding: '10px 14px',
                   borderRadius: 12,
                   background: 'rgba(15,23,42,.94)',
@@ -1974,7 +1982,7 @@ const COMBINED_OCP_SERIES = [
 ] as const
 
 const COMB_OCP_LAYOUT_CARD: CombTempLayout = { width: 1100, height: 292, padL: 54, padR: 18, padT: 20, padB: 50 }
-const COMB_OCP_LAYOUT_MODAL: CombTempLayout = { width: 1240, height: 410, padL: 60, padR: 22, padT: 24, padB: 72 }
+const COMB_OCP_LAYOUT_MODAL: CombTempLayout = { width: 1300, height: 410, padL: 60, padR: 82, padT: 24, padB: 80 }
 
 function buildCombinedOcupChartModel(
   rows: OcupRow[],
@@ -2117,10 +2125,10 @@ function CombinedOcupacaoChart({ rows }: { rows: OcupRow[] }) {
             ref={combOcpModalScrollRef}
             style={{
               ...chartCardStyle,
-              width: 'min(1240px, 98vw)',
+              width: 'min(1320px, 98vw)',
               maxHeight: '94vh',
               overflow: 'auto',
-              padding: 16,
+              padding: '16px 28px 24px 16px',
               border: '1px solid rgba(56,189,248,.4)',
               boxShadow: '0 22px 70px rgba(0,0,0,.55)',
             }}
@@ -2211,12 +2219,12 @@ function CombinedOcupacaoChart({ rows }: { rows: OcupRow[] }) {
                 <div
                   style={{
                     position: 'absolute',
-                    left: `${tip.pxPct}%`,
                     top: 6,
-                    transform: 'translateX(-50%)',
+                    ...chartTooltipOuterStyle(tip.pxPct),
                     zIndex: 2,
                     pointerEvents: 'none',
                     minWidth: 240,
+                    maxWidth: 360,
                     padding: '12px 14px',
                     borderRadius: 12,
                     background: 'rgba(15,23,42,.96)',
@@ -2568,12 +2576,12 @@ function CombinedOcupacaoChart({ rows }: { rows: OcupRow[] }) {
               <div
                 style={{
                   position: 'absolute',
-                  left: `${tip.pxPct}%`,
                   top: 6,
-                  transform: 'translateX(-50%)',
+                  ...chartTooltipOuterStyle(tip.pxPct),
                   zIndex: 2,
                   pointerEvents: 'none',
                   minWidth: 240,
+                  maxWidth: 360,
                   padding: '12px 14px',
                   borderRadius: 12,
                   background: 'rgba(15,23,42,.96)',
@@ -3101,24 +3109,41 @@ function OcupacaoCamaras111213Secao({
               >
                 <div style={{ textAlign: 'center' }}>
                   <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                    Posições ocupadas (físico)
+                    Posições ocupadas (c/ avaria)
                   </div>
                   <div style={{ fontSize: 22, fontWeight: 800, color: '#f8fafc', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
-                    {resumoDia.totalOcupFisico}
+                    {resumoDia.totalOcup}
                   </div>
                 </div>
                 <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.05em' }}>% Ocupada</div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    % Ocupada (c/ avaria)
+                  </div>
                   <div style={{ fontSize: 26, fontWeight: 800, color: t.kpiOcupValor, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
-                    {resumoDia.percOcupFisico.toFixed(1)}%
+                    {resumoDia.percOcup.toFixed(1)}%
                   </div>
                 </div>
               </div>
+              <div
+                style={{
+                  fontSize: 11,
+                  color: '#64748b',
+                  textAlign: 'center',
+                  marginTop: 8,
+                  lineHeight: 1.4,
+                }}
+              >
+                Ocupação <strong style={{ color: '#94a3b8' }}>física</strong> (só vagas ocupadas, sem avaria):{' '}
+                <strong style={{ color: '#cbd5e1', fontVariantNumeric: 'tabular-nums' }}>{resumoDia.totalOcupFisico}</strong> pos. ·{' '}
+                <strong style={{ color: '#cbd5e1', fontVariantNumeric: 'tabular-nums' }}>{resumoDia.percOcupFisico.toFixed(1)}%</strong>
+                {' — '}
+                <span style={{ color: '#64748b' }}>
+                  com a física, <strong style={{ color: '#94a3b8' }}>% ocupada + % livre = 100%</strong> sobre as{' '}
+                  <strong style={{ color: '#94a3b8' }}>{resumoDia.totalPos}</strong> pos.
+                </span>
+              </div>
               <div style={{ fontSize: 10, color: '#64748b', lineHeight: 1.35, marginTop: 6 }}>
-                Base: <strong style={{ color: '#94a3b8' }}>{resumoDia.totalPos}</strong> pos. (câm. 11+12+13).{' '}
-                <strong style={{ color: '#94a3b8' }}>% ocupada + % livre = 100%</strong> (ocupação física vs vagas vazias). Com acréscimo de avaria no mesmo lançamento:{' '}
-                <strong style={{ color: '#94a3b8' }}>{resumoDia.totalOcup}</strong> pos. (
-                {resumoDia.percOcup.toFixed(1)}% sobre a mesma base — indicador à parte, ver painel Avaria).
+                Detalhe do acréscimo por avaria no painel <strong style={{ color: '#fdba74' }}>Avaria</strong> abaixo.
               </div>
             </div>
 
