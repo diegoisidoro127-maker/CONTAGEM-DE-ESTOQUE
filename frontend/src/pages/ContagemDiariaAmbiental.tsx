@@ -814,9 +814,6 @@ function TinyLineChart<T extends { data_registro: string }>({
                 </div>
                 <div
                   style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-                    gap: 10,
                     marginTop: 14,
                     paddingTop: 12,
                     borderTop: '1px solid rgba(255,255,255,.1)',
@@ -824,28 +821,37 @@ function TinyLineChart<T extends { data_registro: string }>({
                     color: '#94a3b8',
                   }}
                 >
-                  <div>
-                    <span style={{ color: '#64748b' }}>Mín.</span>{' '}
-                    <strong style={{ color: '#e2e8f0', fontVariantNumeric: 'tabular-nums' }}>
-                      {fmt(geomModal.min)}
-                      {valueSuffix}
-                    </strong>
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+                      gap: 10,
+                      width: '100%',
+                    }}
+                  >
+                    <div style={{ textAlign: 'center', minWidth: 0 }}>
+                      <div style={{ color: '#64748b', fontSize: 11, marginBottom: 4 }}>Mín.</div>
+                      <strong style={{ color: '#e2e8f0', fontVariantNumeric: 'tabular-nums', fontSize: 14 }}>
+                        {fmt(geomModal.min)}
+                        {valueSuffix}
+                      </strong>
+                    </div>
+                    <div style={{ textAlign: 'center', minWidth: 0 }}>
+                      <div style={{ color: '#64748b', fontSize: 11, marginBottom: 4 }}>Máx.</div>
+                      <strong style={{ color: '#e2e8f0', fontVariantNumeric: 'tabular-nums', fontSize: 14 }}>
+                        {fmt(geomModal.max)}
+                        {valueSuffix}
+                      </strong>
+                    </div>
+                    <div style={{ textAlign: 'center', minWidth: 0 }}>
+                      <div style={{ color: '#64748b', fontSize: 11, marginBottom: 4 }}>Média</div>
+                      <strong style={{ color: '#e2e8f0', fontVariantNumeric: 'tabular-nums', fontSize: 14 }}>
+                        {fmt(geomModal.avg)}
+                        {valueSuffix}
+                      </strong>
+                    </div>
                   </div>
-                  <div>
-                    <span style={{ color: '#64748b' }}>Máx.</span>{' '}
-                    <strong style={{ color: '#e2e8f0', fontVariantNumeric: 'tabular-nums' }}>
-                      {fmt(geomModal.max)}
-                      {valueSuffix}
-                    </strong>
-                  </div>
-                  <div>
-                    <span style={{ color: '#64748b' }}>Média</span>{' '}
-                    <strong style={{ color: '#e2e8f0', fontVariantNumeric: 'tabular-nums' }}>
-                      {fmt(geomModal.avg)}
-                      {valueSuffix}
-                    </strong>
-                  </div>
-                  <div style={{ color: '#64748b' }}>
+                  <div style={{ color: '#64748b', marginTop: 12, textAlign: 'center' }}>
                     {rows.length} ponto(s) no período
                   </div>
                 </div>
@@ -1102,7 +1108,7 @@ function TinyLineChart<T extends { data_registro: string }>({
             <div
               style={{
                 display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 140px), 1fr))',
+                gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
                 gap: 10,
                 width: '100%',
               }}
