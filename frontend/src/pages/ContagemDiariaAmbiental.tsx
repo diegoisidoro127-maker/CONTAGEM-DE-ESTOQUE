@@ -2914,16 +2914,51 @@ function OcupacaoCamaras111213Secao({
         >
           <div
             style={{
-              fontSize: 9,
-              fontWeight: 700,
-              textTransform: 'uppercase',
-              letterSpacing: '0.12em',
-              color: t.tituloResumo,
+              display: 'grid',
+              gridTemplateColumns: 'minmax(0, 1fr) auto minmax(0, 1fr)',
+              alignItems: 'start',
+              gap: 8,
               marginBottom: 1,
-              textAlign: 'center',
             }}
           >
-            {labels.resumo}
+            <div style={{ justifySelf: 'start' }}>
+              <div
+                style={{
+                  fontSize: 9,
+                  color: '#64748b',
+                  marginBottom: 2,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.06em',
+                }}
+              >
+                Total de posições
+              </div>
+              <div
+                style={{
+                  fontSize: 'clamp(16px, 2.8vw, 20px)',
+                  fontWeight: 800,
+                  color: '#f8fafc',
+                  lineHeight: 1.05,
+                  fontVariantNumeric: 'tabular-nums',
+                }}
+              >
+                {resumoDia.totalPos}
+              </div>
+            </div>
+            <div
+              style={{
+                fontSize: 9,
+                fontWeight: 700,
+                textTransform: 'uppercase',
+                letterSpacing: '0.12em',
+                color: t.tituloResumo,
+                textAlign: 'center',
+                paddingTop: 2,
+              }}
+            >
+              {labels.resumo}
+            </div>
+            <div />
           </div>
           <div style={{ fontSize: 9, color: '#64748b', textAlign: 'center', marginBottom: 6, lineHeight: 1.3 }}>
             Último registro salvo (data · horário · conferente)
@@ -3190,7 +3225,39 @@ function OcupacaoCamaras111213Secao({
                   }}
                 >
                   <div style={{ fontWeight: 700, color: t.camTitulo, marginBottom: 1, fontSize: 12 }}>Câmara {c.id}</div>
-                  <div style={{ fontSize: 10, color: '#64748b', marginBottom: 6 }}>{c.cap} posições no total</div>
+                  <div
+                    style={{
+                      marginBottom: 6,
+                      padding: '6px 9px',
+                      borderRadius: 8,
+                      background: 'linear-gradient(135deg, rgba(125,211,252,.14) 0%, rgba(56,189,248,.08) 100%)',
+                      border: '1px solid rgba(125,211,252,.35)',
+                      boxShadow: 'inset 0 1px 0 rgba(255,255,255,.06)',
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontSize: 15,
+                        fontWeight: 800,
+                        color: '#f0f9ff',
+                        fontVariantNumeric: 'tabular-nums',
+                        letterSpacing: '-0.02em',
+                      }}
+                    >
+                      {c.cap}
+                    </span>
+                    <span
+                      style={{
+                        marginLeft: 6,
+                        fontSize: 13,
+                        fontWeight: 700,
+                        color: '#bae6fd',
+                        letterSpacing: '0.02em',
+                      }}
+                    >
+                      posições no total
+                    </span>
+                  </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 6 }}>
                     <span>
                       <span style={{ color: '#6ee7b7' }}>Vazias</span> <strong style={{ color: '#ecfdf5' }}>{c.v}</strong>
