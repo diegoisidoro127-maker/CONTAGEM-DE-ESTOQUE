@@ -190,12 +190,15 @@ type HistoricoContagemItem = {
 }
 
 /**
- * Só `data_contagem` (YMD) — mesmo critério da prévia em ContagemEstoque (`.eq('data_contagem', dia)`).
- * Evita que o histórico / lista de um dia mostrem registros só com `data_hora` que a exclusão por dia não apaga.
+ * Dia civil (YMD) para histórico/lista:
+ * - prioriza `data_contagem` (quando válida)
+ * - fallback para `data_hora_contagem` (legado / migrações antigas)
  */
-function diaYmdSoDataContagemRow(r: Pick<ContagemRow, 'data_contagem'>): string | null {
+function diaYmdSoDataContagemRow(r: Pick<ContagemRow, 'data_contagem' | 'data_hora_contagem'>): string | null {
   const d = r.data_contagem != null ? String(r.data_contagem).slice(0, 10) : ''
-  return /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null
+  if (/^\d{4}-\d{2}-\d{2}$/.test(d)) return d
+  const t = r.data_hora_contagem != null ? String(r.data_hora_contagem).slice(0, 10) : ''
+  return /^\d{4}-\d{2}-\d{2}$/.test(t) ? t : null
 }
 
 function computeMinMaxYmdDataContagemOnly(rows: ContagemRow[]): { minY: string; maxY: string } {
@@ -713,20 +716,22 @@ export default function RelatorioContagem({
       }
 
       if (useSd) {
-        /** Igual à prévia: só linhas com `data_contagem` = dia (sem legado só com `data_hora`). */
-        return fetchAllPaged(() => base().eq('data_contagem', singleDayVal))
+        const startIsoSd = `${singleDayVal}T00:00:00`
+        const endIsoSd = `${singleDayVal}T23:59:59`
+        const [a, b] = await Promise.all([
+          fetchAllPaged(() => base().eq('data_contagem', singleDayVal)),
+          // Fallback legado: registros sem `data_contagem` válida, mas com `data_hora_contagem` no dia.
+          fetchAllPaged(() => base().gte('data_hora_contagem', startIsoSd).lte('data_hora_contagem', endIsoSd)),
+        ])
+        return mergeContagemRowsById(a, b)
       }
 
       const startIso = `${startDate}T00:00:00`
       const endIso = `${endDate}T23:59:59`
       const [a, b] = await Promise.all([
         fetchAllPaged(() => base().gte('data_contagem', startDate).lte('data_contagem', endDate)),
-        fetchAllPaged(() =>
-          base()
-            .is('data_contagem', null)
-            .gte('data_hora_contagem', startIso)
-            .lte('data_hora_contagem', endIso),
-        ),
+        // Fallback legado: inclui linhas com `data_contagem` nula/vazia/inválida, guiando pelo timestamp.
+        fetchAllPaged(() => base().gte('data_hora_contagem', startIso).lte('data_hora_contagem', endIso)),
       ])
       return mergeContagemRowsById(a, b)
     }
