@@ -195,6 +195,12 @@ type AvisoCargaPendente = {
   conferentes: number
 }
 
+type AvisoExportPendente = {
+  diaYmd: string
+  pendencias: number
+  conferentes: number
+}
+
 /**
  * Dia civil (YMD) para histórico/lista:
  * - prioriza `data_contagem` (quando válida)
@@ -356,6 +362,7 @@ export default function RelatorioContagem({
   const [baseExportLoading, setBaseExportLoading] = useState(false)
   const [exportExcelLoading, setExportExcelLoading] = useState(false)
   const [avisoCargaPendente, setAvisoCargaPendente] = useState<AvisoCargaPendente | null>(null)
+  const [avisoExportPendente, setAvisoExportPendente] = useState<AvisoExportPendente | null>(null)
   /** Contagem diária: qual conferente exibir na coluna quantidade/nome (mesma ideia da prévia em Contagem). */
   const [relatorioConferenteFiltroLista, setRelatorioConferenteFiltroLista] = useState<string>('')
 
@@ -1182,10 +1189,10 @@ export default function RelatorioContagem({
         const diaYmd = diaCivilFiltroAtual()
         if (diaYmd) {
           const aviso = await avaliarPendenciasFinalizacaoDia(diaYmd)
-          if (aviso) {
-            setAvisoCargaPendente(aviso)
-            return
-          }
+          // Sempre confirmar no carregamento por dia (pedido do usuário),
+          // mesmo quando a checagem automática não encontrar pendências explícitas.
+          setAvisoCargaPendente(aviso ?? { diaYmd, pendencias: 0, conferentes: 0 })
+          return
         }
       }
       await load({ ignoreHistoricoFilter: true })
@@ -1383,11 +1390,11 @@ export default function RelatorioContagem({
     return aoa
   }
 
-  async function exportToExcel() {
+  async function exportToExcel(opts?: { skipPendenciaCheck?: boolean }) {
     setExportExcelLoading(true)
     setError('')
     try {
-      if (!useInventarioCols && isExportUmDiaCivil) {
+      if (!opts?.skipPendenciaCheck && !useInventarioCols && isExportUmDiaCivil) {
         const diaAlvo = useSingleDay ? singleDay : startDate
         const {
           rows: rowsComRascunho,
@@ -1452,6 +1459,24 @@ export default function RelatorioContagem({
       setError(e instanceof Error ? e.message : 'Erro ao exportar Excel.')
     } finally {
       setExportExcelLoading(false)
+    }
+  }
+
+  async function handleExportarComAvisoPendencia() {
+    if (loading || exportExcelLoading) return
+    try {
+      setError('')
+      setAvisoExportPendente(null)
+      if (!useInventarioCols && isExportUmDiaCivil) {
+        const diaYmd = useSingleDay ? singleDay : startDate
+        const aviso = await avaliarPendenciasFinalizacaoDia(diaYmd)
+        // Mesmo comportamento do carregar: sempre confirmar no fluxo por dia.
+        setAvisoExportPendente(aviso ?? { diaYmd, pendencias: 0, conferentes: 0 })
+        return
+      }
+      await exportToExcel()
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Erro ao verificar pendências antes de exportar.')
     }
   }
 
@@ -1917,7 +1942,7 @@ export default function RelatorioContagem({
               <>
                 <button
                   type="button"
-                  onClick={() => void exportToExcel()}
+                  onClick={() => void handleExportarComAvisoPendencia()}
                   disabled={loading || exportExcelLoading}
                   style={{
                     ...relBtnExcel,
@@ -1962,6 +1987,63 @@ export default function RelatorioContagem({
 
         {error ? <div style={{ color: '#b00020' }}>{error}</div> : null}
         {success ? <div style={{ color: '#0f7a0f' }}>{success}</div> : null}
+        {avisoExportPendente ? (
+          <div
+            style={{
+              padding: '12px 14px',
+              borderRadius: 8,
+              background: 'rgba(56, 189, 248, 0.12)',
+              border: '1px solid rgba(56, 189, 248, 0.45)',
+              color: '#bae6fd',
+              fontSize: 13,
+              display: 'grid',
+              gap: 10,
+            }}
+          >
+            <div>
+              A contagem ainda não foi finalizada por todos os conferentes. Deseja exportar o que já foi contado assim
+              mesmo?
+              {avisoExportPendente.pendencias > 0 ? (
+                <>
+                  {' '}
+                  Há <strong>{avisoExportPendente.pendencias}</strong> lançamento(s) pendente(s) em{' '}
+                  <strong>{formatDateBR(avisoExportPendente.diaYmd)}</strong>, envolvendo{' '}
+                  <strong>{avisoExportPendente.conferentes}</strong> conferente(s).
+                </>
+              ) : null}
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setAvisoExportPendente(null)
+                  void exportToExcel({ skipPendenciaCheck: true })
+                }}
+                disabled={loading || exportExcelLoading}
+                style={{
+                  ...miniBtnStyle,
+                  background: '#2563eb',
+                  border: '1px solid #60a5fa',
+                  color: '#eff6ff',
+                }}
+              >
+                Exportar
+              </button>
+              <button
+                type="button"
+                onClick={() => setAvisoExportPendente(null)}
+                style={{
+                  ...miniBtnStyle,
+                  background: 'transparent',
+                  border: '1px solid rgba(56,189,248,.55)',
+                  color: '#bae6fd',
+                }}
+              >
+                Aguardar
+              </button>
+            </div>
+          </div>
+        ) : null}
         {avisoCargaPendente ? (
           <div
             style={{
@@ -1976,9 +2058,16 @@ export default function RelatorioContagem({
             }}
           >
             <div>
-              A contagem de <strong>{formatDateBR(avisoCargaPendente.diaYmd)}</strong> ainda não foi finalizada por todos
-              os conferentes. Há {avisoCargaPendente.pendencias} lançamento(s) pendente(s), envolvendo{' '}
-              {avisoCargaPendente.conferentes} conferente(s). Deseja carregar o que já foi contado assim mesmo?
+              A contagem ainda não foi finalizada por todos os conferentes. Deseja carregar o que já foi contado assim
+              mesmo?
+              {avisoCargaPendente.pendencias > 0 ? (
+                <>
+                  {' '}
+                  Há <strong>{avisoCargaPendente.pendencias}</strong> lançamento(s) pendente(s) em{' '}
+                  <strong>{formatDateBR(avisoCargaPendente.diaYmd)}</strong>, envolvendo{' '}
+                  <strong>{avisoCargaPendente.conferentes}</strong> conferente(s).
+                </>
+              ) : null}
             </div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <button
