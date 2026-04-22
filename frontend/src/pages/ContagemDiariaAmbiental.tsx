@@ -195,12 +195,22 @@ function formatHoraRegistro(iso: string) {
 /** Data do lançamento + horário real do registro no Supabase (`created_at`). */
 function celulaDataComHoraRegistro(dataRegistro: string, createdAt: string) {
   const ymd = String(dataRegistro ?? '').slice(0, 10)
+  const dataTxt = /^\d{4}-\d{2}-\d{2}$/.test(ymd) ? formatDataBr(ymd) : dataRegistro || '—'
+  const horaTxt = formatHoraRegistro(createdAt)
   return (
-    <div>
-      <div>{/^\d{4}-\d{2}-\d{2}$/.test(ymd) ? formatDataBr(ymd) : (dataRegistro || '—')}</div>
-      <div style={{ fontSize: 11, color: '#64748b', fontVariantNumeric: 'tabular-nums', marginTop: 2 }}>
-        {formatHoraRegistro(createdAt)}
-      </div>
+    <div
+      style={{
+        display: 'flex',
+        flexWrap: 'nowrap',
+        alignItems: 'baseline',
+        gap: 8,
+        fontVariantNumeric: 'tabular-nums',
+        lineHeight: 1.35,
+        whiteSpace: 'nowrap',
+      }}
+    >
+      <span>{dataTxt}</span>
+      <span style={{ fontSize: 12, color: '#64748b' }}>{horaTxt}</span>
     </div>
   )
 }
@@ -1079,8 +1089,9 @@ function TinyLineChart<T extends { data_registro: string }>({
             style={{
               display: 'flex',
               flexDirection: 'column',
-              gap: 8,
-              alignItems: 'center',
+              gap: 12,
+              alignItems: 'stretch',
+              width: '100%',
               marginTop: 12,
               fontSize: 12,
               color: 'var(--text, #9ca3af)',
@@ -1088,65 +1099,88 @@ function TinyLineChart<T extends { data_registro: string }>({
               borderTop: '1px solid rgba(255,255,255,.08)',
             }}
           >
-            <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', maxWidth: 220, gap: 12 }}>
-              <span>Min.</span>
-              <strong style={{ color: '#e2e8f0', fontVariantNumeric: 'tabular-nums' }}>
-                {fmt(geomCard.min)}
-                {valueSuffix}
-              </strong>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', maxWidth: 220, gap: 12 }}>
-              <span>Máx.</span>
-              <strong style={{ color: '#e2e8f0', fontVariantNumeric: 'tabular-nums' }}>
-                {fmt(geomCard.max)}
-                {valueSuffix}
-              </strong>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', maxWidth: 220, gap: 12 }}>
-              <span>Média</span>
-              <strong style={{ color: '#e2e8f0', fontVariantNumeric: 'tabular-nums' }}>
-                {fmt(geomCard.avg)}
-                {valueSuffix}
-              </strong>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 140px), 1fr))',
+                gap: 10,
+                width: '100%',
+              }}
+            >
+              {(
+                [
+                  { k: 'Mín.', v: geomCard.min },
+                  { k: 'Máx.', v: geomCard.max },
+                  { k: 'Média', v: geomCard.avg },
+                ] as const
+              ).map((row) => (
+                <div
+                  key={row.k}
+                  style={{
+                    padding: '10px 12px',
+                    borderRadius: 10,
+                    background: 'rgba(0,0,0,.2)',
+                    border: '1px solid rgba(255,255,255,.07)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 6,
+                    textAlign: 'center',
+                    minWidth: 0,
+                  }}
+                >
+                  <span style={{ fontSize: 11, color: '#64748b', fontWeight: 600, letterSpacing: '0.04em' }}>{row.k}</span>
+                  <strong style={{ color: '#e2e8f0', fontVariantNumeric: 'tabular-nums', fontSize: 15 }}>
+                    {fmt(row.v)}
+                    {valueSuffix}
+                  </strong>
+                </div>
+              ))}
             </div>
             {showSeriesInsight && rows.length >= 2 ? (
               <div
                 style={{
                   width: '100%',
-                  maxWidth: 360,
-                  marginTop: 4,
-                  padding: '10px 12px',
+                  padding: '12px 14px',
                   borderRadius: 10,
                   background: 'rgba(0,0,0,.22)',
                   border: '1px solid rgba(255,255,255,.06)',
                   display: 'grid',
-                  gap: 8,
-                  fontSize: 11,
+                  gap: 10,
+                  fontSize: 12,
                   color: '#94a3b8',
                 }}
               >
-                <div style={{ fontWeight: 700, color: '#cbd5e1', fontSize: 11 }}>Tendência no período exibido</div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', gap: 8 }}>
-                  <span>
+                <div style={{ fontWeight: 700, color: '#cbd5e1', fontSize: 12, letterSpacing: '0.02em' }}>
+                  Tendência no período exibido
+                </div>
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'minmax(0, 1fr) auto',
+                    gap: '8px 20px',
+                    alignItems: 'center',
+                    rowGap: 10,
+                  }}
+                >
+                  <span style={{ minWidth: 0 }}>
                     Início ({formatAxisDateChart(rows[0].data_registro)})
                   </span>
-                  <strong style={{ color: '#f1f5f9', fontVariantNumeric: 'tabular-nums' }}>
+                  <strong style={{ color: '#f1f5f9', fontVariantNumeric: 'tabular-nums', justifySelf: 'end' }}>
                     {fmt(geomCard.firstVal)}
                     {valueSuffix}
                   </strong>
-                </div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', gap: 8 }}>
-                  <span>Fim ({formatAxisDateChart(rows[rows.length - 1].data_registro)})</span>
-                  <strong style={{ color: '#f1f5f9', fontVariantNumeric: 'tabular-nums' }}>
+                  <span style={{ minWidth: 0 }}>Fim ({formatAxisDateChart(rows[rows.length - 1].data_registro)})</span>
+                  <strong style={{ color: '#f1f5f9', fontVariantNumeric: 'tabular-nums', justifySelf: 'end' }}>
                     {fmt(geomCard.lastVal)}
                     {valueSuffix}
                   </strong>
-                </div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', gap: 8 }}>
-                  <span>Variação (fim − início)</span>
+                  <span style={{ minWidth: 0 }}>Variação (fim − início)</span>
                   <strong
                     style={{
                       fontVariantNumeric: 'tabular-nums',
+                      justifySelf: 'end',
                       color: geomCard.delta > 0.0001 ? '#6ee7b7' : geomCard.delta < -0.0001 ? '#fca5a5' : '#e2e8f0',
                     }}
                   >
