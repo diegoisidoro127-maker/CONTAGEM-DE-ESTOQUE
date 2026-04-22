@@ -1404,6 +1404,24 @@ function OcupacaoCamaras111213Secao({
     () => rows.slice((histPage - 1) * HIST_PAGE_SIZE, histPage * HIST_PAGE_SIZE),
     [rows, histPage],
   )
+  const mediasMes = useMemo(() => {
+    if (!rows.length) return { ocup: 0, livre: 0 }
+    const totalPos = OCUP_TOTAL_POSICOES
+    const acc = rows.reduce(
+      (s, r) => {
+        const totalVaz = r.camara11_vazias + r.camara12_vazias + r.camara13_vazias
+        const totalOcup = totalPos - totalVaz + r.avaria_acrescimo_ocupacao
+        const percOcup = totalPos > 0 ? (totalOcup / totalPos) * 100 : 0
+        const percLivre = totalPos > 0 ? (totalVaz / totalPos) * 100 : 0
+        return { ocup: s.ocup + percOcup, livre: s.livre + percLivre }
+      },
+      { ocup: 0, livre: 0 },
+    )
+    return {
+      ocup: acc.ocup / rows.length,
+      livre: acc.livre / rows.length,
+    }
+  }, [rows])
   return (
     <>
       {resumoDia ? (
@@ -1490,6 +1508,47 @@ function OcupacaoCamaras111213Secao({
               marginBottom: 10,
             }}
           >
+            <div
+              style={{
+                background: 'rgba(0,0,0,.22)',
+                borderRadius: 10,
+                padding: '8px 12px',
+                border: '1px solid rgba(250,204,21,.35)',
+                boxShadow: '0 2px 12px rgba(0,0,0,.2)',
+              }}
+            >
+              <div style={{ fontSize: 10, color: '#fde047', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 5 }}>
+                Médias do mês (histórico carregado)
+              </div>
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
+                  gap: 8,
+                  alignItems: 'center',
+                  padding: '6px 0',
+                  borderTop: '1px solid rgba(250,204,21,.3)',
+                  borderBottom: '1px solid rgba(250,204,21,.3)',
+                }}
+              >
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: 9, color: '#64748b', marginBottom: 2, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Média Ocupação Mês</div>
+                  <div style={{ fontSize: 24, fontWeight: 800, color: '#fde047', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
+                    {mediasMes.ocup.toFixed(0)}%
+                  </div>
+                </div>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: 9, color: '#64748b', marginBottom: 2, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Média Livre Mês</div>
+                  <div style={{ fontSize: 24, fontWeight: 800, color: '#fef08a', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
+                    {mediasMes.livre.toFixed(0)}%
+                  </div>
+                </div>
+              </div>
+              <div style={{ fontSize: 10, color: '#64748b', lineHeight: 1.35, marginTop: 6 }}>
+                Cálculo sobre os lançamentos de ocupação carregados no histórico atual.
+              </div>
+            </div>
+
             <div
               style={{
                 background: 'rgba(0,0,0,.28)',
