@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type RefObject,
   type SVGProps,
 } from 'react'
 import { supabase } from '../lib/supabaseClient'
@@ -305,6 +306,21 @@ function AnimatedAreaPath({
   )
 }
 
+/** Rola o painel do modal ampliado até o fim (dados mais recentes à direita). */
+function useScrollChartModalToEnd(active: boolean, contentKey: string, containerRef: RefObject<HTMLDivElement | null>) {
+  useLayoutEffect(() => {
+    if (!active) return
+    const el = containerRef.current
+    if (!el) return
+    const snap = () => {
+      el.scrollLeft = Math.max(0, el.scrollWidth - el.clientWidth)
+    }
+    snap()
+    const id = requestAnimationFrame(snap)
+    return () => cancelAnimationFrame(id)
+  }, [active, contentKey])
+}
+
 type TinyChartLayout = {
   width: number
   height: number
@@ -448,6 +464,9 @@ function TinyLineChart<T extends { data_registro: string }>({
     [rows],
   )
 
+  const modalScrollRef = useRef<HTMLDivElement>(null)
+  useScrollChartModalToEnd(expanded, lineAnimKey, modalScrollRef)
+
   const geomCard = useMemo(
     () => buildTinyLineGeom(rows, valueOf, TINY_LAYOUT_CARD, !!denseTimeline, false),
     [rows, valueOf, denseTimeline],
@@ -502,6 +521,7 @@ function TinyLineChart<T extends { data_registro: string }>({
           onClick={() => setExpanded(false)}
         >
           <div
+            ref={modalScrollRef}
             style={{
               ...chartCardStyle,
               width: 'min(1180px, 96vw)',
@@ -1240,6 +1260,9 @@ function CombinedTempChart({ rows }: { rows: TempRow[] }) {
 
   const combTempLineAnimKey = useMemo(() => rows.map((r) => r.id).join(','), [rows])
 
+  const combTempModalScrollRef = useRef<HTMLDivElement>(null)
+  useScrollChartModalToEnd(expanded && !!chartModal, combTempLineAnimKey, combTempModalScrollRef)
+
   const width = COMB_TEMP_LAYOUT_CARD.width
   const height = COMB_TEMP_LAYOUT_CARD.height
   const padL = COMB_TEMP_LAYOUT_CARD.padL
@@ -1266,6 +1289,7 @@ function CombinedTempChart({ rows }: { rows: TempRow[] }) {
           onClick={() => setExpanded(false)}
         >
           <div
+            ref={combTempModalScrollRef}
             style={{
               ...chartCardStyle,
               width: 'min(1240px, 98vw)',
@@ -2039,6 +2063,9 @@ function CombinedOcupacaoChart({ rows }: { rows: OcupRow[] }) {
 
   const combOcpLineAnimKey = useMemo(() => rows.map((r) => r.id).join(','), [rows])
 
+  const combOcpModalScrollRef = useRef<HTMLDivElement>(null)
+  useScrollChartModalToEnd(expanded && !!chartModal, combOcpLineAnimKey, combOcpModalScrollRef)
+
   const width = COMB_OCP_LAYOUT_CARD.width
   const height = COMB_OCP_LAYOUT_CARD.height
   const padL = COMB_OCP_LAYOUT_CARD.padL
@@ -2064,6 +2091,7 @@ function CombinedOcupacaoChart({ rows }: { rows: OcupRow[] }) {
           onClick={() => setExpanded(false)}
         >
           <div
+            ref={combOcpModalScrollRef}
             style={{
               ...chartCardStyle,
               width: 'min(1240px, 98vw)',
