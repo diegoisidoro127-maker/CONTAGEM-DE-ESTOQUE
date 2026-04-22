@@ -1674,6 +1674,28 @@ export default function RelatorioContagem({
       </div>
     ) : null
 
+  const avisoOverlayStyle: React.CSSProperties = {
+    position: 'fixed',
+    inset: 0,
+    background: 'rgba(2,6,23,.66)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1200,
+    padding: 16,
+  }
+
+  const avisoModalStyle: React.CSSProperties = {
+    width: 'min(680px, 100%)',
+    borderRadius: 12,
+    padding: '16px 18px',
+    border: '1px solid rgba(148,163,184,.35)',
+    background: 'linear-gradient(170deg, rgba(15,23,42,.98), rgba(17,24,39,.98))',
+    boxShadow: '0 20px 60px rgba(0,0,0,.5)',
+    display: 'grid',
+    gap: 12,
+  }
+
   return (
     <div style={{ padding: 16, maxWidth: 1400, margin: '0 auto' }}>
       <h2>{isDiaMode ? 'Todas as contagens' : 'Relatório completo por data de contagem'}</h2>
@@ -1987,120 +2009,6 @@ export default function RelatorioContagem({
 
         {error ? <div style={{ color: '#b00020' }}>{error}</div> : null}
         {success ? <div style={{ color: '#0f7a0f' }}>{success}</div> : null}
-        {avisoExportPendente ? (
-          <div
-            style={{
-              padding: '12px 14px',
-              borderRadius: 8,
-              background: 'rgba(56, 189, 248, 0.12)',
-              border: '1px solid rgba(56, 189, 248, 0.45)',
-              color: '#bae6fd',
-              fontSize: 13,
-              display: 'grid',
-              gap: 10,
-            }}
-          >
-            <div>
-              A contagem ainda não foi finalizada por todos os conferentes. Deseja exportar o que já foi contado assim
-              mesmo?
-              {avisoExportPendente.pendencias > 0 ? (
-                <>
-                  {' '}
-                  Há <strong>{avisoExportPendente.pendencias}</strong> lançamento(s) pendente(s) em{' '}
-                  <strong>{formatDateBR(avisoExportPendente.diaYmd)}</strong>, envolvendo{' '}
-                  <strong>{avisoExportPendente.conferentes}</strong> conferente(s).
-                </>
-              ) : null}
-            </div>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <button
-                type="button"
-                onClick={() => {
-                  setAvisoExportPendente(null)
-                  void exportToExcel({ skipPendenciaCheck: true })
-                }}
-                disabled={loading || exportExcelLoading}
-                style={{
-                  ...miniBtnStyle,
-                  background: '#2563eb',
-                  border: '1px solid #60a5fa',
-                  color: '#eff6ff',
-                }}
-              >
-                Exportar
-              </button>
-              <button
-                type="button"
-                onClick={() => setAvisoExportPendente(null)}
-                style={{
-                  ...miniBtnStyle,
-                  background: 'transparent',
-                  border: '1px solid rgba(56,189,248,.55)',
-                  color: '#bae6fd',
-                }}
-              >
-                Aguardar
-              </button>
-            </div>
-          </div>
-        ) : null}
-        {avisoCargaPendente ? (
-          <div
-            style={{
-              padding: '12px 14px',
-              borderRadius: 8,
-              background: 'rgba(245, 158, 11, 0.12)',
-              border: '1px solid rgba(245, 158, 11, 0.45)',
-              color: '#fde68a',
-              fontSize: 13,
-              display: 'grid',
-              gap: 10,
-            }}
-          >
-            <div>
-              A contagem ainda não foi finalizada por todos os conferentes. Deseja carregar o que já foi contado assim
-              mesmo?
-              {avisoCargaPendente.pendencias > 0 ? (
-                <>
-                  {' '}
-                  Há <strong>{avisoCargaPendente.pendencias}</strong> lançamento(s) pendente(s) em{' '}
-                  <strong>{formatDateBR(avisoCargaPendente.diaYmd)}</strong>, envolvendo{' '}
-                  <strong>{avisoCargaPendente.conferentes}</strong> conferente(s).
-                </>
-              ) : null}
-            </div>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <button
-                type="button"
-                onClick={() => {
-                  setAvisoCargaPendente(null)
-                  void load({ ignoreHistoricoFilter: true })
-                }}
-                disabled={loading}
-                style={{
-                  ...miniBtnStyle,
-                  background: '#2563eb',
-                  border: '1px solid #60a5fa',
-                  color: '#eff6ff',
-                }}
-              >
-                Carregar
-              </button>
-              <button
-                type="button"
-                onClick={() => setAvisoCargaPendente(null)}
-                style={{
-                  ...miniBtnStyle,
-                  background: 'transparent',
-                  border: '1px solid rgba(245,158,11,.55)',
-                  color: '#fde68a',
-                }}
-              >
-                Aguardar
-              </button>
-            </div>
-          </div>
-        ) : null}
         {conferenteFiltroHistorico ? (
           <div
             style={{
@@ -2326,6 +2234,86 @@ export default function RelatorioContagem({
           !loading ? <div style={{ marginTop: 8 }}>Sem dados no período.</div> : null
         )}
       </div>
+
+      {avisoCargaPendente ? (
+        <div style={avisoOverlayStyle}>
+          <div style={{ ...avisoModalStyle, border: '1px solid rgba(245,158,11,.45)' }}>
+            <div style={{ fontSize: 17, fontWeight: 700, color: '#fef3c7' }}>Atenção na carga do dia</div>
+            <div style={{ color: '#fde68a', fontSize: 14, lineHeight: 1.5 }}>
+              A contagem ainda não foi finalizada por todos os conferentes. Deseja carregar o que já foi contado assim
+              mesmo?
+              {avisoCargaPendente.pendencias > 0 ? (
+                <>
+                  {' '}
+                  Há <strong>{avisoCargaPendente.pendencias}</strong> lançamento(s) pendente(s) em{' '}
+                  <strong>{formatDateBR(avisoCargaPendente.diaYmd)}</strong>, envolvendo{' '}
+                  <strong>{avisoCargaPendente.conferentes}</strong> conferente(s).
+                </>
+              ) : null}
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                onClick={() => setAvisoCargaPendente(null)}
+                style={{ ...miniBtnStyle, background: 'transparent', border: '1px solid rgba(245,158,11,.55)', color: '#fde68a' }}
+              >
+                Aguardar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAvisoCargaPendente(null)
+                  void load({ ignoreHistoricoFilter: true })
+                }}
+                disabled={loading}
+                style={{ ...miniBtnStyle, background: '#2563eb', border: '1px solid #60a5fa', color: '#eff6ff' }}
+              >
+                Carregar
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {avisoExportPendente ? (
+        <div style={avisoOverlayStyle}>
+          <div style={{ ...avisoModalStyle, border: '1px solid rgba(56,189,248,.45)' }}>
+            <div style={{ fontSize: 17, fontWeight: 700, color: '#e0f2fe' }}>Atenção na exportação do dia</div>
+            <div style={{ color: '#bae6fd', fontSize: 14, lineHeight: 1.5 }}>
+              A contagem ainda não foi finalizada por todos os conferentes. Deseja exportar o que já foi contado assim
+              mesmo?
+              {avisoExportPendente.pendencias > 0 ? (
+                <>
+                  {' '}
+                  Há <strong>{avisoExportPendente.pendencias}</strong> lançamento(s) pendente(s) em{' '}
+                  <strong>{formatDateBR(avisoExportPendente.diaYmd)}</strong>, envolvendo{' '}
+                  <strong>{avisoExportPendente.conferentes}</strong> conferente(s).
+                </>
+              ) : null}
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                onClick={() => setAvisoExportPendente(null)}
+                style={{ ...miniBtnStyle, background: 'transparent', border: '1px solid rgba(56,189,248,.55)', color: '#bae6fd' }}
+              >
+                Aguardar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAvisoExportPendente(null)
+                  void exportToExcel({ skipPendenciaCheck: true })
+                }}
+                disabled={loading || exportExcelLoading}
+                style={{ ...miniBtnStyle, background: '#2563eb', border: '1px solid #60a5fa', color: '#eff6ff' }}
+              >
+                Exportar
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
     </div>
   )
