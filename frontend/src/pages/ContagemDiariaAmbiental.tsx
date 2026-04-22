@@ -33,7 +33,7 @@ const OCUP_TOTAL = {
   camara13: 140,
 } as const
 
-const OCUP_TOTAL_POSICOES = OCUP_TOTAL.camara11 + OCUP_TOTAL.camara12 + OCUP_TOTAL.camara13
+const OCUP_TOTAL_POSICOES = 410
 
 function ocupPercGeral(r: OcupRow): number {
   const totalVaz = r.camara11_vazias + r.camara12_vazias + r.camara13_vazias
@@ -1833,7 +1833,7 @@ function OcupacaoCamaras111213Secao({
               </tr>
             ) : (
               rowsPagina.map((r) => {
-                const totalPos = OCUP_TOTAL.camara11 + OCUP_TOTAL.camara12 + OCUP_TOTAL.camara13
+                const totalPos = OCUP_TOTAL_POSICOES
                 const totalVaz = r.camara11_vazias + r.camara12_vazias + r.camara13_vazias
                 const av = r.avaria_acrescimo_ocupacao
                 const totalOcup = totalPos - totalVaz + av
@@ -2054,7 +2054,7 @@ export default function ContagemDiariaAmbiental() {
     const o11 = Math.max(0, OCUP_TOTAL.camara11 - v11)
     const o12 = Math.max(0, OCUP_TOTAL.camara12 - v12)
     const o13 = Math.max(0, OCUP_TOTAL.camara13 - v13)
-    const totalPos = OCUP_TOTAL.camara11 + OCUP_TOTAL.camara12 + OCUP_TOTAL.camara13
+    const totalPos = OCUP_TOTAL_POSICOES
     const avariaAcrescimo = ocupAvariaAcrescimo.trim() === '' ? 0 : asInt(ocupAvariaAcrescimo)
     const totalOcup = o11 + o12 + o13 + avariaAcrescimo
     const totalVaz = v11 + v12 + v13
@@ -2075,7 +2075,7 @@ export default function ContagemDiariaAmbiental() {
   const ocupResumoDiaSalvo = useMemo(() => {
     const r = ocupRows[0]
     if (!r) return null
-    const totalPos = OCUP_TOTAL.camara11 + OCUP_TOTAL.camara12 + OCUP_TOTAL.camara13
+    const totalPos = OCUP_TOTAL_POSICOES
     const totalVaz = r.camara11_vazias + r.camara12_vazias + r.camara13_vazias
     const av = r.avaria_acrescimo_ocupacao
     const totalOcup = totalPos - totalVaz + av
