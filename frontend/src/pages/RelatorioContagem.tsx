@@ -189,6 +189,12 @@ type HistoricoContagemItem = {
   totalItens: number
 }
 
+type AvisoCargaPendente = {
+  diaYmd: string
+  pendencias: number
+  conferentes: number
+}
+
 /**
  * Dia civil (YMD) para histórico/lista:
  * - prioriza `data_contagem` (quando válida)
@@ -349,6 +355,7 @@ export default function RelatorioContagem({
   const prevLoadingRef = useRef(false)
   const [baseExportLoading, setBaseExportLoading] = useState(false)
   const [exportExcelLoading, setExportExcelLoading] = useState(false)
+  const [avisoCargaPendente, setAvisoCargaPendente] = useState<AvisoCargaPendente | null>(null)
   /** Contagem diária: qual conferente exibir na coluna quantidade/nome (mesma ideia da prévia em Contagem). */
   const [relatorioConferenteFiltroLista, setRelatorioConferenteFiltroLista] = useState<string>('')
 
@@ -1135,6 +1142,58 @@ export default function RelatorioContagem({
     await load({ ignoreHistoricoFilter: true })
   }
 
+  function diaCivilFiltroAtual(): string | null {
+    if (allTime) return null
+    if (useSingleDay) return singleDay
+    if (startDate === endDate) return startDate
+    return null
+  }
+
+  async function avaliarPendenciasFinalizacaoDia(diaYmd: string): Promise<AvisoCargaPendente | null> {
+    const { rows: rowsComRascunho, origemAusenteNoResultado } = await fetchRelatorioContagemRows({
+      singleDayYmd: diaYmd,
+      allTimeOverride: false,
+      includeRascunho: true,
+    })
+    const { filtered } = await filtrarLinhasParaPrevia(rowsComRascunho, origemAusenteNoResultado)
+    const pendentes = filtered.filter((r) => {
+      const ymd = String(r.data_contagem ?? r.data_hora_contagem ?? '').slice(0, 10)
+      return ymd === diaYmd && r.contagem_rascunho === true
+    })
+    if (pendentes.length === 0) return null
+    const conferentes = new Set(
+      pendentes
+        .map((r) => String(r.conferente_id ?? '').trim())
+        .filter((v) => v !== ''),
+    )
+    return {
+      diaYmd,
+      pendencias: pendentes.length,
+      conferentes: conferentes.size || 1,
+    }
+  }
+
+  async function handleCarregarComAvisoPendencia() {
+    if (loading) return
+    try {
+      setError('')
+      setAvisoCargaPendente(null)
+      if (!useInventarioCols) {
+        const diaYmd = diaCivilFiltroAtual()
+        if (diaYmd) {
+          const aviso = await avaliarPendenciasFinalizacaoDia(diaYmd)
+          if (aviso) {
+            setAvisoCargaPendente(aviso)
+            return
+          }
+        }
+      }
+      await load({ ignoreHistoricoFilter: true })
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Erro ao verificar pendências antes de carregar.')
+    }
+  }
+
   async function load(opts?: { ignoreHistoricoFilter?: boolean }) {
     setLoading(true)
     setError('')
@@ -1838,7 +1897,7 @@ export default function RelatorioContagem({
           >
             <button
               type="button"
-              onClick={() => void load({ ignoreHistoricoFilter: true })}
+              onClick={() => void handleCarregarComAvisoPendencia()}
               disabled={loading}
               style={{
                 ...relBtnCarregar,
@@ -1903,6 +1962,56 @@ export default function RelatorioContagem({
 
         {error ? <div style={{ color: '#b00020' }}>{error}</div> : null}
         {success ? <div style={{ color: '#0f7a0f' }}>{success}</div> : null}
+        {avisoCargaPendente ? (
+          <div
+            style={{
+              padding: '12px 14px',
+              borderRadius: 8,
+              background: 'rgba(245, 158, 11, 0.12)',
+              border: '1px solid rgba(245, 158, 11, 0.45)',
+              color: '#fde68a',
+              fontSize: 13,
+              display: 'grid',
+              gap: 10,
+            }}
+          >
+            <div>
+              A contagem de <strong>{formatDateBR(avisoCargaPendente.diaYmd)}</strong> ainda não foi finalizada por todos
+              os conferentes. Há {avisoCargaPendente.pendencias} lançamento(s) pendente(s), envolvendo{' '}
+              {avisoCargaPendente.conferentes} conferente(s). Deseja carregar o que já foi contado assim mesmo?
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setAvisoCargaPendente(null)
+                  void load({ ignoreHistoricoFilter: true })
+                }}
+                disabled={loading}
+                style={{
+                  ...miniBtnStyle,
+                  background: '#2563eb',
+                  border: '1px solid #60a5fa',
+                  color: '#eff6ff',
+                }}
+              >
+                Carregar
+              </button>
+              <button
+                type="button"
+                onClick={() => setAvisoCargaPendente(null)}
+                style={{
+                  ...miniBtnStyle,
+                  background: 'transparent',
+                  border: '1px solid rgba(245,158,11,.55)',
+                  color: '#fde68a',
+                }}
+              >
+                Aguardar
+              </button>
+            </div>
+          </div>
+        ) : null}
         {conferenteFiltroHistorico ? (
           <div
             style={{
