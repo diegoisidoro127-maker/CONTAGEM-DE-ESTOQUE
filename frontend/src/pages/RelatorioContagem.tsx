@@ -2254,13 +2254,6 @@ export default function RelatorioContagem({
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
               <button
                 type="button"
-                onClick={() => setAvisoCargaPendente(null)}
-                style={{ ...miniBtnStyle, background: 'transparent', border: '1px solid rgba(245,158,11,.55)', color: '#fde68a' }}
-              >
-                Aguardar
-              </button>
-              <button
-                type="button"
                 onClick={() => {
                   setAvisoCargaPendente(null)
                   void load({ ignoreHistoricoFilter: true })
@@ -2269,6 +2262,13 @@ export default function RelatorioContagem({
                 style={{ ...miniBtnStyle, background: '#2563eb', border: '1px solid #60a5fa', color: '#eff6ff' }}
               >
                 Carregar
+              </button>
+              <button
+                type="button"
+                onClick={() => setAvisoCargaPendente(null)}
+                style={{ ...miniBtnStyle, background: 'transparent', border: '1px solid rgba(245,158,11,.55)', color: '#fde68a' }}
+              >
+                Aguardar
               </button>
             </div>
           </div>
@@ -2294,13 +2294,6 @@ export default function RelatorioContagem({
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
               <button
                 type="button"
-                onClick={() => setAvisoExportPendente(null)}
-                style={{ ...miniBtnStyle, background: 'transparent', border: '1px solid rgba(56,189,248,.55)', color: '#bae6fd' }}
-              >
-                Aguardar
-              </button>
-              <button
-                type="button"
                 onClick={() => {
                   setAvisoExportPendente(null)
                   void exportToExcel({ skipPendenciaCheck: true })
@@ -2309,6 +2302,13 @@ export default function RelatorioContagem({
                 style={{ ...miniBtnStyle, background: '#2563eb', border: '1px solid #60a5fa', color: '#eff6ff' }}
               >
                 Exportar
+              </button>
+              <button
+                type="button"
+                onClick={() => setAvisoExportPendente(null)}
+                style={{ ...miniBtnStyle, background: 'transparent', border: '1px solid rgba(56,189,248,.55)', color: '#bae6fd' }}
+              >
+                Aguardar
               </button>
             </div>
           </div>
