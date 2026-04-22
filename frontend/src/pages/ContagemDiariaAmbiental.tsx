@@ -248,6 +248,7 @@ function TinyLineChart<T extends { data_registro: string }>({
 }) {
   const uid = useId().replace(/:/g, '')
   const gradId = `tgrad-${uid}`
+  const [expanded, setExpanded] = useState(false)
   const width = 520
   const height = 218
   const padL = 48
@@ -341,8 +342,169 @@ function TinyLineChart<T extends { data_registro: string }>({
   const onSvgLeave = useCallback(() => setTip(null), [])
 
   return (
-    <div style={chartCardStyle}>
-      <div style={{ fontWeight: 700, marginBottom: 10, color, fontSize: 15, letterSpacing: '0.02em' }}>{title}</div>
+    <>
+      {expanded ? (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(2,6,23,.72)',
+            zIndex: 1200,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16,
+          }}
+          onClick={() => setExpanded(false)}
+        >
+          <div
+            style={{
+              ...chartCardStyle,
+              width: 'min(1180px, 96vw)',
+              maxHeight: '92vh',
+              overflow: 'auto',
+              border: '1px solid rgba(148,163,184,.35)',
+              boxShadow: '0 22px 70px rgba(0,0,0,.55)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 10 }}>
+              <div style={{ fontWeight: 700, color, fontSize: 17, letterSpacing: '0.02em' }}>{title}</div>
+              <button
+                type="button"
+                onClick={() => setExpanded(false)}
+                style={{
+                  border: '1px solid rgba(148,163,184,.45)',
+                  background: 'rgba(15,23,42,.7)',
+                  color: '#e2e8f0',
+                  borderRadius: 8,
+                  padding: '6px 10px',
+                  fontSize: 12,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                }}
+              >
+                Fechar
+              </button>
+            </div>
+            <div style={{ fontSize: 11, color: '#64748b', marginBottom: 8 }}>
+              Visualização ampliada para leitura de detalhes.
+            </div>
+            {!rows.length || !geom ? (
+              <div style={{ fontSize: 13, color: 'var(--text, #9ca3af)' }}>Sem dados ainda.</div>
+            ) : (
+              <>
+                <div style={{ position: 'relative' }}>
+                  {tip != null && rows[tip.idx] ? (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        left: `${tip.pxPct}%`,
+                        top: 4,
+                        transform: 'translateX(-50%)',
+                        zIndex: 2,
+                        pointerEvents: 'none',
+                        minWidth: 200,
+                        maxWidth: 280,
+                        padding: '10px 12px',
+                        borderRadius: 12,
+                        background: 'rgba(15,23,42,.96)',
+                        border: `1px solid ${color}55`,
+                        boxShadow: '0 12px 36px rgba(0,0,0,.5)',
+                        fontSize: 12,
+                      }}
+                    >
+                      <div style={{ fontWeight: 700, color: '#e0f2fe', marginBottom: 6 }}>
+                        {formatAxisDateChart(rows[tip.idx].data_registro)}
+                      </div>
+                      {(() => {
+                        const m = rowMetaForTooltip(rows[tip.idx])
+                        return m.conferente || m.hora ? (
+                          <div style={{ fontSize: 11, color: '#64748b', marginBottom: 8, lineHeight: 1.4 }}>
+                            {m.conferente ? <span style={{ color: '#94a3b8' }}>{m.conferente}</span> : null}
+                            {m.conferente && m.hora ? <span style={{ color: '#475569' }}> · </span> : null}
+                            {m.hora ? <span>{m.hora}</span> : null}
+                          </div>
+                        ) : null
+                      })()}
+                      <div style={{ color }}>
+                        Valor:{' '}
+                        <strong style={{ fontVariantNumeric: 'tabular-nums' }}>
+                          {fmt(valueOf(rows[tip.idx]))}
+                          {valueSuffix}
+                        </strong>
+                      </div>
+                    </div>
+                  ) : null}
+                  <svg
+                    width="100%"
+                    viewBox={`0 0 ${width} ${height}`}
+                    preserveAspectRatio="xMidYMid meet"
+                    style={{ display: 'block', cursor: 'crosshair' }}
+                    onMouseMove={onSvgMove}
+                    onMouseLeave={onSvgLeave}
+                  >
+                    <defs>
+                      <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor={color} stopOpacity={0.28} />
+                        <stop offset="55%" stopColor={color} stopOpacity={0.06} />
+                        <stop offset="100%" stopColor={color} stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <rect x={0} y={0} width={width} height={height} rx={8} fill="rgba(0,0,0,.18)" />
+                    {geom.xLabels.map((xl, i) => (
+                      <line
+                        key={`xg-exp-${i}`}
+                        x1={xl.x}
+                        y1={padT}
+                        x2={xl.x}
+                        y2={bottomY}
+                        stroke="rgba(148,163,184,.08)"
+                        strokeWidth={1}
+                      />
+                    ))}
+                    {geom.yTicks.map((t, i) => (
+                      <line
+                        key={`y-exp-${i}`}
+                        x1={padL}
+                        y1={t.y}
+                        x2={width - padR}
+                        y2={t.y}
+                        stroke="rgba(148,163,184,.2)"
+                        strokeDasharray="4 8"
+                        strokeWidth={1}
+                      />
+                    ))}
+                    <path d={geom.areaD} fill={`url(#${gradId})`} />
+                    <path d={geom.lineD} stroke={color} strokeWidth={3} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      ) : null}
+      <div style={chartCardStyle}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 10 }}>
+        <div style={{ fontWeight: 700, color, fontSize: 15, letterSpacing: '0.02em' }}>{title}</div>
+        <button
+          type="button"
+          onClick={() => setExpanded(true)}
+          style={{
+            border: `1px solid ${color}55`,
+            background: 'rgba(2,6,23,.52)',
+            color,
+            borderRadius: 8,
+            padding: '4px 9px',
+            fontSize: 11,
+            fontWeight: 700,
+            cursor: 'pointer',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          Ampliar
+        </button>
+      </div>
       {!rows.length || !geom ? (
         <div style={{ fontSize: 13, color: 'var(--text, #9ca3af)' }}>Sem dados ainda.</div>
       ) : (
@@ -632,7 +794,8 @@ function TinyLineChart<T extends { data_registro: string }>({
           </div>
         </>
       )}
-    </div>
+      </div>
+    </>
   )
 }
 
@@ -877,6 +1040,37 @@ function CombinedTempChart({ rows }: { rows: TempRow[] }) {
                   style={{ filter: `drop-shadow(0 0 6px ${p.color}55)` }}
                 />
               ))}
+              {(() => {
+                const n = rows.length
+                const idxs =
+                  n <= 10
+                    ? Array.from({ length: n }, (_, i) => i)
+                    : [0, Math.floor((n - 1) / 4), Math.floor((n - 1) / 2), Math.floor((3 * (n - 1)) / 4), n - 1]
+                const uniqIdxs = [...new Set(idxs)].sort((a, b) => a - b)
+                return COMBINED_SERIES.flatMap((s, si) =>
+                  uniqIdxs.map((i) => {
+                    const v = s.valueOf(rows[i])
+                    const x = chart.xAt(i)
+                    const y = chart.yAt(v)
+                    const yShift = si === 0 ? -10 : si === 1 ? -18 : -6
+                    return (
+                      <text
+                        key={`tmp-val-${si}-${i}`}
+                        x={x}
+                        y={Math.max(padT + 11, y + yShift)}
+                        textAnchor="middle"
+                        fill={s.color}
+                        fontSize={10}
+                        fontWeight={700}
+                        fontFamily="system-ui, sans-serif"
+                        style={{ filter: 'drop-shadow(0 1px 2px rgba(2,6,23,.9))' }}
+                      >
+                        {v.toFixed(1)}°C
+                      </text>
+                    )
+                  }),
+                )
+              })()}
               {tip != null
                 ? COMBINED_SERIES.map((s) => {
                     const v = s.valueOf(rows[tip.idx])
@@ -1239,6 +1433,37 @@ function CombinedOcupacaoChart({ rows }: { rows: OcupRow[] }) {
                   style={{ filter: `drop-shadow(0 0 6px ${p.color === '#f0f9ff' ? 'rgba(240,249,255,.45)' : `${p.color}55`})` }}
                 />
               ))}
+              {(() => {
+                const n = rows.length
+                const idxs =
+                  n <= 10
+                    ? Array.from({ length: n }, (_, i) => i)
+                    : [0, Math.floor((n - 1) / 4), Math.floor((n - 1) / 2), Math.floor((3 * (n - 1)) / 4), n - 1]
+                const uniqIdxs = [...new Set(idxs)].sort((a, b) => a - b)
+                return COMBINED_OCP_SERIES.flatMap((s, si) =>
+                  uniqIdxs.map((i) => {
+                    const v = s.valueOf(rows[i])
+                    const x = chart.xAt(i)
+                    const y = chart.yAt(v)
+                    const yShift = si === 0 ? -10 : si === 1 ? -18 : si === 2 ? -6 : -14
+                    return (
+                      <text
+                        key={`ocp-val-${si}-${i}`}
+                        x={x}
+                        y={Math.max(padT + 11, y + yShift)}
+                        textAnchor="middle"
+                        fill={s.color}
+                        fontSize={10}
+                        fontWeight={700}
+                        fontFamily="system-ui, sans-serif"
+                        style={{ filter: 'drop-shadow(0 1px 2px rgba(2,6,23,.9))' }}
+                      >
+                        {v.toFixed(1)}%
+                      </text>
+                    )
+                  }),
+                )
+              })()}
               {tip != null
                 ? COMBINED_OCP_SERIES.map((s) => {
                     const v = s.valueOf(rows[tip.idx])
@@ -2270,9 +2495,9 @@ export default function ContagemDiariaAmbiental() {
           </div>
 
           <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(3, minmax(0, 1fr))' }}>
-            <TinyLineChart title="Câmara 11" color="#22c55e" rows={tempRows} valueOf={(r) => r.camara11_temp} />
-            <TinyLineChart title="Câmara 12" color="#38bdf8" rows={tempRows} valueOf={(r) => r.camara12_temp} />
-            <TinyLineChart title="Câmara 13" color="#f59e0b" rows={tempRows} valueOf={(r) => r.camara13_temp} />
+            <TinyLineChart title="Câmara 11" color="#22c55e" rows={tempRows} valueOf={(r) => r.camara11_temp} showPointValues />
+            <TinyLineChart title="Câmara 12" color="#38bdf8" rows={tempRows} valueOf={(r) => r.camara12_temp} showPointValues />
+            <TinyLineChart title="Câmara 13" color="#f59e0b" rows={tempRows} valueOf={(r) => r.camara13_temp} showPointValues />
           </div>
           <CombinedTempChart rows={tempRows} />
 
