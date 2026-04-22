@@ -135,7 +135,7 @@ function HistoricoPaginacaoBar({
         marginTop: 12,
       }}
     >
-      <span style={{ fontSize: 13, color: '#94a3b8' }}>
+      <span style={{ fontSize: 13, color: 'var(--chart-footer-muted)' }}>
         Página {page} de {totalPages} · {totalItems} registro(s)
       </span>
       <div style={{ display: 'flex', gap: 8 }}>
@@ -210,7 +210,7 @@ function celulaDataComHoraRegistro(dataRegistro: string, createdAt: string) {
       }}
     >
       <span>{dataTxt}</span>
-      <span style={{ fontSize: 12, color: '#64748b' }}>{horaTxt}</span>
+      <span style={{ fontSize: 12, color: 'var(--chart-caption)' }}>{horaTxt}</span>
     </div>
   )
 }
@@ -270,9 +270,9 @@ const chartCardStyle: CSSProperties = {
   borderRadius: 14,
   padding: 12,
   minWidth: 0,
-  background: 'linear-gradient(165deg, rgba(36,38,48,.95) 0%, rgba(24,25,32,.98) 100%)',
-  border: '1px solid rgba(255,255,255,.07)',
-  boxShadow: '0 8px 32px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.05)',
+  background: 'var(--chart-card-bg)',
+  border: '1px solid var(--chart-card-border)',
+  boxShadow: 'var(--chart-card-shadow)',
 }
 
 /** Keyframes injetados uma vez na página (ContagemDiariaAmbiental). */
@@ -552,7 +552,7 @@ function TinyLineChart<T extends { data_registro: string }>({
           style={{
             position: 'fixed',
             inset: 0,
-            background: 'rgba(2,6,23,.72)',
+            background: 'var(--chart-modal-overlay)',
             zIndex: 1200,
             display: 'flex',
             alignItems: 'center',
@@ -570,7 +570,7 @@ function TinyLineChart<T extends { data_registro: string }>({
               maxHeight: '92vh',
               overflow: 'auto',
               border: '1px solid rgba(148,163,184,.35)',
-              boxShadow: '0 22px 70px rgba(0,0,0,.55)',
+              boxShadow: 'var(--chart-modal-shadow)',
             }}
             onClick={(e) => e.stopPropagation()}
           >
@@ -580,9 +580,9 @@ function TinyLineChart<T extends { data_registro: string }>({
                 type="button"
                 onClick={() => setExpanded(false)}
                 style={{
-                  border: '1px solid rgba(148,163,184,.45)',
-                  background: 'rgba(15,23,42,.7)',
-                  color: '#e2e8f0',
+                  border: '1px solid var(--chart-btn-fechar-border)',
+                  background: 'var(--chart-btn-fechar-bg)',
+                  color: 'var(--chart-btn-fechar-color)',
                   borderRadius: 8,
                   padding: '6px 10px',
                   fontSize: 12,
@@ -593,7 +593,7 @@ function TinyLineChart<T extends { data_registro: string }>({
                 Fechar
               </button>
             </div>
-            <div style={{ fontSize: 11, color: '#64748b', marginBottom: 8, lineHeight: 1.45 }}>
+            <div style={{ fontSize: 11, color: 'var(--chart-caption)', marginBottom: 8, lineHeight: 1.45 }}>
               Eixo X: data e horário do registro · Eixo Y: {capAxis}. Passe o mouse para ver conferente e valor exato.
             </div>
             {!rows.length || !geomModal ? (
@@ -613,21 +613,21 @@ function TinyLineChart<T extends { data_registro: string }>({
                         maxWidth: 320,
                         padding: '10px 12px',
                         borderRadius: 12,
-                        background: 'rgba(15,23,42,.96)',
+                        background: 'var(--chart-tooltip-bg)',
                         border: `1px solid ${color}55`,
-                        boxShadow: '0 12px 36px rgba(0,0,0,.5)',
+                        boxShadow: 'var(--chart-tooltip-shadow)',
                         fontSize: 12,
                       }}
                     >
-                      <div style={{ fontWeight: 700, color: '#e0f2fe', marginBottom: 6 }}>
+                      <div style={{ fontWeight: 700, color: 'var(--chart-tooltip-title)', marginBottom: 6 }}>
                         {formatAxisDateChart(rows[tip.idx].data_registro)}
                       </div>
                       {(() => {
                         const m = rowMetaForTooltip(rows[tip.idx])
                         return m.conferente || m.hora ? (
-                          <div style={{ fontSize: 11, color: '#64748b', marginBottom: 8, lineHeight: 1.4 }}>
-                            {m.conferente ? <span style={{ color: '#94a3b8' }}>{m.conferente}</span> : null}
-                            {m.conferente && m.hora ? <span style={{ color: '#475569' }}> · </span> : null}
+                          <div style={{ fontSize: 11, color: 'var(--chart-caption)', marginBottom: 8, lineHeight: 1.4 }}>
+                            {m.conferente ? <span style={{ color: 'var(--chart-footer-muted)' }}>{m.conferente}</span> : null}
+                            {m.conferente && m.hora ? <span style={{ color: 'var(--chart-caption)' }}> · </span> : null}
                             {m.hora ? <span>{m.hora}</span> : null}
                           </div>
                         ) : null
@@ -657,7 +657,7 @@ function TinyLineChart<T extends { data_registro: string }>({
                         <stop offset="100%" stopColor={color} stopOpacity={0} />
                       </linearGradient>
                     </defs>
-                    <rect x={0} y={0} width={wM} height={hM} rx={8} fill="rgba(0,0,0,.18)" />
+                    <rect x={0} y={0} width={wM} height={hM} rx={8} fill="var(--chart-plot-area)" />
                     {geomModal.xLabels.map((xl, i) => (
                       <line
                         key={`xg-exp-${i}`}
@@ -665,7 +665,7 @@ function TinyLineChart<T extends { data_registro: string }>({
                         y1={pTM}
                         x2={xl.x}
                         y2={geomModal.bottomY}
-                        stroke="rgba(148,163,184,.1)"
+                        stroke="var(--chart-grid-vertical-dense)"
                         strokeWidth={1}
                       />
                     ))}
@@ -676,7 +676,7 @@ function TinyLineChart<T extends { data_registro: string }>({
                         y1={t.y}
                         x2={wM - pRM}
                         y2={t.y}
-                        stroke="rgba(148,163,184,.22)"
+                        stroke="var(--chart-modal-grid-faint)"
                         strokeDasharray="4 8"
                         strokeWidth={1}
                       />
@@ -693,7 +693,7 @@ function TinyLineChart<T extends { data_registro: string }>({
                         y1={pTM}
                         x2={geomModal.xAt(tip.idx)}
                         y2={geomModal.bottomY}
-                        stroke="rgba(148,163,184,.4)"
+                        stroke="var(--chart-modal-grid-medium)"
                         strokeWidth={1.5}
                         strokeDasharray="5 4"
                       />
@@ -714,7 +714,7 @@ function TinyLineChart<T extends { data_registro: string }>({
                         cy={geomModal.yAt(valueOf(rows[tip.idx]))}
                         r={7}
                         fill={color}
-                        stroke="rgba(15,23,42,.92)"
+                        stroke="var(--chart-point-ring)"
                         strokeWidth={2}
                       />
                     ) : showSeriesInsight && geomModal.lastPt ? (
@@ -723,7 +723,7 @@ function TinyLineChart<T extends { data_registro: string }>({
                         cy={geomModal.lastPt.y}
                         r={5.5}
                         fill={color}
-                        stroke="rgba(15,23,42,.9)"
+                        stroke="var(--chart-point-ring)"
                         strokeWidth={2}
                       />
                     ) : null}
@@ -743,7 +743,7 @@ function TinyLineChart<T extends { data_registro: string }>({
                             fontSize={11}
                             fontWeight={700}
                             fontFamily="system-ui, sans-serif"
-                            style={{ filter: 'drop-shadow(0 1px 2px rgba(2,6,23,.85))' }}
+                            style={{ filter: 'var(--chart-value-dropshadow)' }}
                           >
                             {fmt(geomModal.values[i])}
                             {valueSuffix.trim()}
@@ -756,7 +756,7 @@ function TinyLineChart<T extends { data_registro: string }>({
                         x={pLM - 10}
                         y={t.y + 4}
                         textAnchor="end"
-                        fill="#cbd5e1"
+                        fill="var(--chart-svg-y-tick)"
                         fontSize={12}
                         fontFamily="system-ui, sans-serif"
                       >
@@ -769,7 +769,7 @@ function TinyLineChart<T extends { data_registro: string }>({
                       y1={geomModal.bottomY}
                       x2={wM - pRM}
                       y2={geomModal.bottomY}
-                      stroke="rgba(148,163,184,.45)"
+                      stroke="var(--chart-axis-line)"
                       strokeWidth={1.5}
                     />
                     <line
@@ -777,10 +777,10 @@ function TinyLineChart<T extends { data_registro: string }>({
                       y1={pTM}
                       x2={pLM}
                       y2={geomModal.bottomY}
-                      stroke="rgba(148,163,184,.45)"
+                      stroke="var(--chart-axis-line)"
                       strokeWidth={1.5}
                     />
-                    <text x={pLM} y={pTM - 4} fill="#64748b" fontSize={11} fontFamily="system-ui, sans-serif">
+                    <text x={pLM} y={pTM - 4} fill="var(--chart-caption)" fontSize={11} fontFamily="system-ui, sans-serif">
                       {capAxis}
                     </text>
                     {geomModal.xLabels.map((xl, i) => (
@@ -789,7 +789,7 @@ function TinyLineChart<T extends { data_registro: string }>({
                           x={xl.x}
                           y={hM - (xl.hora ? 22 : 12)}
                           textAnchor="middle"
-                          fill="#94a3b8"
+                          fill="var(--chart-svg-x-label)"
                           fontSize={11}
                           fontFamily="system-ui, sans-serif"
                         >
@@ -800,7 +800,7 @@ function TinyLineChart<T extends { data_registro: string }>({
                             x={xl.x}
                             y={hM - 8}
                             textAnchor="middle"
-                            fill="#64748b"
+                            fill="var(--chart-caption)"
                             fontSize={9}
                             fontFamily="system-ui, sans-serif"
                             style={{ fontVariantNumeric: 'tabular-nums' }}
@@ -816,9 +816,9 @@ function TinyLineChart<T extends { data_registro: string }>({
                   style={{
                     marginTop: 14,
                     paddingTop: 12,
-                    borderTop: '1px solid rgba(255,255,255,.1)',
+                    borderTop: '1px solid var(--chart-divider)',
                     fontSize: 12,
-                    color: '#94a3b8',
+                    color: 'var(--chart-footer-muted)',
                   }}
                 >
                   <div
@@ -830,28 +830,28 @@ function TinyLineChart<T extends { data_registro: string }>({
                     }}
                   >
                     <div style={{ textAlign: 'center', minWidth: 0 }}>
-                      <div style={{ color: '#64748b', fontSize: 11, marginBottom: 4 }}>Mín.</div>
-                      <strong style={{ color: '#e2e8f0', fontVariantNumeric: 'tabular-nums', fontSize: 14 }}>
+                      <div style={{ color: 'var(--chart-caption)', fontSize: 11, marginBottom: 4 }}>Mín.</div>
+                      <strong style={{ color: 'var(--chart-legend-pill-text)', fontVariantNumeric: 'tabular-nums', fontSize: 14 }}>
                         {fmt(geomModal.min)}
                         {valueSuffix}
                       </strong>
                     </div>
                     <div style={{ textAlign: 'center', minWidth: 0 }}>
-                      <div style={{ color: '#64748b', fontSize: 11, marginBottom: 4 }}>Máx.</div>
-                      <strong style={{ color: '#e2e8f0', fontVariantNumeric: 'tabular-nums', fontSize: 14 }}>
+                      <div style={{ color: 'var(--chart-caption)', fontSize: 11, marginBottom: 4 }}>Máx.</div>
+                      <strong style={{ color: 'var(--chart-legend-pill-text)', fontVariantNumeric: 'tabular-nums', fontSize: 14 }}>
                         {fmt(geomModal.max)}
                         {valueSuffix}
                       </strong>
                     </div>
                     <div style={{ textAlign: 'center', minWidth: 0 }}>
-                      <div style={{ color: '#64748b', fontSize: 11, marginBottom: 4 }}>Média</div>
-                      <strong style={{ color: '#e2e8f0', fontVariantNumeric: 'tabular-nums', fontSize: 14 }}>
+                      <div style={{ color: 'var(--chart-caption)', fontSize: 11, marginBottom: 4 }}>Média</div>
+                      <strong style={{ color: 'var(--chart-legend-pill-text)', fontVariantNumeric: 'tabular-nums', fontSize: 14 }}>
                         {fmt(geomModal.avg)}
                         {valueSuffix}
                       </strong>
                     </div>
                   </div>
-                  <div style={{ color: '#64748b', marginTop: 12, textAlign: 'center' }}>
+                  <div style={{ color: 'var(--chart-caption)', marginTop: 12, textAlign: 'center' }}>
                     {rows.length} ponto(s) no período
                   </div>
                 </div>
@@ -868,7 +868,7 @@ function TinyLineChart<T extends { data_registro: string }>({
           onClick={() => setExpanded(true)}
           style={{
             border: `1px solid ${color}55`,
-            background: 'rgba(2,6,23,.52)',
+            background: 'var(--chart-expand-bg)',
             color,
             borderRadius: 8,
             padding: '4px 9px',
@@ -898,21 +898,21 @@ function TinyLineChart<T extends { data_registro: string }>({
                   maxWidth: 300,
                   padding: '10px 12px',
                   borderRadius: 12,
-                  background: 'rgba(15,23,42,.96)',
+                  background: 'var(--chart-tooltip-bg)',
                   border: `1px solid ${color}55`,
-                  boxShadow: '0 12px 36px rgba(0,0,0,.5)',
+                  boxShadow: 'var(--chart-tooltip-shadow)',
                   fontSize: 12,
                 }}
               >
-                <div style={{ fontWeight: 700, color: '#e0f2fe', marginBottom: 6 }}>
+                <div style={{ fontWeight: 700, color: 'var(--chart-tooltip-title)', marginBottom: 6 }}>
                   {formatAxisDateChart(rows[tip.idx].data_registro)}
                 </div>
                 {(() => {
                   const m = rowMetaForTooltip(rows[tip.idx])
                   return m.conferente || m.hora ? (
-                    <div style={{ fontSize: 11, color: '#64748b', marginBottom: 8, lineHeight: 1.4 }}>
-                      {m.conferente ? <span style={{ color: '#94a3b8' }}>{m.conferente}</span> : null}
-                      {m.conferente && m.hora ? <span style={{ color: '#475569' }}> · </span> : null}
+                    <div style={{ fontSize: 11, color: 'var(--chart-caption)', marginBottom: 8, lineHeight: 1.4 }}>
+                      {m.conferente ? <span style={{ color: 'var(--chart-footer-muted)' }}>{m.conferente}</span> : null}
+                      {m.conferente && m.hora ? <span style={{ color: 'var(--chart-caption)' }}> · </span> : null}
                       {m.hora ? <span>{m.hora}</span> : null}
                     </div>
                   ) : null
@@ -942,7 +942,7 @@ function TinyLineChart<T extends { data_registro: string }>({
                 <stop offset="100%" stopColor={color} stopOpacity={0} />
               </linearGradient>
             </defs>
-            <rect x={0} y={0} width={wC} height={hC} rx={8} fill="rgba(0,0,0,.18)" />
+            <rect x={0} y={0} width={wC} height={hC} rx={8} fill="var(--chart-plot-area)" />
             {geomCard.xLabels.map((xl, i) => (
               <line
                 key={`xg-${i}`}
@@ -950,7 +950,7 @@ function TinyLineChart<T extends { data_registro: string }>({
                 y1={pTC}
                 x2={xl.x}
                 y2={geomCard.bottomY}
-                stroke="rgba(148,163,184,.08)"
+                stroke="var(--chart-grid-vertical)"
                 strokeWidth={1}
               />
             ))}
@@ -961,7 +961,7 @@ function TinyLineChart<T extends { data_registro: string }>({
                 y1={t.y}
                 x2={wC - pRC}
                 y2={t.y}
-                stroke="rgba(148,163,184,.2)"
+                stroke="var(--chart-grid-horizontal)"
                 strokeDasharray="4 8"
                 strokeWidth={1}
               />
@@ -978,7 +978,7 @@ function TinyLineChart<T extends { data_registro: string }>({
                 y1={pTC}
                 x2={geomCard.xAt(tip.idx)}
                 y2={geomCard.bottomY}
-                stroke="rgba(148,163,184,.35)"
+                stroke="var(--chart-crosshair-muted)"
                 strokeWidth={1.5}
                 strokeDasharray="5 4"
               />
@@ -999,7 +999,7 @@ function TinyLineChart<T extends { data_registro: string }>({
                 cy={geomCard.yAt(valueOf(rows[tip.idx]))}
                 r={6}
                 fill={color}
-                stroke="rgba(15,23,42,.92)"
+                stroke="var(--chart-point-ring)"
                 strokeWidth={2}
               />
             ) : showSeriesInsight && geomCard.lastPt ? (
@@ -1008,7 +1008,7 @@ function TinyLineChart<T extends { data_registro: string }>({
                 cy={geomCard.lastPt.y}
                 r={5}
                 fill={color}
-                stroke="rgba(15,23,42,.9)"
+                stroke="var(--chart-point-ring)"
                 strokeWidth={2}
               />
             ) : null}
@@ -1029,7 +1029,7 @@ function TinyLineChart<T extends { data_registro: string }>({
                         fontSize={10}
                         fontWeight={700}
                         fontFamily="system-ui, sans-serif"
-                        style={{ filter: 'drop-shadow(0 1px 2px rgba(2,6,23,.85))' }}
+                        style={{ filter: 'var(--chart-value-dropshadow)' }}
                       >
                         {fmt(geomCard.values[i])}
                         {valueSuffix.trim()}
@@ -1043,7 +1043,7 @@ function TinyLineChart<T extends { data_registro: string }>({
                 x={pLC - 10}
                 y={t.y + 4}
                 textAnchor="end"
-                fill="#cbd5e1"
+                fill="var(--chart-svg-y-tick)"
                 fontSize={11}
                 fontFamily="system-ui, sans-serif"
               >
@@ -1056,7 +1056,7 @@ function TinyLineChart<T extends { data_registro: string }>({
               y1={geomCard.bottomY}
               x2={wC - pRC}
               y2={geomCard.bottomY}
-              stroke="rgba(148,163,184,.45)"
+              stroke="var(--chart-axis-line)"
               strokeWidth={1.5}
             />
             <line
@@ -1064,13 +1064,13 @@ function TinyLineChart<T extends { data_registro: string }>({
               y1={pTC}
               x2={pLC}
               y2={geomCard.bottomY}
-              stroke="rgba(148,163,184,.45)"
+              stroke="var(--chart-axis-line)"
               strokeWidth={1.5}
             />
             <text
               x={pLC}
               y={pTC - 4}
-              fill="#64748b"
+              fill="var(--chart-caption)"
               fontSize={10}
               fontFamily="system-ui, sans-serif"
             >
@@ -1082,7 +1082,7 @@ function TinyLineChart<T extends { data_registro: string }>({
                 x={xl.x}
                 y={hC - 10}
                 textAnchor="middle"
-                fill="#94a3b8"
+                fill="var(--chart-svg-x-label)"
                 fontSize={10}
                 fontFamily="system-ui, sans-serif"
               >
@@ -1102,7 +1102,7 @@ function TinyLineChart<T extends { data_registro: string }>({
               fontSize: 12,
               color: 'var(--text, #9ca3af)',
               paddingTop: 10,
-              borderTop: '1px solid rgba(255,255,255,.08)',
+              borderTop: '1px solid var(--chart-divider)',
             }}
           >
             <div
@@ -1125,8 +1125,8 @@ function TinyLineChart<T extends { data_registro: string }>({
                   style={{
                     padding: '10px 12px',
                     borderRadius: 10,
-                    background: 'rgba(0,0,0,.2)',
-                    border: '1px solid rgba(255,255,255,.07)',
+                    background: 'var(--chart-stat-box-bg)',
+                    border: '1px solid var(--chart-stat-box-border)',
                     display: 'flex',
                     flexDirection: 'column',
                     alignItems: 'center',
@@ -1136,8 +1136,8 @@ function TinyLineChart<T extends { data_registro: string }>({
                     minWidth: 0,
                   }}
                 >
-                  <span style={{ fontSize: 11, color: '#64748b', fontWeight: 600, letterSpacing: '0.04em' }}>{row.k}</span>
-                  <strong style={{ color: '#e2e8f0', fontVariantNumeric: 'tabular-nums', fontSize: 15 }}>
+                  <span style={{ fontSize: 11, color: 'var(--chart-stat-label)', fontWeight: 600, letterSpacing: '0.04em' }}>{row.k}</span>
+                  <strong style={{ color: 'var(--chart-stat-value)', fontVariantNumeric: 'tabular-nums', fontSize: 15 }}>
                     {fmt(row.v)}
                     {valueSuffix}
                   </strong>
@@ -1150,15 +1150,15 @@ function TinyLineChart<T extends { data_registro: string }>({
                   width: '100%',
                   padding: '12px 14px',
                   borderRadius: 10,
-                  background: 'rgba(0,0,0,.22)',
-                  border: '1px solid rgba(255,255,255,.06)',
+                  background: 'var(--chart-insight-bg)',
+                  border: '1px solid var(--chart-insight-border)',
                   display: 'grid',
                   gap: 10,
                   fontSize: 12,
-                  color: '#94a3b8',
+                  color: 'var(--chart-insight-text)',
                 }}
               >
-                <div style={{ fontWeight: 700, color: '#cbd5e1', fontSize: 12, letterSpacing: '0.02em' }}>
+                <div style={{ fontWeight: 700, color: 'var(--chart-insight-title)', fontSize: 12, letterSpacing: '0.02em' }}>
                   Tendência no período exibido
                 </div>
                 <div
@@ -1173,12 +1173,12 @@ function TinyLineChart<T extends { data_registro: string }>({
                   <span style={{ minWidth: 0 }}>
                     Início ({formatAxisDateChart(rows[0].data_registro)})
                   </span>
-                  <strong style={{ color: '#f1f5f9', fontVariantNumeric: 'tabular-nums', justifySelf: 'end' }}>
+                  <strong style={{ color: 'var(--chart-insight-strong)', fontVariantNumeric: 'tabular-nums', justifySelf: 'end' }}>
                     {fmt(geomCard.firstVal)}
                     {valueSuffix}
                   </strong>
                   <span style={{ minWidth: 0 }}>Fim ({formatAxisDateChart(rows[rows.length - 1].data_registro)})</span>
-                  <strong style={{ color: '#f1f5f9', fontVariantNumeric: 'tabular-nums', justifySelf: 'end' }}>
+                  <strong style={{ color: 'var(--chart-insight-strong)', fontVariantNumeric: 'tabular-nums', justifySelf: 'end' }}>
                     {fmt(geomCard.lastVal)}
                     {valueSuffix}
                   </strong>
@@ -1187,7 +1187,7 @@ function TinyLineChart<T extends { data_registro: string }>({
                     style={{
                       fontVariantNumeric: 'tabular-nums',
                       justifySelf: 'end',
-                      color: geomCard.delta > 0.0001 ? '#6ee7b7' : geomCard.delta < -0.0001 ? '#fca5a5' : '#e2e8f0',
+                      color: geomCard.delta > 0.0001 ? '#6ee7b7' : geomCard.delta < -0.0001 ? '#fca5a5' : 'var(--chart-stat-value)',
                     }}
                   >
                     {geomCard.delta > 0 ? '+' : ''}
@@ -1349,7 +1349,7 @@ function CombinedTempChart({ rows }: { rows: TempRow[] }) {
           style={{
             position: 'fixed',
             inset: 0,
-            background: 'rgba(2,6,23,.72)',
+            background: 'var(--chart-modal-overlay)',
             zIndex: 1200,
             display: 'flex',
             alignItems: 'center',
@@ -1366,8 +1366,8 @@ function CombinedTempChart({ rows }: { rows: TempRow[] }) {
               width: 'min(1320px, 98vw)',
               maxHeight: '94vh',
               overflow: 'auto',
-              border: '1px solid rgba(52,211,153,.35)',
-              boxShadow: '0 22px 70px rgba(0,0,0,.55)',
+              border: '1px solid var(--chart-modal-border-accent-green)',
+              boxShadow: 'var(--chart-modal-shadow)',
             }}
             onClick={(e) => e.stopPropagation()}
           >
@@ -1377,7 +1377,7 @@ function CombinedTempChart({ rows }: { rows: TempRow[] }) {
                   fontWeight: 800,
                   fontSize: 18,
                   letterSpacing: '0.02em',
-                  background: 'linear-gradient(90deg, #a7f3d0, #6ee7b7)',
+                  background: 'var(--chart-comparativo-gradient)',
                   WebkitBackgroundClip: 'text',
                   WebkitTextFillColor: 'transparent',
                   backgroundClip: 'text',
@@ -1389,9 +1389,9 @@ function CombinedTempChart({ rows }: { rows: TempRow[] }) {
                 type="button"
                 onClick={() => setExpanded(false)}
                 style={{
-                  border: '1px solid rgba(148,163,184,.45)',
-                  background: 'rgba(15,23,42,.7)',
-                  color: '#e2e8f0',
+                  border: '1px solid var(--chart-btn-fechar-border)',
+                  background: 'var(--chart-btn-fechar-bg)',
+                  color: 'var(--chart-btn-fechar-color)',
                   borderRadius: 8,
                   padding: '6px 10px',
                   fontSize: 12,
@@ -1402,7 +1402,7 @@ function CombinedTempChart({ rows }: { rows: TempRow[] }) {
                 Fechar
               </button>
             </div>
-            <div style={{ fontSize: 11, color: '#64748b', marginBottom: 10, lineHeight: 1.45 }}>
+            <div style={{ fontSize: 11, color: 'var(--chart-caption)', marginBottom: 10, lineHeight: 1.45 }}>
               Eixo X: data e horário do registro · Eixo Y: °C. Passe o mouse para ver as três câmaras no ponto.
             </div>
             <div
@@ -1413,17 +1413,17 @@ function CombinedTempChart({ rows }: { rows: TempRow[] }) {
                 gap: 10,
                 marginBottom: 12,
                 padding: '10px 12px',
-                background: 'rgba(0,0,0,.2)',
+                background: 'var(--chart-legend-bar-bg)',
                 borderRadius: 12,
-                border: '1px solid rgba(255,255,255,.06)',
+                border: '1px solid var(--chart-legend-bar-border)',
               }}
             >
-              <span style={{ fontSize: 11, color: '#64748b', fontWeight: 600, marginRight: 4 }}>Legenda</span>
+              <span style={{ fontSize: 11, color: 'var(--chart-caption)', fontWeight: 600, marginRight: 4 }}>Legenda</span>
               {chartModal.seriesPaths.map((p) => (
                 <span
                   key={p.label}
                   style={{
-                    color: '#e2e8f0',
+                    color: 'var(--chart-legend-pill-text)',
                     fontWeight: 600,
                     fontSize: 12,
                     display: 'inline-flex',
@@ -1453,16 +1453,16 @@ function CombinedTempChart({ rows }: { rows: TempRow[] }) {
                     maxWidth: 340,
                     padding: '10px 14px',
                     borderRadius: 12,
-                    background: 'rgba(15,23,42,.94)',
-                    border: '1px solid rgba(56,189,248,.35)',
-                    boxShadow: '0 12px 40px rgba(0,0,0,.45)',
+                    background: 'var(--chart-tooltip-bg)',
+                    border: '1px solid var(--chart-tooltip-border-cyan)',
+                    boxShadow: 'var(--chart-tooltip-shadow)',
                     fontSize: 12,
                   }}
                 >
-                  <div style={{ fontWeight: 700, color: '#e0f2fe', marginBottom: 4 }}>
+                  <div style={{ fontWeight: 700, color: 'var(--chart-tooltip-title)', marginBottom: 4 }}>
                     {formatAxisDateChart(rows[tip.idx].data_registro)}
                   </div>
-                  <div style={{ fontSize: 11, color: '#64748b', marginBottom: 8 }}>
+                  <div style={{ fontSize: 11, color: 'var(--chart-caption)', marginBottom: 8 }}>
                     {formatHoraRegistro(rows[tip.idx].created_at)}
                   </div>
                   <div style={{ display: 'grid', gap: 6 }}>
@@ -1496,7 +1496,7 @@ function CombinedTempChart({ rows }: { rows: TempRow[] }) {
                     </linearGradient>
                   ))}
                 </defs>
-                <rect x={0} y={0} width={chartModal.width} height={chartModal.height} rx={10} fill="rgba(0,0,0,.16)" />
+                <rect x={0} y={0} width={chartModal.width} height={chartModal.height} rx={10} fill="var(--chart-plot-area)" />
                 {chartModal.xLabels.map((xl, i) => (
                   <line
                     key={`cxgm-${i}`}
@@ -1504,7 +1504,7 @@ function CombinedTempChart({ rows }: { rows: TempRow[] }) {
                     y1={chartModal.padT}
                     x2={xl.x}
                     y2={chartModal.bottomY}
-                    stroke="rgba(148,163,184,.09)"
+                    stroke="var(--chart-grid-vertical-dense)"
                     strokeWidth={1}
                   />
                 ))}
@@ -1515,7 +1515,7 @@ function CombinedTempChart({ rows }: { rows: TempRow[] }) {
                     y1={t.y}
                     x2={chartModal.width - chartModal.padR}
                     y2={t.y}
-                    stroke="rgba(148,163,184,.2)"
+                    stroke="var(--chart-grid-horizontal)"
                     strokeDasharray="4 8"
                     strokeWidth={1}
                   />
@@ -1526,7 +1526,7 @@ function CombinedTempChart({ rows }: { rows: TempRow[] }) {
                     y1={chartModal.padT}
                     x2={chartModal.xAt(tip.idx)}
                     y2={chartModal.bottomY}
-                    stroke="rgba(56,189,248,.35)"
+                    stroke="var(--chart-cursor-line)"
                     strokeWidth={1.5}
                     strokeDasharray="6 4"
                   />
@@ -1583,7 +1583,7 @@ function CombinedTempChart({ rows }: { rows: TempRow[] }) {
                           fontSize={11}
                           fontWeight={700}
                           fontFamily="system-ui, sans-serif"
-                          style={{ filter: 'drop-shadow(0 1px 2px rgba(2,6,23,.9))' }}
+                          style={{ filter: 'var(--chart-value-dropshadow)' }}
                         >
                           {v.toFixed(1)}°C
                         </text>
@@ -1603,7 +1603,7 @@ function CombinedTempChart({ rows }: { rows: TempRow[] }) {
                           cy={cy}
                           r={5.5}
                           fill={s.color}
-                          stroke="rgba(15,23,42,.92)"
+                          stroke="var(--chart-point-ring)"
                           strokeWidth={2}
                         />
                       )
@@ -1615,14 +1615,14 @@ function CombinedTempChart({ rows }: { rows: TempRow[] }) {
                     x={chartModal.padL - 10}
                     y={t.y + 4}
                     textAnchor="end"
-                    fill="#cbd5e1"
+                    fill="var(--chart-svg-y-tick)"
                     fontSize={12}
                     fontFamily="system-ui, sans-serif"
                   >
                     {t.v.toFixed(1)}°C
                   </text>
                 ))}
-                <text x={chartModal.padL} y={chartModal.padT - 2} fill="#64748b" fontSize={11} fontFamily="system-ui, sans-serif">
+                <text x={chartModal.padL} y={chartModal.padT - 2} fill="var(--chart-caption)" fontSize={11} fontFamily="system-ui, sans-serif">
                   °C
                 </text>
                 <line
@@ -1630,7 +1630,7 @@ function CombinedTempChart({ rows }: { rows: TempRow[] }) {
                   y1={chartModal.bottomY}
                   x2={chartModal.width - chartModal.padR}
                   y2={chartModal.bottomY}
-                  stroke="rgba(148,163,184,.45)"
+                  stroke="var(--chart-axis-line)"
                   strokeWidth={1.5}
                 />
                 <line
@@ -1638,7 +1638,7 @@ function CombinedTempChart({ rows }: { rows: TempRow[] }) {
                   y1={chartModal.padT}
                   x2={chartModal.padL}
                   y2={chartModal.bottomY}
-                  stroke="rgba(148,163,184,.45)"
+                  stroke="var(--chart-axis-line)"
                   strokeWidth={1.5}
                 />
                 {chartModal.xLabels.map((xl, i) => (
@@ -1647,7 +1647,7 @@ function CombinedTempChart({ rows }: { rows: TempRow[] }) {
                       x={xl.x}
                       y={chartModal.height - (xl.hora ? 22 : 12)}
                       textAnchor="middle"
-                      fill="#94a3b8"
+                      fill="var(--chart-svg-x-label)"
                       fontSize={11}
                       fontFamily="system-ui, sans-serif"
                     >
@@ -1658,7 +1658,7 @@ function CombinedTempChart({ rows }: { rows: TempRow[] }) {
                         x={xl.x}
                         y={chartModal.height - 8}
                         textAnchor="middle"
-                        fill="#64748b"
+                        fill="var(--chart-caption)"
                         fontSize={9}
                         fontFamily="system-ui, sans-serif"
                         style={{ fontVariantNumeric: 'tabular-nums' }}
@@ -1678,15 +1678,15 @@ function CombinedTempChart({ rows }: { rows: TempRow[] }) {
                 marginTop: 12,
                 fontSize: 12,
                 paddingTop: 10,
-                borderTop: '1px solid rgba(255,255,255,.08)',
-                color: '#94a3b8',
+                borderTop: '1px solid var(--chart-divider)',
+                color: 'var(--chart-footer-muted)',
               }}
             >
               <span>
-                Escala: <strong style={{ color: '#e2e8f0' }}>{chartModal.min.toFixed(1)} °C</strong> a{' '}
-                <strong style={{ color: '#e2e8f0' }}>{chartModal.max.toFixed(1)} °C</strong>
+                Escala: <strong style={{ color: 'var(--chart-legend-pill-text)' }}>{chartModal.min.toFixed(1)} °C</strong> a{' '}
+                <strong style={{ color: 'var(--chart-legend-pill-text)' }}>{chartModal.max.toFixed(1)} °C</strong>
               </span>
-              <span style={{ color: '#64748b' }}>{rows.length} lançamento(s)</span>
+              <span style={{ color: 'var(--chart-caption)' }}>{rows.length} lançamento(s)</span>
             </div>
           </div>
         </div>
@@ -1706,7 +1706,7 @@ function CombinedTempChart({ rows }: { rows: TempRow[] }) {
             fontWeight: 700,
             fontSize: 17,
             letterSpacing: '0.02em',
-            background: 'linear-gradient(90deg, #a7f3d0, #6ee7b7)',
+            background: 'var(--chart-comparativo-gradient)',
             WebkitBackgroundClip: 'text',
             WebkitTextFillColor: 'transparent',
             backgroundClip: 'text',
@@ -1720,7 +1720,7 @@ function CombinedTempChart({ rows }: { rows: TempRow[] }) {
           disabled={!rows.length}
           style={{
             border: '1px solid rgba(34,197,94,.45)',
-            background: rows.length ? 'rgba(2,6,23,.52)' : 'rgba(15,23,42,.4)',
+            background: rows.length ? 'var(--chart-expand-bg)' : 'var(--chart-expand-disabled-bg)',
             color: '#22c55e',
             borderRadius: 8,
             padding: '5px 11px',
@@ -1745,17 +1745,17 @@ function CombinedTempChart({ rows }: { rows: TempRow[] }) {
               gap: 10,
               marginBottom: 12,
               padding: '10px 12px',
-              background: 'rgba(0,0,0,.2)',
+              background: 'var(--chart-legend-bar-bg)',
               borderRadius: 12,
-              border: '1px solid rgba(255,255,255,.06)',
+              border: '1px solid var(--chart-legend-bar-border)',
             }}
           >
-            <span style={{ fontSize: 11, color: '#64748b', fontWeight: 600, marginRight: 4 }}>Legenda</span>
+            <span style={{ fontSize: 11, color: 'var(--chart-caption)', fontWeight: 600, marginRight: 4 }}>Legenda</span>
             {chart.seriesPaths.map((p) => (
               <span
                 key={p.label}
                 style={{
-                  color: '#e2e8f0',
+                  color: 'var(--chart-legend-pill-text)',
                   fontWeight: 600,
                   fontSize: 12,
                   display: 'inline-flex',
@@ -1771,7 +1771,7 @@ function CombinedTempChart({ rows }: { rows: TempRow[] }) {
                 {p.label}
               </span>
             ))}
-            <span style={{ fontSize: 12, color: '#64748b', marginLeft: 'auto' }}>
+            <span style={{ fontSize: 12, color: 'var(--chart-caption)', marginLeft: 'auto' }}>
               Passe o mouse no gráfico para ver valores por data
             </span>
           </div>
@@ -1789,13 +1789,13 @@ function CombinedTempChart({ rows }: { rows: TempRow[] }) {
                   maxWidth: 320,
                   padding: '10px 14px',
                   borderRadius: 12,
-                  background: 'rgba(15,23,42,.94)',
-                  border: '1px solid rgba(56,189,248,.35)',
-                  boxShadow: '0 12px 40px rgba(0,0,0,.45)',
+                  background: 'var(--chart-tooltip-bg)',
+                  border: '1px solid var(--chart-tooltip-border-cyan)',
+                  boxShadow: 'var(--chart-tooltip-shadow)',
                   fontSize: 12,
                 }}
               >
-                <div style={{ fontWeight: 700, color: '#e0f2fe', marginBottom: 8 }}>
+                <div style={{ fontWeight: 700, color: 'var(--chart-tooltip-title)', marginBottom: 8 }}>
                   {formatAxisDateChart(rows[tip.idx].data_registro)}
                 </div>
                 <div style={{ display: 'grid', gap: 6 }}>
@@ -1829,7 +1829,7 @@ function CombinedTempChart({ rows }: { rows: TempRow[] }) {
                   </linearGradient>
                 ))}
               </defs>
-              <rect x={0} y={0} width={width} height={height} rx={10} fill="rgba(0,0,0,.16)" />
+              <rect x={0} y={0} width={width} height={height} rx={10} fill="var(--chart-plot-area)" />
               {chart.xLabels.map((xl, i) => (
                 <line
                   key={`cxg-${i}`}
@@ -1837,7 +1837,7 @@ function CombinedTempChart({ rows }: { rows: TempRow[] }) {
                   y1={padT}
                   x2={xl.x}
                   y2={bottomY}
-                  stroke="rgba(148,163,184,.09)"
+                  stroke="var(--chart-grid-vertical-dense)"
                   strokeWidth={1}
                 />
               ))}
@@ -1848,7 +1848,7 @@ function CombinedTempChart({ rows }: { rows: TempRow[] }) {
                   y1={t.y}
                   x2={width - padR}
                   y2={t.y}
-                  stroke="rgba(148,163,184,.2)"
+                  stroke="var(--chart-grid-horizontal)"
                   strokeDasharray="4 8"
                   strokeWidth={1}
                 />
@@ -1859,7 +1859,7 @@ function CombinedTempChart({ rows }: { rows: TempRow[] }) {
                   y1={padT}
                   x2={chart.xAt(tip.idx)}
                   y2={bottomY}
-                  stroke="rgba(56,189,248,.35)"
+                  stroke="var(--chart-cursor-line)"
                   strokeWidth={1.5}
                   strokeDasharray="6 4"
                 />
@@ -1918,7 +1918,7 @@ function CombinedTempChart({ rows }: { rows: TempRow[] }) {
                         fontSize={10}
                         fontWeight={700}
                         fontFamily="system-ui, sans-serif"
-                        style={{ filter: 'drop-shadow(0 1px 2px rgba(2,6,23,.9))' }}
+                        style={{ filter: 'var(--chart-value-dropshadow)' }}
                       >
                         {v.toFixed(1)}°C
                       </text>
@@ -1938,7 +1938,7 @@ function CombinedTempChart({ rows }: { rows: TempRow[] }) {
                         cy={cy}
                         r={5}
                         fill={s.color}
-                        stroke="rgba(15,23,42,.92)"
+                        stroke="var(--chart-point-ring)"
                         strokeWidth={2}
                       />
                     )
@@ -1950,14 +1950,14 @@ function CombinedTempChart({ rows }: { rows: TempRow[] }) {
                   x={padL - 10}
                   y={t.y + 4}
                   textAnchor="end"
-                  fill="#cbd5e1"
+                  fill="var(--chart-svg-y-tick)"
                   fontSize={11}
                   fontFamily="system-ui, sans-serif"
                 >
                   {t.v.toFixed(1)}°C
                 </text>
               ))}
-              <text x={padL} y={padT - 2} fill="#64748b" fontSize={10} fontFamily="system-ui, sans-serif">
+              <text x={padL} y={padT - 2} fill="var(--chart-caption)" fontSize={10} fontFamily="system-ui, sans-serif">
                 °C
               </text>
               <line
@@ -1965,7 +1965,7 @@ function CombinedTempChart({ rows }: { rows: TempRow[] }) {
                 y1={bottomY}
                 x2={width - padR}
                 y2={bottomY}
-                stroke="rgba(148,163,184,.45)"
+                stroke="var(--chart-axis-line)"
                 strokeWidth={1.5}
               />
               <line
@@ -1973,7 +1973,7 @@ function CombinedTempChart({ rows }: { rows: TempRow[] }) {
                 y1={padT}
                 x2={padL}
                 y2={bottomY}
-                stroke="rgba(148,163,184,.45)"
+                stroke="var(--chart-axis-line)"
                 strokeWidth={1.5}
               />
               {chart.xLabels.map((xl, i) => (
@@ -1982,7 +1982,7 @@ function CombinedTempChart({ rows }: { rows: TempRow[] }) {
                   x={xl.x}
                   y={height - 12}
                   textAnchor="middle"
-                  fill="#94a3b8"
+                  fill="var(--chart-svg-x-label)"
                   fontSize={10}
                   fontFamily="system-ui, sans-serif"
                 >
@@ -1999,13 +1999,13 @@ function CombinedTempChart({ rows }: { rows: TempRow[] }) {
               marginTop: 12,
               fontSize: 12,
               paddingTop: 10,
-              borderTop: '1px solid rgba(255,255,255,.08)',
-              color: '#94a3b8',
+              borderTop: '1px solid var(--chart-divider)',
+              color: 'var(--chart-footer-muted)',
             }}
           >
             <span>
-              Escala vertical: <strong style={{ color: '#e2e8f0' }}>{chart.min.toFixed(1)} °C</strong> a{' '}
-              <strong style={{ color: '#e2e8f0' }}>{chart.max.toFixed(1)} °C</strong>
+              Escala vertical: <strong style={{ color: 'var(--chart-legend-pill-text)' }}>{chart.min.toFixed(1)} °C</strong> a{' '}
+              <strong style={{ color: 'var(--chart-legend-pill-text)' }}>{chart.max.toFixed(1)} °C</strong>
             </span>
           </div>
         </>
@@ -2152,7 +2152,7 @@ function CombinedOcupacaoChart({ rows }: { rows: OcupRow[] }) {
           style={{
             position: 'fixed',
             inset: 0,
-            background: 'rgba(2,6,23,.72)',
+            background: 'var(--chart-modal-overlay)',
             zIndex: 1200,
             display: 'flex',
             alignItems: 'center',
@@ -2169,8 +2169,8 @@ function CombinedOcupacaoChart({ rows }: { rows: OcupRow[] }) {
               maxHeight: '94vh',
               overflow: 'auto',
               padding: '16px 28px 24px 16px',
-              border: '1px solid rgba(56,189,248,.4)',
-              boxShadow: '0 22px 70px rgba(0,0,0,.55)',
+              border: '1px solid var(--chart-modal-border-accent-cyan)',
+              boxShadow: 'var(--chart-modal-shadow)',
             }}
             onClick={(e) => e.stopPropagation()}
           >
@@ -2181,7 +2181,7 @@ function CombinedOcupacaoChart({ rows }: { rows: OcupRow[] }) {
                     fontWeight: 800,
                     fontSize: 18,
                     letterSpacing: '0.02em',
-                    background: 'linear-gradient(90deg, #bae6fd, #38bdf8, #7dd3fc)',
+                    background: 'var(--chart-comparativo-ocup-gradient)',
                     WebkitBackgroundClip: 'text',
                     WebkitTextFillColor: 'transparent',
                     backgroundClip: 'text',
@@ -2189,17 +2189,17 @@ function CombinedOcupacaoChart({ rows }: { rows: OcupRow[] }) {
                 >
                   Comparativo — ocupação %
                 </div>
-                <div style={{ fontSize: 11, color: '#64748b', marginTop: 6, lineHeight: 1.45, maxWidth: 720 }}>
-                  Linha <strong style={{ color: '#e2e8f0' }}>geral</strong> inclui avaria. Eixo X: data e horário do registro.
+                <div style={{ fontSize: 11, color: 'var(--chart-caption)', marginTop: 6, lineHeight: 1.45, maxWidth: 720 }}>
+                  Linha <strong style={{ color: 'var(--chart-legend-pill-text)' }}>geral</strong> inclui avaria. Eixo X: data e horário do registro.
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => setExpanded(false)}
                 style={{
-                  border: '1px solid rgba(148,163,184,.45)',
-                  background: 'rgba(15,23,42,.7)',
-                  color: '#e2e8f0',
+                  border: '1px solid var(--chart-btn-fechar-border)',
+                  background: 'var(--chart-btn-fechar-bg)',
+                  color: 'var(--chart-btn-fechar-color)',
                   borderRadius: 8,
                   padding: '6px 10px',
                   fontSize: 12,
@@ -2219,17 +2219,17 @@ function CombinedOcupacaoChart({ rows }: { rows: OcupRow[] }) {
                 gap: 10,
                 marginBottom: 12,
                 padding: '10px 12px',
-                background: 'rgba(0,0,0,.22)',
+                background: 'var(--chart-legend-bar-bg)',
                 borderRadius: 12,
-                border: '1px solid rgba(56,189,248,.12)',
+                border: '1px solid var(--chart-tooltip-border-cyan)',
               }}
             >
-              <span style={{ fontSize: 11, color: '#64748b', fontWeight: 600, marginRight: 4 }}>Legenda</span>
+              <span style={{ fontSize: 11, color: 'var(--chart-caption)', fontWeight: 600, marginRight: 4 }}>Legenda</span>
               {chartModal.seriesPaths.map((p) => (
                 <span
                   key={p.label}
                   style={{
-                    color: '#e2e8f0',
+                    color: 'var(--chart-legend-pill-text)',
                     fontWeight: 600,
                     fontSize: 12,
                     display: 'inline-flex',
@@ -2267,18 +2267,18 @@ function CombinedOcupacaoChart({ rows }: { rows: OcupRow[] }) {
                     maxWidth: 360,
                     padding: '12px 14px',
                     borderRadius: 12,
-                    background: 'rgba(15,23,42,.96)',
-                    border: '1px solid rgba(56,189,248,.4)',
-                    boxShadow: '0 12px 40px rgba(0,0,0,.5)',
+                    background: 'var(--chart-tooltip-bg)',
+                    border: '1px solid var(--chart-modal-border-accent-cyan)',
+                    boxShadow: 'var(--chart-tooltip-shadow)',
                     fontSize: 12,
                   }}
                 >
-                  <div style={{ fontWeight: 700, color: '#e0f2fe', marginBottom: 4 }}>
+                  <div style={{ fontWeight: 700, color: 'var(--chart-tooltip-title)', marginBottom: 4 }}>
                     {formatAxisDateChart(rows[tip.idx].data_registro)}
                   </div>
-                  <div style={{ fontSize: 11, color: '#64748b', marginBottom: 10 }}>
+                  <div style={{ fontSize: 11, color: 'var(--chart-caption)', marginBottom: 10 }}>
                     {rows[tip.idx].conferente_nome}
-                    <span style={{ color: '#475569' }}> · </span>
+                    <span style={{ color: 'var(--chart-caption)' }}> · </span>
                     {formatHoraRegistro(rows[tip.idx].created_at)}
                   </div>
                   <div style={{ display: 'grid', gap: 7 }}>
@@ -2298,7 +2298,7 @@ function CombinedOcupacaoChart({ rows }: { rows: OcupRow[] }) {
                       style={{
                         marginTop: 4,
                         paddingTop: 8,
-                        borderTop: '1px solid rgba(255,255,255,.08)',
+                        borderTop: '1px solid var(--chart-divider)',
                         color: '#fdba74',
                       }}
                     >
@@ -2326,7 +2326,7 @@ function CombinedOcupacaoChart({ rows }: { rows: OcupRow[] }) {
                     </linearGradient>
                   ))}
                 </defs>
-                <rect x={0} y={0} width={chartModal.width} height={chartModal.height} rx={10} fill="rgba(0,0,0,.2)" />
+                <rect x={0} y={0} width={chartModal.width} height={chartModal.height} rx={10} fill="var(--chart-plot-area)" />
                 {chartModal.xLabels.map((xl, i) => (
                   <line
                     key={`oxgm-${i}`}
@@ -2334,7 +2334,7 @@ function CombinedOcupacaoChart({ rows }: { rows: OcupRow[] }) {
                     y1={chartModal.padT}
                     x2={xl.x}
                     y2={chartModal.bottomY}
-                    stroke="rgba(148,163,184,.08)"
+                    stroke="var(--chart-grid-vertical)"
                     strokeWidth={1}
                   />
                 ))}
@@ -2345,7 +2345,7 @@ function CombinedOcupacaoChart({ rows }: { rows: OcupRow[] }) {
                     y1={t.y}
                     x2={chartModal.width - chartModal.padR}
                     y2={t.y}
-                    stroke="rgba(148,163,184,.2)"
+                    stroke="var(--chart-grid-horizontal)"
                     strokeDasharray="4 8"
                     strokeWidth={1}
                   />
@@ -2356,7 +2356,7 @@ function CombinedOcupacaoChart({ rows }: { rows: OcupRow[] }) {
                     y1={chartModal.padT}
                     x2={chartModal.xAt(tip.idx)}
                     y2={chartModal.bottomY}
-                    stroke="rgba(56,189,248,.4)"
+                    stroke="var(--chart-cursor-line-strong)"
                     strokeWidth={1.5}
                     strokeDasharray="6 4"
                   />
@@ -2415,7 +2415,7 @@ function CombinedOcupacaoChart({ rows }: { rows: OcupRow[] }) {
                           fontSize={11}
                           fontWeight={700}
                           fontFamily="system-ui, sans-serif"
-                          style={{ filter: 'drop-shadow(0 1px 2px rgba(2,6,23,.9))' }}
+                          style={{ filter: 'var(--chart-value-dropshadow)' }}
                         >
                           {v.toFixed(1)}%
                         </text>
@@ -2435,7 +2435,7 @@ function CombinedOcupacaoChart({ rows }: { rows: OcupRow[] }) {
                           cy={cy}
                           r={s.strokeWidth > 3 ? 5.8 : 5.2}
                           fill={s.color}
-                          stroke="rgba(15,23,42,.92)"
+                          stroke="var(--chart-point-ring)"
                           strokeWidth={2}
                         />
                       )
@@ -2447,14 +2447,14 @@ function CombinedOcupacaoChart({ rows }: { rows: OcupRow[] }) {
                     x={chartModal.padL - 10}
                     y={t.y + 4}
                     textAnchor="end"
-                    fill="#cbd5e1"
+                    fill="var(--chart-svg-y-tick)"
                     fontSize={12}
                     fontFamily="system-ui, sans-serif"
                   >
                     {t.v.toFixed(1)}%
                   </text>
                 ))}
-                <text x={chartModal.padL} y={chartModal.padT - 2} fill="#64748b" fontSize={11} fontFamily="system-ui, sans-serif">
+                <text x={chartModal.padL} y={chartModal.padT - 2} fill="var(--chart-caption)" fontSize={11} fontFamily="system-ui, sans-serif">
                   % ocupada
                 </text>
                 <line
@@ -2462,7 +2462,7 @@ function CombinedOcupacaoChart({ rows }: { rows: OcupRow[] }) {
                   y1={chartModal.bottomY}
                   x2={chartModal.width - chartModal.padR}
                   y2={chartModal.bottomY}
-                  stroke="rgba(148,163,184,.45)"
+                  stroke="var(--chart-axis-line)"
                   strokeWidth={1.5}
                 />
                 <line
@@ -2470,7 +2470,7 @@ function CombinedOcupacaoChart({ rows }: { rows: OcupRow[] }) {
                   y1={chartModal.padT}
                   x2={chartModal.padL}
                   y2={chartModal.bottomY}
-                  stroke="rgba(148,163,184,.45)"
+                  stroke="var(--chart-axis-line)"
                   strokeWidth={1.5}
                 />
                 {chartModal.xLabels.map((xl, i) => (
@@ -2479,7 +2479,7 @@ function CombinedOcupacaoChart({ rows }: { rows: OcupRow[] }) {
                       x={xl.x}
                       y={chartModal.height - (xl.hora ? 22 : 12)}
                       textAnchor="middle"
-                      fill="#94a3b8"
+                      fill="var(--chart-svg-x-label)"
                       fontSize={11}
                       fontFamily="system-ui, sans-serif"
                     >
@@ -2490,7 +2490,7 @@ function CombinedOcupacaoChart({ rows }: { rows: OcupRow[] }) {
                         x={xl.x}
                         y={chartModal.height - 8}
                         textAnchor="middle"
-                        fill="#64748b"
+                        fill="var(--chart-caption)"
                         fontSize={9}
                         fontFamily="system-ui, sans-serif"
                         style={{ fontVariantNumeric: 'tabular-nums' }}
@@ -2510,15 +2510,15 @@ function CombinedOcupacaoChart({ rows }: { rows: OcupRow[] }) {
                 marginTop: 12,
                 fontSize: 12,
                 paddingTop: 10,
-                borderTop: '1px solid rgba(255,255,255,.08)',
-                color: '#94a3b8',
+                borderTop: '1px solid var(--chart-divider)',
+                color: 'var(--chart-footer-muted)',
               }}
             >
               <span>
-                Faixa: <strong style={{ color: '#e2e8f0' }}>{chartModal.min.toFixed(1)} %</strong> a{' '}
-                <strong style={{ color: '#e2e8f0' }}>{chartModal.max.toFixed(1)} %</strong>
+                Faixa: <strong style={{ color: 'var(--chart-legend-pill-text)' }}>{chartModal.min.toFixed(1)} %</strong> a{' '}
+                <strong style={{ color: 'var(--chart-legend-pill-text)' }}>{chartModal.max.toFixed(1)} %</strong>
               </span>
-              <span style={{ color: '#64748b' }}>{rows.length} lançamento(s)</span>
+              <span style={{ color: 'var(--chart-caption)' }}>{rows.length} lançamento(s)</span>
             </div>
           </div>
         </div>
@@ -2529,7 +2529,7 @@ function CombinedOcupacaoChart({ rows }: { rows: OcupRow[] }) {
             fontWeight: 800,
             fontSize: 18,
             letterSpacing: '0.02em',
-            background: 'linear-gradient(90deg, #bae6fd, #38bdf8, #7dd3fc)',
+            background: 'var(--chart-comparativo-ocup-gradient)',
             WebkitBackgroundClip: 'text',
             WebkitTextFillColor: 'transparent',
             backgroundClip: 'text',
@@ -2542,8 +2542,8 @@ function CombinedOcupacaoChart({ rows }: { rows: OcupRow[] }) {
           onClick={() => setExpanded(true)}
           disabled={!rows.length}
           style={{
-            border: '1px solid rgba(56,189,248,.5)',
-            background: rows.length ? 'rgba(15,23,42,.65)' : 'rgba(15,23,42,.4)',
+            border: '1px solid var(--chart-modal-border-accent-cyan)',
+            background: rows.length ? 'var(--chart-expand-bg)' : 'var(--chart-expand-disabled-bg)',
             color: '#38bdf8',
             borderRadius: 8,
             padding: '5px 11px',
@@ -2557,8 +2557,8 @@ function CombinedOcupacaoChart({ rows }: { rows: OcupRow[] }) {
           Ampliar
         </button>
       </div>
-      <div style={{ fontSize: 12, color: '#64748b', marginBottom: 14, lineHeight: 1.45 }}>
-        Linha <strong style={{ color: '#e2e8f0' }}>geral</strong> inclui avaria no total ocupado. As outras três curvas são só as câmaras 11, 12 e 13 (percentual sobre a capacidade de cada uma).
+      <div style={{ fontSize: 12, color: 'var(--chart-caption)', marginBottom: 14, lineHeight: 1.45 }}>
+        Linha <strong style={{ color: 'var(--chart-legend-pill-text)' }}>geral</strong> inclui avaria no total ocupado. As outras três curvas são só as câmaras 11, 12 e 13 (percentual sobre a capacidade de cada uma).
       </div>
       {!rows.length || !chart ? (
         <div style={{ fontSize: 13, color: 'var(--text, #9ca3af)' }}>Sem dados ainda.</div>
@@ -2572,17 +2572,17 @@ function CombinedOcupacaoChart({ rows }: { rows: OcupRow[] }) {
               gap: 10,
               marginBottom: 12,
               padding: '10px 12px',
-              background: 'rgba(0,0,0,.22)',
+              background: 'var(--chart-legend-bar-bg)',
               borderRadius: 12,
-              border: '1px solid rgba(56,189,248,.12)',
+              border: '1px solid var(--chart-tooltip-border-cyan)',
             }}
           >
-            <span style={{ fontSize: 11, color: '#64748b', fontWeight: 600, marginRight: 4 }}>Legenda</span>
+            <span style={{ fontSize: 11, color: 'var(--chart-caption)', fontWeight: 600, marginRight: 4 }}>Legenda</span>
             {chart.seriesPaths.map((p) => (
               <span
                 key={p.label}
                 style={{
-                  color: '#e2e8f0',
+                  color: 'var(--chart-legend-pill-text)',
                   fontWeight: 600,
                   fontSize: 12,
                   display: 'inline-flex',
@@ -2606,7 +2606,7 @@ function CombinedOcupacaoChart({ rows }: { rows: OcupRow[] }) {
                 {p.label}
               </span>
             ))}
-            <span style={{ fontSize: 12, color: '#64748b', marginLeft: 'auto' }}>
+            <span style={{ fontSize: 12, color: 'var(--chart-caption)', marginLeft: 'auto' }}>
               Passe o mouse para ver valores, conferente e avaria na data
             </span>
           </div>
@@ -2624,18 +2624,18 @@ function CombinedOcupacaoChart({ rows }: { rows: OcupRow[] }) {
                   maxWidth: 360,
                   padding: '12px 14px',
                   borderRadius: 12,
-                  background: 'rgba(15,23,42,.96)',
-                  border: '1px solid rgba(56,189,248,.4)',
-                  boxShadow: '0 12px 40px rgba(0,0,0,.5)',
+                  background: 'var(--chart-tooltip-bg)',
+                  border: '1px solid var(--chart-modal-border-accent-cyan)',
+                  boxShadow: 'var(--chart-tooltip-shadow)',
                   fontSize: 12,
                 }}
               >
-                <div style={{ fontWeight: 700, color: '#e0f2fe', marginBottom: 4 }}>
+                <div style={{ fontWeight: 700, color: 'var(--chart-tooltip-title)', marginBottom: 4 }}>
                   {formatAxisDateChart(rows[tip.idx].data_registro)}
                 </div>
-                <div style={{ fontSize: 11, color: '#64748b', marginBottom: 10 }}>
+                <div style={{ fontSize: 11, color: 'var(--chart-caption)', marginBottom: 10 }}>
                   {rows[tip.idx].conferente_nome}
-                  <span style={{ color: '#475569' }}> · </span>
+                  <span style={{ color: 'var(--chart-caption)' }}> · </span>
                   {formatHoraRegistro(rows[tip.idx].created_at)}
                 </div>
                 <div style={{ display: 'grid', gap: 7 }}>
@@ -2655,7 +2655,7 @@ function CombinedOcupacaoChart({ rows }: { rows: OcupRow[] }) {
                     style={{
                       marginTop: 4,
                       paddingTop: 8,
-                      borderTop: '1px solid rgba(255,255,255,.08)',
+                      borderTop: '1px solid var(--chart-divider)',
                       color: '#fdba74',
                     }}
                   >
@@ -2683,7 +2683,7 @@ function CombinedOcupacaoChart({ rows }: { rows: OcupRow[] }) {
                   </linearGradient>
                 ))}
               </defs>
-              <rect x={0} y={0} width={width} height={height} rx={10} fill="rgba(0,0,0,.2)" />
+              <rect x={0} y={0} width={width} height={height} rx={10} fill="var(--chart-plot-area)" />
               {chart.xLabels.map((xl, i) => (
                 <line
                   key={`oxg-${i}`}
@@ -2691,7 +2691,7 @@ function CombinedOcupacaoChart({ rows }: { rows: OcupRow[] }) {
                   y1={padT}
                   x2={xl.x}
                   y2={bottomY}
-                  stroke="rgba(148,163,184,.08)"
+                  stroke="var(--chart-grid-vertical)"
                   strokeWidth={1}
                 />
               ))}
@@ -2702,7 +2702,7 @@ function CombinedOcupacaoChart({ rows }: { rows: OcupRow[] }) {
                   y1={t.y}
                   x2={width - padR}
                   y2={t.y}
-                  stroke="rgba(148,163,184,.2)"
+                  stroke="var(--chart-grid-horizontal)"
                   strokeDasharray="4 8"
                   strokeWidth={1}
                 />
@@ -2713,7 +2713,7 @@ function CombinedOcupacaoChart({ rows }: { rows: OcupRow[] }) {
                   y1={padT}
                   x2={chart.xAt(tip.idx)}
                   y2={bottomY}
-                  stroke="rgba(56,189,248,.4)"
+                  stroke="var(--chart-cursor-line-strong)"
                   strokeWidth={1.5}
                   strokeDasharray="6 4"
                 />
@@ -2772,7 +2772,7 @@ function CombinedOcupacaoChart({ rows }: { rows: OcupRow[] }) {
                         fontSize={10}
                         fontWeight={700}
                         fontFamily="system-ui, sans-serif"
-                        style={{ filter: 'drop-shadow(0 1px 2px rgba(2,6,23,.9))' }}
+                        style={{ filter: 'var(--chart-value-dropshadow)' }}
                       >
                         {v.toFixed(1)}%
                       </text>
@@ -2792,7 +2792,7 @@ function CombinedOcupacaoChart({ rows }: { rows: OcupRow[] }) {
                         cy={cy}
                         r={s.strokeWidth > 3 ? 5.5 : 5}
                         fill={s.color}
-                        stroke="rgba(15,23,42,.92)"
+                        stroke="var(--chart-point-ring)"
                         strokeWidth={2}
                       />
                     )
@@ -2804,14 +2804,14 @@ function CombinedOcupacaoChart({ rows }: { rows: OcupRow[] }) {
                   x={padL - 10}
                   y={t.y + 4}
                   textAnchor="end"
-                  fill="#cbd5e1"
+                  fill="var(--chart-svg-y-tick)"
                   fontSize={11}
                   fontFamily="system-ui, sans-serif"
                 >
                   {t.v.toFixed(1)}%
                 </text>
               ))}
-              <text x={padL} y={padT - 2} fill="#64748b" fontSize={10} fontFamily="system-ui, sans-serif">
+              <text x={padL} y={padT - 2} fill="var(--chart-caption)" fontSize={10} fontFamily="system-ui, sans-serif">
                 % ocupada
               </text>
               <line
@@ -2819,7 +2819,7 @@ function CombinedOcupacaoChart({ rows }: { rows: OcupRow[] }) {
                 y1={bottomY}
                 x2={width - padR}
                 y2={bottomY}
-                stroke="rgba(148,163,184,.45)"
+                stroke="var(--chart-axis-line)"
                 strokeWidth={1.5}
               />
               <line
@@ -2827,7 +2827,7 @@ function CombinedOcupacaoChart({ rows }: { rows: OcupRow[] }) {
                 y1={padT}
                 x2={padL}
                 y2={bottomY}
-                stroke="rgba(148,163,184,.45)"
+                stroke="var(--chart-axis-line)"
                 strokeWidth={1.5}
               />
               {chart.xLabels.map((xl, i) => (
@@ -2836,7 +2836,7 @@ function CombinedOcupacaoChart({ rows }: { rows: OcupRow[] }) {
                   x={xl.x}
                   y={height - 12}
                   textAnchor="middle"
-                  fill="#94a3b8"
+                  fill="var(--chart-svg-x-label)"
                   fontSize={10}
                   fontFamily="system-ui, sans-serif"
                 >
@@ -2853,15 +2853,15 @@ function CombinedOcupacaoChart({ rows }: { rows: OcupRow[] }) {
               marginTop: 12,
               fontSize: 12,
               paddingTop: 10,
-              borderTop: '1px solid rgba(255,255,255,.08)',
-              color: '#94a3b8',
+              borderTop: '1px solid var(--chart-divider)',
+              color: 'var(--chart-footer-muted)',
             }}
           >
             <span>
-              Faixa no gráfico: <strong style={{ color: '#e2e8f0' }}>{chart.min.toFixed(1)} %</strong> a{' '}
-              <strong style={{ color: '#e2e8f0' }}>{chart.max.toFixed(1)} %</strong>
+              Faixa no gráfico: <strong style={{ color: 'var(--chart-legend-pill-text)' }}>{chart.min.toFixed(1)} %</strong> a{' '}
+              <strong style={{ color: 'var(--chart-legend-pill-text)' }}>{chart.max.toFixed(1)} %</strong>
             </span>
-            <span style={{ color: '#64748b' }}>
+            <span style={{ color: 'var(--chart-caption)' }}>
               {rows.length} lançamento(s) no histórico carregado
             </span>
           </div>
@@ -2903,25 +2903,25 @@ type OcupResumoRascunho = {
 }
 
 const TEMA_OCP = {
-  resumoGradient:
-    'linear-gradient(145deg, rgba(14,165,233,.2) 0%, rgba(15,23,42,.96) 42%, rgba(8,47,72,.45) 100%)',
-  resumoBorder: '1px solid rgba(56,189,248,.45)',
-  tituloResumo: '#7dd3fc',
-  kpiOcupBorder: '1px solid rgba(56,189,248,.28)',
-  kpiOcupTitulo: '#7dd3fc',
-  kpiOcupValor: '#38bdf8',
-  camTitulo: '#7dd3fc',
-  camBorda: '1px solid rgba(56,189,248,.15)',
-  barFill: 'linear-gradient(90deg, #38bdf8, #0ea5e9)',
-  ocupSpan: '#38bdf8',
-  emptyBorder: '1px dashed rgba(56,189,248,.35)',
-  emptyStrong: '#7dd3fc',
-  formTitulo: '#38bdf8',
-  btnBorder: '1px solid #0ea5e9',
-  btnBg: '#38bdf8',
-  btnColor: '#082f49',
-  tabelaLivre: '#6ee7b7',
-  avariaDestaque: '#fdba74',
+  resumoGradient: 'var(--ocup-resumo-gradient)',
+  resumoBorder: 'var(--ocup-resumo-border)',
+  resumoShadow: 'var(--ocup-resumo-shadow)',
+  tituloResumo: 'var(--ocup-titulo-resumo)',
+  kpiOcupBorder: 'var(--ocup-kpi-ocup-border)',
+  kpiOcupTitulo: 'var(--ocup-kpi-ocup-titulo)',
+  kpiOcupValor: 'var(--ocup-kpi-ocup-valor)',
+  camTitulo: 'var(--ocup-cam-titulo)',
+  camBorda: 'var(--ocup-cam-borda)',
+  barFill: 'var(--ocup-bar-fill)',
+  ocupSpan: 'var(--ocup-ocup-span)',
+  emptyBorder: 'var(--ocup-empty-border)',
+  emptyStrong: 'var(--ocup-empty-strong)',
+  formTitulo: 'var(--ocup-form-titulo)',
+  btnBorder: 'var(--ocup-btn-border)',
+  btnBg: 'var(--ocup-btn-bg)',
+  btnColor: 'var(--ocup-btn-color)',
+  tabelaLivre: 'var(--ocup-tabela-livre)',
+  avariaDestaque: 'var(--ocup-avaria-destaque)',
 } as const
 
 function OcupacaoCamaras111213Secao({
@@ -3012,7 +3012,7 @@ function OcupacaoCamaras111213Secao({
             padding: '8px 12px 10px',
             background: t.resumoGradient,
             border: t.resumoBorder,
-            boxShadow: '0 8px 28px rgba(0,0,0,.3), inset 0 1px 0 rgba(255,255,255,.06)',
+            boxShadow: t.resumoShadow,
           }}
         >
           <div
@@ -3029,7 +3029,7 @@ function OcupacaoCamaras111213Secao({
                 style={{
                   fontSize: 10,
                   fontWeight: 700,
-                  color: '#94a3b8',
+                  color: 'var(--chart-footer-muted)',
                   marginBottom: 2,
                   textTransform: 'uppercase',
                   letterSpacing: '0.06em',
@@ -3041,7 +3041,7 @@ function OcupacaoCamaras111213Secao({
                 style={{
                   fontSize: 'clamp(16px, 2.8vw, 20px)',
                   fontWeight: 800,
-                  color: '#f8fafc',
+                  color: 'var(--ocup-resumo-numero)',
                   lineHeight: 1.05,
                   fontVariantNumeric: 'tabular-nums',
                 }}
@@ -3065,7 +3065,7 @@ function OcupacaoCamaras111213Secao({
             </div>
             <div />
           </div>
-          <div style={{ fontSize: 10, fontWeight: 600, color: '#94a3b8', textAlign: 'center', marginBottom: 6, lineHeight: 1.35 }}>
+          <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--chart-footer-muted)', textAlign: 'center', marginBottom: 6, lineHeight: 1.35 }}>
             Último registro salvo (data · horário · conferente)
           </div>
 
@@ -3083,7 +3083,7 @@ function OcupacaoCamaras111213Secao({
                 style={{
                   fontSize: 10,
                   fontWeight: 700,
-                  color: '#94a3b8',
+                  color: 'var(--chart-footer-muted)',
                   marginBottom: 2,
                   textTransform: 'uppercase',
                   letterSpacing: '0.06em',
@@ -3091,7 +3091,7 @@ function OcupacaoCamaras111213Secao({
               >
                 Data do lançamento
               </div>
-              <div style={{ fontSize: 'clamp(17px, 3.2vw, 22px)', fontWeight: 800, color: '#f8fafc', lineHeight: 1.05 }}>
+              <div style={{ fontSize: 'clamp(17px, 3.2vw, 22px)', fontWeight: 800, color: 'var(--ocup-resumo-numero)', lineHeight: 1.05 }}>
                 {formatDataBr(resumoDia.r.data_registro)}
               </div>
             </div>
@@ -3101,20 +3101,20 @@ function OcupacaoCamaras111213Secao({
                 gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))',
                 gap: 6,
                 padding: '6px 8px',
-                background: 'rgba(0,0,0,.22)',
+                background: 'var(--ocup-resumo-meta-bg)',
                 borderRadius: 8,
-                border: '1px solid rgba(255,255,255,.06)',
+                border: '1px solid var(--ocup-resumo-meta-border)',
               }}
             >
               <div>
-                <div style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', marginBottom: 2 }}>Horário do registro</div>
-                <div style={{ fontSize: 13, fontWeight: 700, color: '#e0f2fe', fontVariantNumeric: 'tabular-nums', lineHeight: 1.15 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--ocup-resumo-label)', marginBottom: 2 }}>Horário do registro</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ocup-resumo-hora)', fontVariantNumeric: 'tabular-nums', lineHeight: 1.15 }}>
                   {formatHoraRegistro(resumoDia.r.created_at)}
                 </div>
               </div>
               <div>
-                <div style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', marginBottom: 2 }}>Conferente</div>
-                <div style={{ fontSize: 13, fontWeight: 700, color: '#bae6fd', lineHeight: 1.15 }}>{resumoDia.r.conferente_nome}</div>
+                <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--ocup-resumo-label)', marginBottom: 2 }}>Conferente</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ocup-resumo-nome)', lineHeight: 1.15 }}>{resumoDia.r.conferente_nome}</div>
               </div>
             </div>
           </div>
@@ -3129,11 +3129,11 @@ function OcupacaoCamaras111213Secao({
           >
             <div
               style={{
-                background: 'rgba(0,0,0,.28)',
+                background: 'var(--ocup-nested-strong)',
                 borderRadius: 10,
                 padding: '8px 12px',
                 border: t.kpiOcupBorder,
-                boxShadow: '0 2px 14px rgba(0,0,0,.2)',
+                boxShadow: 'var(--ocup-kpi-card-shadow)',
                 display: 'grid',
                 gap: 0,
               }}
@@ -3148,20 +3148,20 @@ function OcupacaoCamaras111213Secao({
                   gap: 8,
                   alignItems: 'center',
                   padding: '6px 0',
-                  borderTop: '1px solid rgba(56,189,248,.2)',
-                  borderBottom: '1px solid rgba(56,189,248,.2)',
+                  borderTop: '1px solid var(--ocup-kpi-inner-border)',
+                  borderBottom: '1px solid var(--ocup-kpi-inner-border)',
                 }}
               >
                 <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--chart-footer-muted)', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                     Posições ocupadas (c/ avaria)
                   </div>
-                  <div style={{ fontSize: 22, fontWeight: 800, color: '#f8fafc', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
+                  <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--ocup-resumo-numero)', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
                     {resumoDia.totalOcup}
                   </div>
                 </div>
                 <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--chart-footer-muted)', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                     % Ocupada (c/ avaria)
                   </div>
                   <div style={{ fontSize: 26, fontWeight: 800, color: t.kpiOcupValor, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
@@ -3172,34 +3172,34 @@ function OcupacaoCamaras111213Secao({
               <div
                 style={{
                   fontSize: 11,
-                  color: '#64748b',
+                  color: 'var(--chart-caption)',
                   textAlign: 'center',
                   marginTop: 8,
                   lineHeight: 1.4,
                 }}
               >
-                Ocupação <strong style={{ color: '#94a3b8' }}>física</strong> (só vagas ocupadas, sem avaria):{' '}
-                <strong style={{ color: '#cbd5e1', fontVariantNumeric: 'tabular-nums' }}>{resumoDia.totalOcupFisico}</strong> pos. ·{' '}
-                <strong style={{ color: '#cbd5e1', fontVariantNumeric: 'tabular-nums' }}>{resumoDia.percOcupFisico.toFixed(1)}%</strong>
+                Ocupação <strong style={{ color: 'var(--chart-footer-muted)' }}>física</strong> (só vagas ocupadas, sem avaria):{' '}
+                <strong style={{ color: 'var(--chart-insight-strong)', fontVariantNumeric: 'tabular-nums' }}>{resumoDia.totalOcupFisico}</strong> pos. ·{' '}
+                <strong style={{ color: 'var(--chart-insight-strong)', fontVariantNumeric: 'tabular-nums' }}>{resumoDia.percOcupFisico.toFixed(1)}%</strong>
                 {' — '}
-                <span style={{ color: '#64748b' }}>
-                  com a física (sem avaria), <strong style={{ color: '#94a3b8' }}>% ocupada + % livre = 100%</strong> sobre as{' '}
-                  <strong style={{ color: '#94a3b8' }}>{resumoDia.totalPos}</strong> pos. O painel <strong style={{ color: '#6ee7b7' }}>Livres</strong>{' '}
-                  ao lado usa o complemento da ocupação <strong style={{ color: '#94a3b8' }}>com avaria</strong>.
+                <span style={{ color: 'var(--chart-caption)' }}>
+                  com a física (sem avaria), <strong style={{ color: 'var(--chart-footer-muted)' }}>% ocupada + % livre = 100%</strong> sobre as{' '}
+                  <strong style={{ color: 'var(--chart-footer-muted)' }}>{resumoDia.totalPos}</strong> pos. O painel <strong style={{ color: '#6ee7b7' }}>Livres</strong>{' '}
+                  ao lado usa o complemento da ocupação <strong style={{ color: 'var(--chart-footer-muted)' }}>com avaria</strong>.
                 </span>
               </div>
-              <div style={{ fontSize: 10, color: '#64748b', lineHeight: 1.35, marginTop: 6 }}>
+              <div style={{ fontSize: 10, color: 'var(--chart-caption)', lineHeight: 1.35, marginTop: 6 }}>
                 Detalhe do acréscimo por avaria no painel <strong style={{ color: '#fdba74' }}>Avaria</strong> abaixo.
               </div>
             </div>
 
             <div
               style={{
-                background: 'rgba(0,0,0,.28)',
+                background: 'var(--ocup-nested-strong)',
                 borderRadius: 10,
                 padding: '8px 12px',
                 border: '1px solid rgba(52,211,153,.4)',
-                boxShadow: '0 2px 14px rgba(0,0,0,.2)',
+                boxShadow: 'var(--ocup-kpi-card-shadow)',
                 display: 'grid',
                 gap: 0,
               }}
@@ -3219,7 +3219,7 @@ function OcupacaoCamaras111213Secao({
                 }}
               >
                 <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--chart-footer-muted)', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                     Saldo livre (capacidade)
                   </div>
                   <div style={{ fontSize: 22, fontWeight: 800, color: '#ecfdf5', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
@@ -3227,28 +3227,28 @@ function OcupacaoCamaras111213Secao({
                   </div>
                 </div>
                 <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.05em' }}>% Livre</div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--chart-footer-muted)', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.05em' }}>% Livre</div>
                   <div style={{ fontSize: 26, fontWeight: 800, color: '#34d399', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
                     {resumoDia.percSaldoLivre.toFixed(1)}%
                   </div>
                 </div>
               </div>
-              <div style={{ fontSize: 10, color: '#64748b', lineHeight: 1.35, marginTop: 6 }}>
+              <div style={{ fontSize: 10, color: 'var(--chart-caption)', lineHeight: 1.35, marginTop: 6 }}>
                 Complemento do painel <strong style={{ color: '#7dd3fc' }}>Ocupação (c/ avaria)</strong>:{' '}
-                <strong style={{ color: '#94a3b8' }}>% ocupada + % livre = 100%</strong> sobre as {resumoDia.totalPos} pos.{' '}
+                <strong style={{ color: 'var(--chart-footer-muted)' }}>% ocupada + % livre = 100%</strong> sobre as {resumoDia.totalPos} pos.{' '}
                 <strong style={{ color: '#6ee7b7' }}>Vagas físicas vazias</strong> (soma câmaras 11+12+13):{' '}
-                <strong style={{ color: '#cbd5e1', fontVariantNumeric: 'tabular-nums' }}>{resumoDia.totalVaz}</strong> pos. (
+                <strong style={{ color: 'var(--chart-insight-strong)', fontVariantNumeric: 'tabular-nums' }}>{resumoDia.totalVaz}</strong> pos. (
                 {resumoDia.percLivre.toFixed(1)}% do armazém — fecha com ocupação <em>física</em>).
               </div>
             </div>
 
             <div
               style={{
-                background: 'rgba(0,0,0,.28)',
+                background: 'var(--ocup-nested-strong)',
                 borderRadius: 10,
                 padding: '8px 12px',
                 border: '1px solid rgba(249,115,22,.45)',
-                boxShadow: '0 2px 14px rgba(0,0,0,.2)',
+                boxShadow: 'var(--ocup-kpi-card-shadow)',
                 display: 'grid',
                 gap: 0,
               }}
@@ -3268,14 +3268,14 @@ function OcupacaoCamaras111213Secao({
                 }}
               >
                 <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Quantidade</div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--chart-footer-muted)', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Quantidade</div>
                   <div style={{ fontSize: 22, fontWeight: 800, color: t.avariaDestaque, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
                     {resumoDia.r.avaria_acrescimo_ocupacao}
                     <span style={{ fontSize: 12, fontWeight: 700, color: '#fdba74', marginLeft: 4 }}>pos.</span>
                   </div>
                 </div>
                 <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.05em' }}>% sobre o armazém</div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--chart-footer-muted)', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.05em' }}>% sobre o armazém</div>
                   <div style={{ fontSize: 26, fontWeight: 800, color: '#fb923c', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
                     {resumoDia.totalPos > 0
                       ? ((resumoDia.r.avaria_acrescimo_ocupacao / resumoDia.totalPos) * 100).toFixed(1)
@@ -3284,18 +3284,18 @@ function OcupacaoCamaras111213Secao({
                   </div>
                 </div>
               </div>
-              <div style={{ fontSize: 10, color: '#64748b', lineHeight: 1.35, marginTop: 6 }}>
+              <div style={{ fontSize: 10, color: 'var(--chart-caption)', lineHeight: 1.35, marginTop: 6 }}>
                 Valor somado ao total de ocupadas no mesmo lançamento. Percentual calculado sobre as {resumoDia.totalPos} posições totais.
               </div>
             </div>
 
             <div
               style={{
-                background: 'rgba(0,0,0,.22)',
+                background: 'var(--ocup-nested-weak)',
                 borderRadius: 10,
                 padding: '8px 12px',
                 border: '1px solid rgba(250,204,21,.35)',
-                boxShadow: '0 2px 12px rgba(0,0,0,.2)',
+                boxShadow: 'var(--ocup-kpi-card-shadow-sm)',
               }}
             >
               <div style={{ fontSize: 13, color: '#fde047', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6, textAlign: 'center' }}>
@@ -3313,25 +3313,25 @@ function OcupacaoCamaras111213Secao({
                 }}
               >
                 <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Média Ocupação Mês</div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--chart-footer-muted)', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Média Ocupação Mês</div>
                   <div style={{ fontSize: 24, fontWeight: 800, color: '#fde047', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
                     {mediasMes.ocup.toFixed(0)}%
                   </div>
                 </div>
                 <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Média Livre Mês</div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--chart-footer-muted)', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Média Livre Mês</div>
                   <div style={{ fontSize: 24, fontWeight: 800, color: '#fef08a', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
                     {mediasMes.livre.toFixed(0)}%
                   </div>
                 </div>
               </div>
-              <div style={{ fontSize: 10, color: '#64748b', lineHeight: 1.35, marginTop: 6 }}>
+              <div style={{ fontSize: 10, color: 'var(--chart-caption)', lineHeight: 1.35, marginTop: 6 }}>
                 Cálculo sobre os lançamentos de ocupação carregados no histórico atual.
               </div>
             </div>
           </div>
 
-          <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', marginBottom: 6, letterSpacing: '0.03em' }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--chart-footer-muted)', marginBottom: 6, letterSpacing: '0.03em' }}>
             Detalhe por câmara (último registro)
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8 }}>
@@ -3348,7 +3348,7 @@ function OcupacaoCamaras111213Secao({
                 <div
                   key={c.id}
                   style={{
-                    background: 'rgba(0,0,0,.2)',
+                    background: 'var(--ocup-nested-weak)',
                     borderRadius: 10,
                     padding: '8px 10px',
                     border: t.camBorda,
@@ -3360,8 +3360,8 @@ function OcupacaoCamaras111213Secao({
                       marginBottom: 6,
                       padding: '6px 9px',
                       borderRadius: 8,
-                      background: 'linear-gradient(135deg, rgba(125,211,252,.14) 0%, rgba(56,189,248,.08) 100%)',
-                      border: '1px solid rgba(125,211,252,.35)',
+                      background: 'var(--ocup-cam-cap-bg)',
+                      border: '1px solid var(--ocup-cam-cap-border)',
                       boxShadow: 'inset 0 1px 0 rgba(255,255,255,.06)',
                     }}
                   >
@@ -3369,7 +3369,7 @@ function OcupacaoCamaras111213Secao({
                       style={{
                         fontSize: 15,
                         fontWeight: 800,
-                        color: '#f0f9ff',
+                        color: 'var(--ocup-cam-cap-numero)',
                         fontVariantNumeric: 'tabular-nums',
                         letterSpacing: '-0.02em',
                       }}
@@ -3406,7 +3406,7 @@ function OcupacaoCamaras111213Secao({
                       }}
                     />
                   </div>
-                  <div style={{ fontSize: 11, fontWeight: 600, color: '#94a3b8', marginTop: 4, textAlign: 'right' }}>{pct.toFixed(0)}% ocupada nesta câmara</div>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--chart-footer-muted)', marginTop: 4, textAlign: 'right' }}>{pct.toFixed(0)}% ocupada nesta câmara</div>
                 </div>
               )
             })}
@@ -3417,9 +3417,9 @@ function OcupacaoCamaras111213Secao({
           style={{
             borderRadius: 14,
             padding: '18px 20px',
-            background: 'rgba(15,23,42,.65)',
+            background: 'var(--ocup-empty-panel-bg)',
             border: t.emptyBorder,
-            color: '#94a3b8',
+            color: 'var(--chart-footer-muted)',
             fontSize: 14,
             textAlign: 'center',
           }}
@@ -3452,7 +3452,7 @@ function OcupacaoCamaras111213Secao({
             style={{
               fontSize: 11,
               fontWeight: 600,
-              color: '#94a3b8',
+              color: 'var(--chart-footer-muted)',
               marginBottom: 6,
               letterSpacing: '0.04em',
               textTransform: 'uppercase',
@@ -3470,15 +3470,15 @@ function OcupacaoCamaras111213Secao({
             }}
           >
             <label style={{ display: 'grid', gap: 4, minWidth: 0, alignContent: 'start' }}>
-              <span style={{ fontSize: 12, lineHeight: 1.25, color: '#cbd5e1' }}>Câm. 11 — vazias</span>
+              <span style={{ fontSize: 12, lineHeight: 1.25, color: 'var(--chart-footer-muted)' }}>Câm. 11 — vazias</span>
               <input value={v11} onChange={(e) => setV11(e.target.value)} type="number" min="0" style={inOcupNum} />
             </label>
             <label style={{ display: 'grid', gap: 4, minWidth: 0, alignContent: 'start' }}>
-              <span style={{ fontSize: 12, lineHeight: 1.25, color: '#cbd5e1' }}>Câm. 12 — vazias</span>
+              <span style={{ fontSize: 12, lineHeight: 1.25, color: 'var(--chart-footer-muted)' }}>Câm. 12 — vazias</span>
               <input value={v12} onChange={(e) => setV12(e.target.value)} type="number" min="0" style={inOcupNum} />
             </label>
             <label style={{ display: 'grid', gap: 4, minWidth: 0, alignContent: 'start' }}>
-              <span style={{ fontSize: 12, lineHeight: 1.25, color: '#cbd5e1' }}>Câm. 13 — vazias</span>
+              <span style={{ fontSize: 12, lineHeight: 1.25, color: 'var(--chart-footer-muted)' }}>Câm. 13 — vazias</span>
               <input value={v13} onChange={(e) => setV13(e.target.value)} type="number" min="0" style={inOcupNum} />
             </label>
             <label style={{ display: 'grid', gap: 4, minWidth: 0, alignContent: 'start' }}>
@@ -3496,7 +3496,7 @@ function OcupacaoCamaras111213Secao({
           <p
             style={{
               fontSize: 10,
-              color: '#64748b',
+              color: 'var(--chart-caption)',
               margin: '8px 0 0',
               lineHeight: 1.4,
             }}
@@ -3993,7 +3993,7 @@ export default function ContagemDiariaAmbiental() {
             style={{
               fontSize: 13,
               fontWeight: 700,
-              color: '#94a3b8',
+              color: 'var(--chart-footer-muted)',
               letterSpacing: '0.06em',
               textTransform: 'uppercase',
             }}
@@ -4034,17 +4034,16 @@ export default function ContagemDiariaAmbiental() {
             style={{
               borderRadius: 16,
               padding: '18px 18px 22px',
-              background:
-                'linear-gradient(152deg, rgba(8,47,72,.42) 0%, rgba(15,23,42,.94) 40%, rgba(17,24,39,.98) 100%)',
-              border: '1px solid rgba(56,189,248,.32)',
-              boxShadow: '0 18px 56px rgba(0,0,0,.38), inset 0 1px 0 rgba(255,255,255,.07)',
+              background: 'var(--ambient-ocup-historico-bg)',
+              border: 'var(--ambient-ocup-historico-border)',
+              boxShadow: 'var(--ambient-ocup-historico-shadow)',
             }}
           >
             <div
               style={{
                 fontSize: 11,
                 fontWeight: 700,
-                color: '#7dd3fc',
+                color: 'var(--ambient-ocup-historico-kicker)',
                 letterSpacing: '0.14em',
                 textTransform: 'uppercase',
                 marginBottom: 6,
@@ -4052,11 +4051,11 @@ export default function ContagemDiariaAmbiental() {
             >
               Histórico visual
             </div>
-            <div style={{ fontSize: 17, fontWeight: 800, color: '#f8fafc', marginBottom: 8, letterSpacing: '-0.02em' }}>
+            <div style={{ fontSize: 17, fontWeight: 800, color: 'var(--ambient-ocup-historico-title)', marginBottom: 8, letterSpacing: '-0.02em' }}>
               Evolução da ocupação nos lançamentos
             </div>
-            <p style={{ fontSize: 12, color: '#94a3b8', lineHeight: 1.55, margin: '0 0 18px', maxWidth: 920 }}>
-              O gráfico agrupado mostra a curva <strong style={{ color: '#e2e8f0' }}>geral</strong> (com avaria) e as
+            <p style={{ fontSize: 12, color: 'var(--ambient-ocup-historico-p)', lineHeight: 1.55, margin: '0 0 18px', maxWidth: 920 }}>
+              O gráfico agrupado mostra a curva <strong style={{ color: 'var(--ambient-ocup-historico-strong)' }}>geral</strong> (com avaria) e as
               três câmaras lado a lado — passe o mouse para ver conferente, horário e avaria naquele ponto. Abaixo, cada
               série em detalhe, com eixo temporal mais denso e a variação entre o primeiro e o último registro exibido.
             </p>
