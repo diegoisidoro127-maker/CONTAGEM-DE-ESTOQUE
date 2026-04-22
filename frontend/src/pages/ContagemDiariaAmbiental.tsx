@@ -28,9 +28,9 @@ type OcupRow = {
 }
 
 const OCUP_TOTAL = {
-  camara11: 68,
-  camara12: 136,
-  camara13: 140,
+  camara11: 138,
+  camara12: 134,
+  camara13: 138,
 } as const
 
 const OCUP_TOTAL_POSICOES = 410
