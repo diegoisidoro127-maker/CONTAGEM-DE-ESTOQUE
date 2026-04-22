@@ -228,6 +228,7 @@ function TinyLineChart<T extends { data_registro: string }>({
   axisCaption,
   denseTimeline,
   showSeriesInsight,
+  showPointValues,
 }: {
   title: string
   color: string
@@ -242,6 +243,8 @@ function TinyLineChart<T extends { data_registro: string }>({
   denseTimeline?: boolean
   /** Último ponto destacado + bloco início / fim / variação. */
   showSeriesInsight?: boolean
+  /** Exibe valores acima dos pontos da série. */
+  showPointValues?: boolean
 }) {
   const uid = useId().replace(/:/g, '')
   const gradId = `tgrad-${uid}`
@@ -310,6 +313,8 @@ function TinyLineChart<T extends { data_registro: string }>({
       delta: lastVal - firstVal,
       xAt,
       yAt,
+      pts,
+      values,
     }
   }, [rows, valueOf, innerW, innerH, padL, padT, bottomY, denseTimeline])
 
@@ -463,6 +468,31 @@ function TinyLineChart<T extends { data_registro: string }>({
                 strokeWidth={2}
               />
             ) : null}
+            {showPointValues
+              ? (() => {
+                  const n = geom.pts.length
+                  const step = n <= 16 ? 1 : Math.ceil(n / 12)
+                  return geom.pts
+                    .map((pt, i) => ({ pt, i }))
+                    .filter(({ i }) => i % step === 0 || i === n - 1)
+                    .map(({ pt, i }) => (
+                      <text
+                        key={`pv-${i}`}
+                        x={pt.x}
+                        y={Math.max(padT + 10, pt.y - 8)}
+                        textAnchor="middle"
+                        fill={color}
+                        fontSize={10}
+                        fontWeight={700}
+                        fontFamily="system-ui, sans-serif"
+                        style={{ filter: 'drop-shadow(0 1px 2px rgba(2,6,23,.85))' }}
+                      >
+                        {fmt(geom.values[i])}
+                        {valueSuffix.trim()}
+                      </text>
+                    ))
+                })()
+              : null}
             {geom.yTicks.map((t, i) => (
               <text
                 key={`yl-${i}`}
@@ -2384,6 +2414,7 @@ export default function ContagemDiariaAmbiental() {
                   axisCaption="%"
                   denseTimeline
                   showSeriesInsight
+                  showPointValues
                 />
               </div>
               <TinyLineChart
@@ -2396,6 +2427,7 @@ export default function ContagemDiariaAmbiental() {
                 axisCaption="%"
                 denseTimeline
                 showSeriesInsight
+                showPointValues
               />
               <TinyLineChart
                 title="% Ocupada — Câmara 12"
@@ -2407,6 +2439,7 @@ export default function ContagemDiariaAmbiental() {
                 axisCaption="%"
                 denseTimeline
                 showSeriesInsight
+                showPointValues
               />
               <TinyLineChart
                 title="% Ocupada — Câmara 13"
@@ -2418,6 +2451,7 @@ export default function ContagemDiariaAmbiental() {
                 axisCaption="%"
                 denseTimeline
                 showSeriesInsight
+                showPointValues
               />
               <TinyLineChart
                 title="Avaria — quantidade (posições)"
@@ -2429,6 +2463,7 @@ export default function ContagemDiariaAmbiental() {
                 axisCaption="pos."
                 denseTimeline
                 showSeriesInsight
+                showPointValues
               />
               <TinyLineChart
                 title="Avaria — % do total de posições"
@@ -2440,6 +2475,7 @@ export default function ContagemDiariaAmbiental() {
                 axisCaption="%"
                 denseTimeline
                 showSeriesInsight
+                showPointValues
               />
             </div>
           </div>
