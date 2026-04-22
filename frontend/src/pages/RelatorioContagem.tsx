@@ -201,6 +201,12 @@ type AvisoExportPendente = {
   conferentes: number
 }
 
+/** Resultado de uma consulta rápida ao dia antes de carregar/exportar (uma única busca). */
+type AvaliacaoUmDiaContagem =
+  | { kind: 'vazio' }
+  | { kind: 'pendente'; aviso: AvisoCargaPendente }
+  | { kind: 'ok' }
+
 /**
  * Dia civil (YMD) para histórico/lista:
  * - prioriza `data_contagem` (quando válida)
@@ -362,6 +368,7 @@ export default function RelatorioContagem({
   const [baseExportLoading, setBaseExportLoading] = useState(false)
   const [exportExcelLoading, setExportExcelLoading] = useState(false)
   const [avisoCargaPendente, setAvisoCargaPendente] = useState<AvisoCargaPendente | null>(null)
+  const [avisoDiaSemContagem, setAvisoDiaSemContagem] = useState<{ diaYmd: string } | null>(null)
   const [avisoExportPendente, setAvisoExportPendente] = useState<AvisoExportPendente | null>(null)
   /** Contagem diária: qual conferente exibir na coluna quantidade/nome (mesma ideia da prévia em Contagem). */
   const [relatorioConferenteFiltroLista, setRelatorioConferenteFiltroLista] = useState<string>('')
@@ -1146,7 +1153,7 @@ export default function RelatorioContagem({
 
   async function limparFiltroHistorico() {
     setConferenteFiltroHistorico(null)
-    await load({ ignoreHistoricoFilter: true })
+    await handleCarregarComAvisoPendencia()
   }
 
   function diaCivilFiltroAtual(): string | null {
@@ -1156,28 +1163,32 @@ export default function RelatorioContagem({
     return null
   }
 
-  async function avaliarPendenciasFinalizacaoDia(diaYmd: string): Promise<AvisoCargaPendente | null> {
+  async function avaliarUmDiaContagem(diaYmd: string): Promise<AvaliacaoUmDiaContagem> {
     const { rows: rowsComRascunho, origemAusenteNoResultado } = await fetchRelatorioContagemRows({
       singleDayYmd: diaYmd,
       allTimeOverride: false,
       includeRascunho: true,
     })
     const { filtered } = await filtrarLinhasParaPrevia(rowsComRascunho, origemAusenteNoResultado)
-    const pendentes = filtered.filter((r) => {
-      const ymd = String(r.data_contagem ?? r.data_hora_contagem ?? '').slice(0, 10)
-      return ymd === diaYmd && r.contagem_rascunho === true
-    })
-    if (pendentes.length === 0) return null
-    const conferentes = new Set(
-      pendentes
-        .map((r) => String(r.conferente_id ?? '').trim())
-        .filter((v) => v !== ''),
-    )
-    return {
-      diaYmd,
-      pendencias: pendentes.length,
-      conferentes: conferentes.size || 1,
+    const rowsDia = filtered.filter((r) => diaYmdSoDataContagemRow(r) === diaYmd)
+    if (rowsDia.length === 0) return { kind: 'vazio' }
+    const pendentes = rowsDia.filter((r) => r.contagem_rascunho === true)
+    if (pendentes.length > 0) {
+      const conferentes = new Set(
+        pendentes
+          .map((r) => String(r.conferente_id ?? '').trim())
+          .filter((v) => v !== ''),
+      )
+      return {
+        kind: 'pendente',
+        aviso: {
+          diaYmd,
+          pendencias: pendentes.length,
+          conferentes: conferentes.size || 1,
+        },
+      }
     }
+    return { kind: 'ok' }
   }
 
   async function handleCarregarComAvisoPendencia() {
@@ -1185,12 +1196,17 @@ export default function RelatorioContagem({
     try {
       setError('')
       setAvisoCargaPendente(null)
+      setAvisoDiaSemContagem(null)
       if (!useInventarioCols) {
         const diaYmd = diaCivilFiltroAtual()
         if (diaYmd) {
-          const aviso = await avaliarPendenciasFinalizacaoDia(diaYmd)
-          if (aviso) {
-            setAvisoCargaPendente(aviso)
+          const ev = await avaliarUmDiaContagem(diaYmd)
+          if (ev.kind === 'vazio' && useSingleDay) {
+            setAvisoDiaSemContagem({ diaYmd })
+            return
+          }
+          if (ev.kind === 'pendente') {
+            setAvisoCargaPendente(ev.aviso)
             return
           }
         }
@@ -1469,9 +1485,9 @@ export default function RelatorioContagem({
       setAvisoExportPendente(null)
       if (!useInventarioCols && isExportUmDiaCivil) {
         const diaYmd = useSingleDay ? singleDay : startDate
-        const aviso = await avaliarPendenciasFinalizacaoDia(diaYmd)
-        if (aviso) {
-          setAvisoExportPendente(aviso)
+        const ev = await avaliarUmDiaContagem(diaYmd)
+        if (ev.kind === 'pendente') {
+          setAvisoExportPendente(ev.aviso)
           return
         }
       }
@@ -2270,6 +2286,23 @@ export default function RelatorioContagem({
                 style={{ ...miniBtnStyle, background: 'transparent', border: '1px solid rgba(245,158,11,.55)', color: '#fde68a' }}
               >
                 Aguardar
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {avisoDiaSemContagem ? (
+        <div style={avisoOverlayStyle}>
+          <div style={{ ...avisoModalStyle, border: '1px solid rgba(148,163,184,.5)' }}>
+            <div style={{ fontSize: 17, fontWeight: 700, color: '#e2e8f0' }}>Nenhuma contagem neste dia</div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                onClick={() => setAvisoDiaSemContagem(null)}
+                style={{ ...miniBtnStyle, background: '#2563eb', border: '1px solid #60a5fa', color: '#eff6ff' }}
+              >
+                Fechar
               </button>
             </div>
           </div>
