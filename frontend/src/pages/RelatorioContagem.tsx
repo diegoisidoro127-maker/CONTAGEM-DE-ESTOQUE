@@ -2238,7 +2238,7 @@ export default function RelatorioContagem({
       {avisoCargaPendente ? (
         <div style={avisoOverlayStyle}>
           <div style={{ ...avisoModalStyle, border: '1px solid rgba(245,158,11,.45)' }}>
-            <div style={{ fontSize: 17, fontWeight: 700, color: '#fef3c7' }}>Atenção na carga do dia</div>
+            <div style={{ fontSize: 17, fontWeight: 700, color: '#fef3c7' }}>Atenção sobre a contagem do dia</div>
             <div style={{ color: '#fde68a', fontSize: 14, lineHeight: 1.5 }}>
               A contagem ainda não foi finalizada por todos os conferentes. Deseja carregar o que já foi contado assim
               mesmo?
