@@ -2242,7 +2242,7 @@ export default function RelatorioContagem({
             <div style={{ fontSize: 17, fontWeight: 700, color: '#fef3c7' }}>Atenção sobre a contagem do dia</div>
             <div style={{ color: '#fde68a', fontSize: 14, lineHeight: 1.5 }}>
               A contagem ainda não foi finalizada por todos os conferentes. Deseja carregar o que já foi contado assim
-              mesmo?
+              mesmo? Se carregar agora, poderão aparecer itens com quantidade zerada.
               {avisoCargaPendente.pendencias > 0 ? (
                 <>
                   {' '}
@@ -2282,7 +2282,7 @@ export default function RelatorioContagem({
             <div style={{ fontSize: 17, fontWeight: 700, color: '#e0f2fe' }}>Atenção na exportação do dia</div>
             <div style={{ color: '#bae6fd', fontSize: 14, lineHeight: 1.5 }}>
               A contagem ainda não foi finalizada por todos os conferentes. Deseja exportar o que já foi contado assim
-              mesmo?
+              mesmo? Se exportar agora, a planilha poderá incluir itens com quantidade zerada.
               {avisoExportPendente.pendencias > 0 ? (
                 <>
                   {' '}
