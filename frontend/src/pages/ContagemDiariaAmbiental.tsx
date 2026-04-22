@@ -71,6 +71,29 @@ function ocupAvariaPercTotal(r: OcupRow): number {
   return OCUP_TOTAL_POSICOES > 0 ? (r.avaria_acrescimo_ocupacao / OCUP_TOTAL_POSICOES) * 100 : 0
 }
 
+/**
+ * Série para gráficos: no máximo um ponto por dia civil (`data_registro`),
+ * usando o lançamento com `created_at` mais recente naquele dia.
+ * Assim todos os gráficos de ocupação refletem o mesmo valor por data.
+ */
+function ocupRowsForCharts(rowsNewestFirst: OcupRow[]): OcupRow[] {
+  const chrono = [...rowsNewestFirst].reverse()
+  const byDay = new Map<string, OcupRow>()
+  for (const r of chrono) {
+    const day = String(r.data_registro ?? '').slice(0, 10)
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) continue
+    const prev = byDay.get(day)
+    if (!prev) {
+      byDay.set(day, r)
+    } else {
+      const tNew = new Date(r.created_at).getTime()
+      const tOld = new Date(prev.created_at).getTime()
+      if (tNew >= tOld) byDay.set(day, r)
+    }
+  }
+  return [...byDay.keys()].sort().map((k) => byDay.get(k)!)
+}
+
 /** Linhas por página nos históricos (temperatura e ocupação). */
 const HIST_PAGE_SIZE = 5
 
@@ -3728,8 +3751,8 @@ export default function ContagemDiariaAmbiental() {
     return { r, totalPos, totalVaz, totalOcupFisico, percOcupFisico, totalOcup, percOcup, percLivre }
   }, [ocupRows])
 
-  /** Ordem cronológica para eixo X dos gráficos (mais antigo → mais recente). */
-  const ocupRowsChrono = useMemo(() => [...ocupRows].reverse(), [ocupRows])
+  /** Um ponto por dia civil nos gráficos — último `created_at` daquele dia (todos os gráficos alinhados). */
+  const ocupRowsChronoCharts = useMemo(() => ocupRowsForCharts(ocupRows), [ocupRows])
 
   return (
     <>
@@ -3948,7 +3971,7 @@ export default function ContagemDiariaAmbiental() {
               série em detalhe, com eixo temporal mais denso e a variação entre o primeiro e o último registro exibido.
             </p>
 
-            <CombinedOcupacaoChart rows={ocupRowsChrono} />
+            <CombinedOcupacaoChart rows={ocupRowsChronoCharts} />
 
             <div
               style={{
@@ -3962,7 +3985,7 @@ export default function ContagemDiariaAmbiental() {
                 <TinyLineChart
                   title="% Ocupada geral (11+12+13, inclui avaria)"
                   color="#38bdf8"
-                  rows={ocupRowsChrono}
+                  rows={ocupRowsChronoCharts}
                   valueOf={ocupPercGeral}
                   valueSuffix="%"
                   decimals={1}
@@ -3975,7 +3998,7 @@ export default function ContagemDiariaAmbiental() {
               <TinyLineChart
                 title="% Ocupada — Câmara 11"
                 color="#22c55e"
-                rows={ocupRowsChrono}
+                rows={ocupRowsChronoCharts}
                 valueOf={ocupPercCam11}
                 valueSuffix="%"
                 decimals={1}
@@ -3987,7 +4010,7 @@ export default function ContagemDiariaAmbiental() {
               <TinyLineChart
                 title="% Ocupada — Câmara 12"
                 color="#38bdf8"
-                rows={ocupRowsChrono}
+                rows={ocupRowsChronoCharts}
                 valueOf={ocupPercCam12}
                 valueSuffix="%"
                 decimals={1}
@@ -3999,7 +4022,7 @@ export default function ContagemDiariaAmbiental() {
               <TinyLineChart
                 title="% Ocupada — Câmara 13"
                 color="#f59e0b"
-                rows={ocupRowsChrono}
+                rows={ocupRowsChronoCharts}
                 valueOf={ocupPercCam13}
                 valueSuffix="%"
                 decimals={1}
@@ -4011,7 +4034,7 @@ export default function ContagemDiariaAmbiental() {
               <TinyLineChart
                 title="Avaria — quantidade (posições)"
                 color="#fb923c"
-                rows={ocupRowsChrono}
+                rows={ocupRowsChronoCharts}
                 valueOf={(r) => r.avaria_acrescimo_ocupacao}
                 valueSuffix=" pos."
                 decimals={0}
@@ -4023,7 +4046,7 @@ export default function ContagemDiariaAmbiental() {
               <TinyLineChart
                 title="Avaria — % do total de posições"
                 color="#fdba74"
-                rows={ocupRowsChrono}
+                rows={ocupRowsChronoCharts}
                 valueOf={ocupAvariaPercTotal}
                 valueSuffix="%"
                 decimals={1}
