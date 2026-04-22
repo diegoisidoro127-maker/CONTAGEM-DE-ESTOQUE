@@ -1,4 +1,14 @@
-import { useCallback, useEffect, useId, useMemo, useState, type CSSProperties } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type SVGProps,
+} from 'react'
 import { supabase } from '../lib/supabaseClient'
 
 type TabKey = 'temperatura' | 'ocupacao'
@@ -158,6 +168,19 @@ function formatHoraRegistro(iso: string) {
   return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 }
 
+/** Data do lançamento + horário real do registro no Supabase (`created_at`). */
+function celulaDataComHoraRegistro(dataRegistro: string, createdAt: string) {
+  const ymd = String(dataRegistro ?? '').slice(0, 10)
+  return (
+    <div>
+      <div>{/^\d{4}-\d{2}-\d{2}$/.test(ymd) ? formatDataBr(ymd) : (dataRegistro || '—')}</div>
+      <div style={{ fontSize: 11, color: '#64748b', fontVariantNumeric: 'tabular-nums', marginTop: 2 }}>
+        {formatHoraRegistro(createdAt)}
+      </div>
+    </div>
+  )
+}
+
 /** Data no eixo dos gráficos: dd/mm/aaaa (aproveita o mesmo formato do restante da tela). */
 function formatAxisDateChart(ymd: string) {
   if (!ymd) return ''
@@ -218,6 +241,168 @@ const chartCardStyle: CSSProperties = {
   boxShadow: '0 8px 32px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.05)',
 }
 
+/** Keyframes injetados uma vez na página (ContagemDiariaAmbiental). */
+const CHART_ANIM_CSS = `
+@keyframes contagem-chart-line-draw {
+  to { stroke-dashoffset: 0; }
+}
+@keyframes contagem-chart-area-in {
+  from { opacity: 0; }
+  to { opacity: var(--chart-area-op, 1); }
+}
+`
+
+type AnimatedStrokePathProps = SVGProps<SVGPathElement> & { animKey: string; strokeDelaySec?: number }
+
+function AnimatedStrokePath({ animKey, strokeDelaySec = 0, d, style, ...rest }: AnimatedStrokePathProps) {
+  const ref = useRef<SVGPathElement>(null)
+  const [dashLen, setDashLen] = useState(0)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el || !d) {
+      setDashLen(0)
+      return
+    }
+    try {
+      const L = el.getTotalLength()
+      setDashLen(Number.isFinite(L) && L > 0 ? L : 0)
+    } catch {
+      setDashLen(0)
+    }
+  }, [d, animKey])
+  const drawStyle: CSSProperties =
+    dashLen > 0
+      ? {
+          strokeDasharray: dashLen,
+          strokeDashoffset: dashLen,
+          animation: `contagem-chart-line-draw 1.12s cubic-bezier(0.33, 1, 0.68, 1) ${strokeDelaySec}s forwards`,
+        }
+      : {}
+  return <path ref={ref} d={d} fill="none" {...rest} style={{ ...drawStyle, ...(style as CSSProperties) }} />
+}
+
+function AnimatedAreaPath({
+  d,
+  fill,
+  targetOpacity = 1,
+  delaySec = 0.1,
+}: {
+  d: string
+  fill: string
+  targetOpacity?: number
+  delaySec?: number
+}) {
+  return (
+    <path
+      d={d}
+      fill={fill}
+      style={{
+        opacity: 0,
+        ['--chart-area-op' as string]: String(targetOpacity),
+        animation: `contagem-chart-area-in 0.9s ease ${delaySec}s forwards`,
+      }}
+    />
+  )
+}
+
+type TinyChartLayout = {
+  width: number
+  height: number
+  padL: number
+  padR: number
+  padT: number
+  padB: number
+}
+
+function buildTinyLineGeom<T extends { data_registro: string }>(
+  rows: T[],
+  valueOf: (r: T) => number,
+  layout: TinyChartLayout,
+  denseTimeline: boolean,
+  /** Ampliado: tenta marcar todas as datas no eixo X (até 16 pontos; acima disso, amostragem). */
+  everyXLabel = false,
+) {
+  const { width, height, padL, padR, padT, padB } = layout
+  const innerW = width - padL - padR
+  const innerH = height - padT - padB
+  const bottomY = padT + innerH
+  const values = rows.map(valueOf)
+  if (!values.length) return null
+  const min = Math.min(...values)
+  const max = Math.max(...values)
+  const safeMin = min === max ? min - 1 : min
+  const safeMax = min === max ? max + 1 : max
+  const rng = safeMax - safeMin
+  const xAt = (i: number) => padL + (rows.length > 1 ? (innerW * i) / (rows.length - 1) : innerW / 2)
+  const yAt = (v: number) => padT + innerH - ((v - safeMin) / rng) * innerH
+  const pts = rows.map((r, i) => ({ x: xAt(i), y: yAt(valueOf(r)) }))
+  const lineD = smoothLinePath(pts)
+  const last = pts[pts.length - 1]
+  const first = pts[0]
+  const areaD = `${lineD} L ${last.x.toFixed(2)} ${bottomY.toFixed(2)} L ${first.x.toFixed(2)} ${bottomY.toFixed(2)} Z`
+  const yTicks = linearYTicks(safeMin, safeMax, yAt, 5)
+  const n = rows.length
+  let xIdx: number[]
+  if (everyXLabel) {
+    if (n <= 1) xIdx = [0]
+    else if (n <= 16) xIdx = Array.from({ length: n }, (_, i) => i)
+    else {
+      xIdx = [0]
+      for (let k = 1; k <= 12; k++) xIdx.push(Math.round(((n - 1) * k) / 13))
+      xIdx.push(n - 1)
+      xIdx = [...new Set(xIdx)].sort((a, b) => a - b)
+    }
+  } else if (denseTimeline) {
+    if (n <= 1) xIdx = [0]
+    else if (n <= 7) xIdx = Array.from({ length: n }, (_, i) => i)
+    else {
+      xIdx = [0]
+      for (let k = 1; k <= 5; k++) xIdx.push(Math.round(((n - 1) * k) / 6))
+      xIdx.push(n - 1)
+      xIdx = [...new Set(xIdx)].sort((a, b) => a - b)
+    }
+  } else {
+    xIdx = n <= 1 ? [0] : n === 2 ? [0, 1] : [0, Math.floor((n - 1) / 3), Math.floor((2 * (n - 1)) / 3), n - 1]
+  }
+  const xLabels = [...new Set(xIdx)]
+    .sort((a, b) => a - b)
+    .map((i) => {
+      const o = rows[i] as Record<string, unknown>
+      const c = o.created_at
+      return {
+        x: xAt(i),
+        text: formatAxisDateChart(rows[i].data_registro),
+        hora: typeof c === 'string' ? formatHoraRegistro(c) : '',
+      }
+    })
+  const avg = values.reduce((a, b) => a + b, 0) / values.length
+  const firstVal = values[0]
+  const lastVal = values[values.length - 1]
+  const lastPt = pts[pts.length - 1]
+  return {
+    lineD,
+    areaD,
+    yTicks,
+    xLabels,
+    min,
+    max,
+    avg,
+    firstVal,
+    lastVal,
+    lastPt,
+    delta: lastVal - firstVal,
+    xAt,
+    yAt,
+    pts,
+    values,
+    bottomY,
+    layout,
+  }
+}
+
+const TINY_LAYOUT_CARD: TinyChartLayout = { width: 520, height: 218, padL: 48, padR: 14, padT: 16, padB: 44 }
+const TINY_LAYOUT_MODAL: TinyChartLayout = { width: 1080, height: 440, padL: 64, padR: 24, padT: 26, padB: 68 }
+
 function TinyLineChart<T extends { data_registro: string }>({
   title,
   color,
@@ -248,98 +433,53 @@ function TinyLineChart<T extends { data_registro: string }>({
 }) {
   const uid = useId().replace(/:/g, '')
   const gradId = `tgrad-${uid}`
+  const gradIdModal = `tgrad-m-${uid}`
   const [expanded, setExpanded] = useState(false)
-  const width = 520
-  const height = 218
-  const padL = 48
-  const padR = 14
-  const padT = 16
-  const padB = 44
-  const innerW = width - padL - padR
-  const innerH = height - padT - padB
-  const bottomY = padT + innerH
   const [tip, setTip] = useState<{ idx: number; pxPct: number } | null>(null)
 
   const capAxis = axisCaption ?? valueSuffix
   const fmt = (v: number) => v.toFixed(decimals)
+  const lineAnimKey = useMemo(
+    () => rows.map((r) => `${r.data_registro}-${String((r as { id?: string }).id ?? '')}`).join('|'),
+    [rows],
+  )
 
-  const geom = useMemo(() => {
-    const values = rows.map(valueOf)
-    if (!values.length) return null
-    const min = Math.min(...values)
-    const max = Math.max(...values)
-    const safeMin = min === max ? min - 1 : min
-    const safeMax = min === max ? max + 1 : max
-    const rng = safeMax - safeMin
-    const xAt = (i: number) => padL + (rows.length > 1 ? (innerW * i) / (rows.length - 1) : innerW / 2)
-    const yAt = (v: number) => padT + innerH - ((v - safeMin) / rng) * innerH
-    const pts = rows.map((r, i) => ({ x: xAt(i), y: yAt(valueOf(r)) }))
-    const lineD = smoothLinePath(pts)
-    const last = pts[pts.length - 1]
-    const first = pts[0]
-    const areaD = `${lineD} L ${last.x.toFixed(2)} ${bottomY.toFixed(2)} L ${first.x.toFixed(2)} ${bottomY.toFixed(2)} Z`
-    const yTicks = linearYTicks(safeMin, safeMax, yAt, 5)
-    const n = rows.length
-    let xIdx: number[]
-    if (denseTimeline) {
-      if (n <= 1) xIdx = [0]
-      else if (n <= 7) xIdx = Array.from({ length: n }, (_, i) => i)
-      else {
-        xIdx = [0]
-        for (let k = 1; k <= 5; k++) xIdx.push(Math.round(((n - 1) * k) / 6))
-        xIdx.push(n - 1)
-        xIdx = [...new Set(xIdx)].sort((a, b) => a - b)
-      }
-    } else {
-      xIdx = n <= 1 ? [0] : n === 2 ? [0, 1] : [0, Math.floor((n - 1) / 3), Math.floor((2 * (n - 1)) / 3), n - 1]
-    }
-    const xLabels = [...new Set(xIdx)]
-      .sort((a, b) => a - b)
-      .map((i) => ({ x: xAt(i), text: formatAxisDateChart(rows[i].data_registro) }))
-    const avg = values.reduce((a, b) => a + b, 0) / values.length
-    const firstVal = values[0]
-    const lastVal = values[values.length - 1]
-    const lastPt = pts[pts.length - 1]
-    return {
-      lineD,
-      areaD,
-      yTicks,
-      xLabels,
-      min,
-      max,
-      avg,
-      firstVal,
-      lastVal,
-      lastPt,
-      delta: lastVal - firstVal,
-      xAt,
-      yAt,
-      pts,
-      values,
-    }
-  }, [rows, valueOf, innerW, innerH, padL, padT, bottomY, denseTimeline])
+  const geomCard = useMemo(
+    () => buildTinyLineGeom(rows, valueOf, TINY_LAYOUT_CARD, !!denseTimeline, false),
+    [rows, valueOf, denseTimeline],
+  )
+  const geomModal = useMemo(
+    () => buildTinyLineGeom(rows, valueOf, TINY_LAYOUT_MODAL, true, true),
+    [rows, valueOf],
+  )
 
-  const onSvgMove = useCallback(
-    (e: React.MouseEvent<SVGSVGElement>) => {
-      if (!rows.length || !geom) return
+  const makeSvgMove = useCallback(
+    (L: TinyChartLayout) => (e: React.MouseEvent<SVGSVGElement>) => {
+      if (!rows.length) return
+      const innerW = L.width - L.padL - L.padR
       const svg = e.currentTarget
       const rect = svg.getBoundingClientRect()
-      const vx = ((e.clientX - rect.left) / Math.max(1, rect.width)) * width
+      const vx = ((e.clientX - rect.left) / Math.max(1, rect.width)) * L.width
       const n = rows.length
-      if (vx < padL || vx > width - padR) {
+      if (vx < L.padL || vx > L.width - L.padR) {
         setTip(null)
         return
       }
       const step = n > 1 ? innerW / (n - 1) : 0
-      let idx = n <= 1 ? 0 : Math.round((vx - padL) / step)
+      let idx = n <= 1 ? 0 : Math.round((vx - L.padL) / step)
       idx = Math.max(0, Math.min(n - 1, idx))
-      const xCenter = padL + step * idx
-      setTip({ idx, pxPct: (xCenter / width) * 100 })
+      const xCenter = L.padL + step * idx
+      setTip({ idx, pxPct: (xCenter / L.width) * 100 })
     },
-    [rows.length, geom, width, padL, padR, innerW],
+    [rows.length],
   )
 
+  const onSvgMoveCard = useMemo(() => makeSvgMove(TINY_LAYOUT_CARD), [makeSvgMove])
+  const onSvgMoveModal = useMemo(() => makeSvgMove(TINY_LAYOUT_MODAL), [makeSvgMove])
   const onSvgLeave = useCallback(() => setTip(null), [])
+
+  const { width: wC, height: hC, padL: pLC, padR: pRC, padT: pTC, padB: pBC } = TINY_LAYOUT_CARD
+  const { width: wM, height: hM, padL: pLM, padR: pRM, padT: pTM, padB: pBM } = TINY_LAYOUT_MODAL
 
   return (
     <>
@@ -387,10 +527,10 @@ function TinyLineChart<T extends { data_registro: string }>({
                 Fechar
               </button>
             </div>
-            <div style={{ fontSize: 11, color: '#64748b', marginBottom: 8 }}>
-              Visualização ampliada para leitura de detalhes.
+            <div style={{ fontSize: 11, color: '#64748b', marginBottom: 8, lineHeight: 1.45 }}>
+              Eixo X: data e horário do registro · Eixo Y: {capAxis}. Passe o mouse para ver conferente e valor exato.
             </div>
-            {!rows.length || !geom ? (
+            {!rows.length || !geomModal ? (
               <div style={{ fontSize: 13, color: 'var(--text, #9ca3af)' }}>Sem dados ainda.</div>
             ) : (
               <>
@@ -405,7 +545,7 @@ function TinyLineChart<T extends { data_registro: string }>({
                         zIndex: 2,
                         pointerEvents: 'none',
                         minWidth: 200,
-                        maxWidth: 280,
+                        maxWidth: 300,
                         padding: '10px 12px',
                         borderRadius: 12,
                         background: 'rgba(15,23,42,.96)',
@@ -438,46 +578,204 @@ function TinyLineChart<T extends { data_registro: string }>({
                   ) : null}
                   <svg
                     width="100%"
-                    viewBox={`0 0 ${width} ${height}`}
+                    viewBox={`0 0 ${wM} ${hM}`}
                     preserveAspectRatio="xMidYMid meet"
                     style={{ display: 'block', cursor: 'crosshair' }}
-                    onMouseMove={onSvgMove}
+                    onMouseMove={onSvgMoveModal}
                     onMouseLeave={onSvgLeave}
                   >
                     <defs>
-                      <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+                      <linearGradient id={gradIdModal} x1="0" y1="0" x2="0" y2="1">
                         <stop offset="0%" stopColor={color} stopOpacity={0.28} />
                         <stop offset="55%" stopColor={color} stopOpacity={0.06} />
                         <stop offset="100%" stopColor={color} stopOpacity={0} />
                       </linearGradient>
                     </defs>
-                    <rect x={0} y={0} width={width} height={height} rx={8} fill="rgba(0,0,0,.18)" />
-                    {geom.xLabels.map((xl, i) => (
+                    <rect x={0} y={0} width={wM} height={hM} rx={8} fill="rgba(0,0,0,.18)" />
+                    {geomModal.xLabels.map((xl, i) => (
                       <line
                         key={`xg-exp-${i}`}
                         x1={xl.x}
-                        y1={padT}
+                        y1={pTM}
                         x2={xl.x}
-                        y2={bottomY}
-                        stroke="rgba(148,163,184,.08)"
+                        y2={geomModal.bottomY}
+                        stroke="rgba(148,163,184,.1)"
                         strokeWidth={1}
                       />
                     ))}
-                    {geom.yTicks.map((t, i) => (
+                    {geomModal.yTicks.map((t, i) => (
                       <line
                         key={`y-exp-${i}`}
-                        x1={padL}
+                        x1={pLM}
                         y1={t.y}
-                        x2={width - padR}
+                        x2={wM - pRM}
                         y2={t.y}
-                        stroke="rgba(148,163,184,.2)"
+                        stroke="rgba(148,163,184,.22)"
                         strokeDasharray="4 8"
                         strokeWidth={1}
                       />
                     ))}
-                    <path d={geom.areaD} fill={`url(#${gradId})`} />
-                    <path d={geom.lineD} stroke={color} strokeWidth={3} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                    <AnimatedAreaPath d={geomModal.areaD} fill={`url(#${gradIdModal})`} delaySec={0.06} />
+                    {tip != null ? (
+                      <line
+                        x1={geomModal.xAt(tip.idx)}
+                        y1={pTM}
+                        x2={geomModal.xAt(tip.idx)}
+                        y2={geomModal.bottomY}
+                        stroke="rgba(148,163,184,.4)"
+                        strokeWidth={1.5}
+                        strokeDasharray="5 4"
+                      />
+                    ) : null}
+                    <AnimatedStrokePath
+                      animKey={`${lineAnimKey}-m`}
+                      d={geomModal.lineD}
+                      stroke={color}
+                      strokeWidth={3.2}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      style={{ filter: `drop-shadow(0 0 8px ${color}66)` }}
+                    />
+                    {tip != null ? (
+                      <circle
+                        cx={geomModal.xAt(tip.idx)}
+                        cy={geomModal.yAt(valueOf(rows[tip.idx]))}
+                        r={7}
+                        fill={color}
+                        stroke="rgba(15,23,42,.92)"
+                        strokeWidth={2}
+                      />
+                    ) : showSeriesInsight && geomModal.lastPt ? (
+                      <circle
+                        cx={geomModal.lastPt.x}
+                        cy={geomModal.lastPt.y}
+                        r={5.5}
+                        fill={color}
+                        stroke="rgba(15,23,42,.9)"
+                        strokeWidth={2}
+                      />
+                    ) : null}
+                    {(() => {
+                      const n = geomModal.pts.length
+                      const step = n <= 20 ? 1 : Math.ceil(n / 18)
+                      return geomModal.pts
+                        .map((pt, i) => ({ pt, i }))
+                        .filter(({ i }) => i % step === 0 || i === n - 1)
+                        .map(({ pt, i }) => (
+                          <text
+                            key={`pv-m-${i}`}
+                            x={pt.x}
+                            y={Math.max(pTM + 12, pt.y - 9)}
+                            textAnchor="middle"
+                            fill={color}
+                            fontSize={11}
+                            fontWeight={700}
+                            fontFamily="system-ui, sans-serif"
+                            style={{ filter: 'drop-shadow(0 1px 2px rgba(2,6,23,.85))' }}
+                          >
+                            {fmt(geomModal.values[i])}
+                            {valueSuffix.trim()}
+                          </text>
+                        ))
+                    })()}
+                    {geomModal.yTicks.map((t, i) => (
+                      <text
+                        key={`yl-m-${i}`}
+                        x={pLM - 10}
+                        y={t.y + 4}
+                        textAnchor="end"
+                        fill="#cbd5e1"
+                        fontSize={12}
+                        fontFamily="system-ui, sans-serif"
+                      >
+                        {fmt(t.v)}
+                        {valueSuffix}
+                      </text>
+                    ))}
+                    <line
+                      x1={pLM}
+                      y1={geomModal.bottomY}
+                      x2={wM - pRM}
+                      y2={geomModal.bottomY}
+                      stroke="rgba(148,163,184,.45)"
+                      strokeWidth={1.5}
+                    />
+                    <line
+                      x1={pLM}
+                      y1={pTM}
+                      x2={pLM}
+                      y2={geomModal.bottomY}
+                      stroke="rgba(148,163,184,.45)"
+                      strokeWidth={1.5}
+                    />
+                    <text x={pLM} y={pTM - 4} fill="#64748b" fontSize={11} fontFamily="system-ui, sans-serif">
+                      {capAxis}
+                    </text>
+                    {geomModal.xLabels.map((xl, i) => (
+                      <g key={`xl-m-${i}`}>
+                        <text
+                          x={xl.x}
+                          y={hM - (xl.hora ? 22 : 12)}
+                          textAnchor="middle"
+                          fill="#94a3b8"
+                          fontSize={11}
+                          fontFamily="system-ui, sans-serif"
+                        >
+                          {xl.text}
+                        </text>
+                        {xl.hora ? (
+                          <text
+                            x={xl.x}
+                            y={hM - 8}
+                            textAnchor="middle"
+                            fill="#64748b"
+                            fontSize={9}
+                            fontFamily="system-ui, sans-serif"
+                            style={{ fontVariantNumeric: 'tabular-nums' }}
+                          >
+                            {xl.hora}
+                          </text>
+                        ) : null}
+                      </g>
+                    ))}
                   </svg>
+                </div>
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+                    gap: 10,
+                    marginTop: 14,
+                    paddingTop: 12,
+                    borderTop: '1px solid rgba(255,255,255,.1)',
+                    fontSize: 12,
+                    color: '#94a3b8',
+                  }}
+                >
+                  <div>
+                    <span style={{ color: '#64748b' }}>Mín.</span>{' '}
+                    <strong style={{ color: '#e2e8f0', fontVariantNumeric: 'tabular-nums' }}>
+                      {fmt(geomModal.min)}
+                      {valueSuffix}
+                    </strong>
+                  </div>
+                  <div>
+                    <span style={{ color: '#64748b' }}>Máx.</span>{' '}
+                    <strong style={{ color: '#e2e8f0', fontVariantNumeric: 'tabular-nums' }}>
+                      {fmt(geomModal.max)}
+                      {valueSuffix}
+                    </strong>
+                  </div>
+                  <div>
+                    <span style={{ color: '#64748b' }}>Média</span>{' '}
+                    <strong style={{ color: '#e2e8f0', fontVariantNumeric: 'tabular-nums' }}>
+                      {fmt(geomModal.avg)}
+                      {valueSuffix}
+                    </strong>
+                  </div>
+                  <div style={{ color: '#64748b' }}>
+                    {rows.length} ponto(s) no período
+                  </div>
                 </div>
               </>
             )}
@@ -505,7 +803,7 @@ function TinyLineChart<T extends { data_registro: string }>({
           Ampliar
         </button>
       </div>
-      {!rows.length || !geom ? (
+      {!rows.length || !geomCard ? (
         <div style={{ fontSize: 13, color: 'var(--text, #9ca3af)' }}>Sem dados ainda.</div>
       ) : (
         <>
@@ -553,10 +851,10 @@ function TinyLineChart<T extends { data_registro: string }>({
             ) : null}
             <svg
               width="100%"
-              viewBox={`0 0 ${width} ${height}`}
+              viewBox={`0 0 ${wC} ${hC}`}
               preserveAspectRatio="xMidYMid meet"
               style={{ display: 'block', cursor: 'crosshair' }}
-              onMouseMove={onSvgMove}
+              onMouseMove={onSvgMoveCard}
               onMouseLeave={onSvgLeave}
             >
             <defs>
@@ -566,64 +864,64 @@ function TinyLineChart<T extends { data_registro: string }>({
                 <stop offset="100%" stopColor={color} stopOpacity={0} />
               </linearGradient>
             </defs>
-            <rect x={0} y={0} width={width} height={height} rx={8} fill="rgba(0,0,0,.18)" />
-            {geom.xLabels.map((xl, i) => (
+            <rect x={0} y={0} width={wC} height={hC} rx={8} fill="rgba(0,0,0,.18)" />
+            {geomCard.xLabels.map((xl, i) => (
               <line
                 key={`xg-${i}`}
                 x1={xl.x}
-                y1={padT}
+                y1={pTC}
                 x2={xl.x}
-                y2={bottomY}
+                y2={geomCard.bottomY}
                 stroke="rgba(148,163,184,.08)"
                 strokeWidth={1}
               />
             ))}
-            {geom.yTicks.map((t, i) => (
+            {geomCard.yTicks.map((t, i) => (
               <line
                 key={i}
-                x1={padL}
+                x1={pLC}
                 y1={t.y}
-                x2={width - padR}
+                x2={wC - pRC}
                 y2={t.y}
                 stroke="rgba(148,163,184,.2)"
                 strokeDasharray="4 8"
                 strokeWidth={1}
               />
             ))}
-            <path d={geom.areaD} fill={`url(#${gradId})`} />
+            <AnimatedAreaPath d={geomCard.areaD} fill={`url(#${gradId})`} delaySec={0.06} />
             {tip != null ? (
               <line
-                x1={geom.xAt(tip.idx)}
-                y1={padT}
-                x2={geom.xAt(tip.idx)}
-                y2={bottomY}
+                x1={geomCard.xAt(tip.idx)}
+                y1={pTC}
+                x2={geomCard.xAt(tip.idx)}
+                y2={geomCard.bottomY}
                 stroke="rgba(148,163,184,.35)"
                 strokeWidth={1.5}
                 strokeDasharray="5 4"
               />
             ) : null}
-            <path
-              d={geom.lineD}
+            <AnimatedStrokePath
+              animKey={`${lineAnimKey}-c`}
+              d={geomCard.lineD}
               stroke={color}
               strokeWidth={3}
-              fill="none"
               strokeLinecap="round"
               strokeLinejoin="round"
               style={{ filter: `drop-shadow(0 0 8px ${color}66)` }}
             />
             {tip != null ? (
               <circle
-                cx={geom.xAt(tip.idx)}
-                cy={geom.yAt(valueOf(rows[tip.idx]))}
+                cx={geomCard.xAt(tip.idx)}
+                cy={geomCard.yAt(valueOf(rows[tip.idx]))}
                 r={6}
                 fill={color}
                 stroke="rgba(15,23,42,.92)"
                 strokeWidth={2}
               />
-            ) : showSeriesInsight && geom.lastPt ? (
+            ) : showSeriesInsight && geomCard.lastPt ? (
               <circle
-                cx={geom.lastPt.x}
-                cy={geom.lastPt.y}
+                cx={geomCard.lastPt.x}
+                cy={geomCard.lastPt.y}
                 r={5}
                 fill={color}
                 stroke="rgba(15,23,42,.9)"
@@ -632,16 +930,16 @@ function TinyLineChart<T extends { data_registro: string }>({
             ) : null}
             {showPointValues
               ? (() => {
-                  const n = geom.pts.length
+                  const n = geomCard.pts.length
                   const step = n <= 16 ? 1 : Math.ceil(n / 12)
-                  return geom.pts
+                  return geomCard.pts
                     .map((pt, i) => ({ pt, i }))
                     .filter(({ i }) => i % step === 0 || i === n - 1)
                     .map(({ pt, i }) => (
                       <text
                         key={`pv-${i}`}
                         x={pt.x}
-                        y={Math.max(padT + 10, pt.y - 8)}
+                        y={Math.max(pTC + 10, pt.y - 8)}
                         textAnchor="middle"
                         fill={color}
                         fontSize={10}
@@ -649,16 +947,16 @@ function TinyLineChart<T extends { data_registro: string }>({
                         fontFamily="system-ui, sans-serif"
                         style={{ filter: 'drop-shadow(0 1px 2px rgba(2,6,23,.85))' }}
                       >
-                        {fmt(geom.values[i])}
+                        {fmt(geomCard.values[i])}
                         {valueSuffix.trim()}
                       </text>
                     ))
                 })()
               : null}
-            {geom.yTicks.map((t, i) => (
+            {geomCard.yTicks.map((t, i) => (
               <text
                 key={`yl-${i}`}
-                x={padL - 10}
+                x={pLC - 10}
                 y={t.y + 4}
                 textAnchor="end"
                 fill="#cbd5e1"
@@ -670,35 +968,35 @@ function TinyLineChart<T extends { data_registro: string }>({
               </text>
             ))}
             <line
-              x1={padL}
-              y1={bottomY}
-              x2={width - padR}
-              y2={bottomY}
+              x1={pLC}
+              y1={geomCard.bottomY}
+              x2={wC - pRC}
+              y2={geomCard.bottomY}
               stroke="rgba(148,163,184,.45)"
               strokeWidth={1.5}
             />
             <line
-              x1={padL}
-              y1={padT}
-              x2={padL}
-              y2={bottomY}
+              x1={pLC}
+              y1={pTC}
+              x2={pLC}
+              y2={geomCard.bottomY}
               stroke="rgba(148,163,184,.45)"
               strokeWidth={1.5}
             />
             <text
-              x={padL}
-              y={padT - 4}
+              x={pLC}
+              y={pTC - 4}
               fill="#64748b"
               fontSize={10}
               fontFamily="system-ui, sans-serif"
             >
               {capAxis}
             </text>
-            {geom.xLabels.map((xl, i) => (
+            {geomCard.xLabels.map((xl, i) => (
               <text
                 key={`xl-${i}`}
                 x={xl.x}
-                y={height - 10}
+                y={hC - 10}
                 textAnchor="middle"
                 fill="#94a3b8"
                 fontSize={10}
@@ -725,21 +1023,21 @@ function TinyLineChart<T extends { data_registro: string }>({
             <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', maxWidth: 220, gap: 12 }}>
               <span>Min.</span>
               <strong style={{ color: '#e2e8f0', fontVariantNumeric: 'tabular-nums' }}>
-                {fmt(geom.min)}
+                {fmt(geomCard.min)}
                 {valueSuffix}
               </strong>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', maxWidth: 220, gap: 12 }}>
               <span>Máx.</span>
               <strong style={{ color: '#e2e8f0', fontVariantNumeric: 'tabular-nums' }}>
-                {fmt(geom.max)}
+                {fmt(geomCard.max)}
                 {valueSuffix}
               </strong>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', maxWidth: 220, gap: 12 }}>
               <span>Média</span>
               <strong style={{ color: '#e2e8f0', fontVariantNumeric: 'tabular-nums' }}>
-                {fmt(geom.avg)}
+                {fmt(geomCard.avg)}
                 {valueSuffix}
               </strong>
             </div>
@@ -765,14 +1063,14 @@ function TinyLineChart<T extends { data_registro: string }>({
                     Início ({formatAxisDateChart(rows[0].data_registro)})
                   </span>
                   <strong style={{ color: '#f1f5f9', fontVariantNumeric: 'tabular-nums' }}>
-                    {fmt(geom.firstVal)}
+                    {fmt(geomCard.firstVal)}
                     {valueSuffix}
                   </strong>
                 </div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', gap: 8 }}>
                   <span>Fim ({formatAxisDateChart(rows[rows.length - 1].data_registro)})</span>
                   <strong style={{ color: '#f1f5f9', fontVariantNumeric: 'tabular-nums' }}>
-                    {fmt(geom.lastVal)}
+                    {fmt(geomCard.lastVal)}
                     {valueSuffix}
                   </strong>
                 </div>
@@ -781,11 +1079,11 @@ function TinyLineChart<T extends { data_registro: string }>({
                   <strong
                     style={{
                       fontVariantNumeric: 'tabular-nums',
-                      color: geom.delta > 0.0001 ? '#6ee7b7' : geom.delta < -0.0001 ? '#fca5a5' : '#e2e8f0',
+                      color: geomCard.delta > 0.0001 ? '#6ee7b7' : geomCard.delta < -0.0001 ? '#fca5a5' : '#e2e8f0',
                     }}
                   >
-                    {geom.delta > 0 ? '+' : ''}
-                    {fmt(geom.delta)}
+                    {geomCard.delta > 0 ? '+' : ''}
+                    {fmt(geomCard.delta)}
                     {valueSuffix}
                   </strong>
                 </div>
@@ -805,88 +1103,517 @@ const COMBINED_SERIES = [
   { color: '#f59e0b', valueOf: (r: TempRow) => r.camara13_temp, label: 'Câmara 13' },
 ] as const
 
-function CombinedTempChart({ rows }: { rows: TempRow[] }) {
-  const uid = useId().replace(/:/g, '')
-  const width = 1100
-  const height = 278
-  const padL = 54
-  const padR = 18
-  const padT = 20
-  const padB = 48
+type CombTempLayout = {
+  width: number
+  height: number
+  padL: number
+  padR: number
+  padT: number
+  padB: number
+}
+
+const COMB_TEMP_LAYOUT_CARD: CombTempLayout = { width: 1100, height: 278, padL: 54, padR: 18, padT: 20, padB: 48 }
+const COMB_TEMP_LAYOUT_MODAL: CombTempLayout = { width: 1240, height: 400, padL: 60, padR: 22, padT: 24, padB: 68 }
+
+function buildCombinedTempChartModel(
+  rows: TempRow[],
+  uid: string,
+  L: CombTempLayout,
+  gradPrefix: string,
+  xDense: boolean,
+) {
+  const { width, height, padL, padR, padT, padB } = L
   const innerW = width - padL - padR
   const innerH = height - padT - padB
   const bottomY = padT + innerH
+  if (!rows.length) return null
+  const allVals = rows.flatMap((r) => [r.camara11_temp, r.camara12_temp, r.camara13_temp])
+  const min = Math.min(...allVals)
+  const max = Math.max(...allVals)
+  const safeMin = min === max ? min - 1 : min
+  const safeMax = min === max ? max + 1 : max
+  const rng = safeMax - safeMin
+  const xAt = (i: number) => padL + (rows.length > 1 ? (innerW * i) / (rows.length - 1) : innerW / 2)
+  const yAt = (v: number) => padT + innerH - ((v - safeMin) / rng) * innerH
+  const seriesPaths = COMBINED_SERIES.map((s, si) => {
+    const pts = rows.map((r, i) => {
+      const v = s.valueOf(r)
+      return { x: xAt(i), y: yAt(v) }
+    })
+    return {
+      lineD: smoothLinePath(pts),
+      color: s.color,
+      label: s.label,
+      gradId: `${gradPrefix}-${uid}-${si}`,
+    }
+  })
+  const yTicks = linearYTicks(safeMin, safeMax, yAt, 5)
+  const n = rows.length
+  let xIdx: number[]
+  if (xDense) {
+    if (n <= 1) xIdx = [0]
+    else if (n <= 16) xIdx = Array.from({ length: n }, (_, i) => i)
+    else {
+      xIdx = [0]
+      for (let k = 1; k <= 12; k++) xIdx.push(Math.round(((n - 1) * k) / 13))
+      xIdx.push(n - 1)
+      xIdx = [...new Set(xIdx)].sort((a, b) => a - b)
+    }
+  } else {
+    xIdx = n <= 1 ? [0] : n === 2 ? [0, 1] : [0, Math.floor((n - 1) / 3), Math.floor((2 * (n - 1)) / 3), n - 1]
+  }
+  const xLabels = [...new Set(xIdx)]
+    .sort((a, b) => a - b)
+    .map((i) => ({
+      x: xAt(i),
+      text: formatAxisDateChart(rows[i].data_registro),
+      hora: formatHoraRegistro(rows[i].created_at),
+    }))
+  return { seriesPaths, yTicks, xLabels, min, max, xAt, yAt, bottomY, innerW, width, height, padL, padR, padT, padB }
+}
+
+function CombinedTempChart({ rows }: { rows: TempRow[] }) {
+  const uid = useId().replace(/:/g, '')
+  const [expanded, setExpanded] = useState(false)
   const [tip, setTip] = useState<{ idx: number; pxPct: number } | null>(null)
 
-  const chart = useMemo(() => {
-    if (!rows.length) return null
-    const allVals = rows.flatMap((r) => [r.camara11_temp, r.camara12_temp, r.camara13_temp])
-    const min = Math.min(...allVals)
-    const max = Math.max(...allVals)
-    const safeMin = min === max ? min - 1 : min
-    const safeMax = min === max ? max + 1 : max
-    const rng = safeMax - safeMin
-    const xAt = (i: number) => padL + (rows.length > 1 ? (innerW * i) / (rows.length - 1) : innerW / 2)
-    const yAt = (v: number) => padT + innerH - ((v - safeMin) / rng) * innerH
-    const seriesPaths = COMBINED_SERIES.map((s, si) => {
-      const pts = rows.map((r, i) => {
-        const v = s.valueOf(r)
-        return { x: xAt(i), y: yAt(v) }
-      })
-      return {
-        lineD: smoothLinePath(pts),
-        color: s.color,
-        label: s.label,
-        gradId: `cgrad-${uid}-${si}`,
-      }
-    })
-    const yTicks = linearYTicks(safeMin, safeMax, yAt, 5)
-    const n = rows.length
-    const xIdx =
-      n <= 1 ? [0] : n === 2 ? [0, 1] : [0, Math.floor((n - 1) / 3), Math.floor((2 * (n - 1)) / 3), n - 1]
-    const xLabels = [...new Set(xIdx)]
-      .sort((a, b) => a - b)
-      .map((i) => ({ x: xAt(i), text: formatAxisDateChart(rows[i].data_registro) }))
-    return { seriesPaths, yTicks, xLabels, min, max, xAt, yAt }
-  }, [rows, innerW, innerH, padL, padT, bottomY, uid])
+  const chart = useMemo(
+    () => buildCombinedTempChartModel(rows, uid, COMB_TEMP_LAYOUT_CARD, 'cgrad', false),
+    [rows, uid],
+  )
+  const chartModal = useMemo(
+    () => buildCombinedTempChartModel(rows, uid, COMB_TEMP_LAYOUT_MODAL, 'cgrad-m', true),
+    [rows, uid],
+  )
 
-  const onSvgMove = useCallback(
-    (e: React.MouseEvent<SVGSVGElement>) => {
-      if (!rows.length || !chart) return
-      const svg = e.currentTarget
-      const rect = svg.getBoundingClientRect()
-      const vx = ((e.clientX - rect.left) / Math.max(1, rect.width)) * width
-      const n = rows.length
-      if (vx < padL || vx > width - padR) {
-        setTip(null)
-        return
-      }
-      const step = n > 1 ? innerW / (n - 1) : 0
-      let idx = n <= 1 ? 0 : Math.round((vx - padL) / step)
-      idx = Math.max(0, Math.min(n - 1, idx))
-      const xCenter = padL + step * idx
-      setTip({ idx, pxPct: (xCenter / width) * 100 })
-    },
-    [rows.length, chart, width, padL, padR, innerW],
+  const makeCombTempMove = useCallback(
+    (M: NonNullable<typeof chart>) =>
+      (e: React.MouseEvent<SVGSVGElement>) => {
+        if (!rows.length) return
+        const { width, padL, padR, innerW } = M
+        const svg = e.currentTarget
+        const rect = svg.getBoundingClientRect()
+        const vx = ((e.clientX - rect.left) / Math.max(1, rect.width)) * width
+        const n = rows.length
+        if (vx < padL || vx > width - padR) {
+          setTip(null)
+          return
+        }
+        const step = n > 1 ? innerW / (n - 1) : 0
+        let idx = n <= 1 ? 0 : Math.round((vx - padL) / step)
+        idx = Math.max(0, Math.min(n - 1, idx))
+        const xCenter = padL + step * idx
+        setTip({ idx, pxPct: (xCenter / width) * 100 })
+      },
+    [rows.length],
+  )
+
+  const onSvgMoveCard = useMemo(() => (chart ? makeCombTempMove(chart) : undefined), [chart, makeCombTempMove])
+  const onSvgMoveModal = useMemo(
+    () => (chartModal ? makeCombTempMove(chartModal) : undefined),
+    [chartModal, makeCombTempMove],
   )
 
   const onSvgLeave = useCallback(() => setTip(null), [])
 
+  const combTempLineAnimKey = useMemo(() => rows.map((r) => r.id).join(','), [rows])
+
+  const width = COMB_TEMP_LAYOUT_CARD.width
+  const height = COMB_TEMP_LAYOUT_CARD.height
+  const padL = COMB_TEMP_LAYOUT_CARD.padL
+  const padR = COMB_TEMP_LAYOUT_CARD.padR
+  const padT = COMB_TEMP_LAYOUT_CARD.padT
+  const padB = COMB_TEMP_LAYOUT_CARD.padB
+  const innerW = COMB_TEMP_LAYOUT_CARD.width - COMB_TEMP_LAYOUT_CARD.padL - COMB_TEMP_LAYOUT_CARD.padR
+  const bottomY = chart?.bottomY ?? COMB_TEMP_LAYOUT_CARD.padT + (COMB_TEMP_LAYOUT_CARD.height - COMB_TEMP_LAYOUT_CARD.padT - COMB_TEMP_LAYOUT_CARD.padB)
+
   return (
     <div style={chartCardStyle}>
+      {expanded && chartModal ? (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(2,6,23,.72)',
+            zIndex: 1200,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16,
+          }}
+          onClick={() => setExpanded(false)}
+        >
+          <div
+            style={{
+              ...chartCardStyle,
+              width: 'min(1240px, 98vw)',
+              maxHeight: '94vh',
+              overflow: 'auto',
+              border: '1px solid rgba(52,211,153,.35)',
+              boxShadow: '0 22px 70px rgba(0,0,0,.55)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 10 }}>
+              <div
+                style={{
+                  fontWeight: 800,
+                  fontSize: 18,
+                  letterSpacing: '0.02em',
+                  background: 'linear-gradient(90deg, #a7f3d0, #6ee7b7)',
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent',
+                  backgroundClip: 'text',
+                }}
+              >
+                Comparativo — Câmaras 11, 12 e 13
+              </div>
+              <button
+                type="button"
+                onClick={() => setExpanded(false)}
+                style={{
+                  border: '1px solid rgba(148,163,184,.45)',
+                  background: 'rgba(15,23,42,.7)',
+                  color: '#e2e8f0',
+                  borderRadius: 8,
+                  padding: '6px 10px',
+                  fontSize: 12,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                }}
+              >
+                Fechar
+              </button>
+            </div>
+            <div style={{ fontSize: 11, color: '#64748b', marginBottom: 10, lineHeight: 1.45 }}>
+              Eixo X: data e horário do registro · Eixo Y: °C. Passe o mouse para ver as três câmaras no ponto.
+            </div>
+            <div
+              style={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                alignItems: 'center',
+                gap: 10,
+                marginBottom: 12,
+                padding: '10px 12px',
+                background: 'rgba(0,0,0,.2)',
+                borderRadius: 12,
+                border: '1px solid rgba(255,255,255,.06)',
+              }}
+            >
+              <span style={{ fontSize: 11, color: '#64748b', fontWeight: 600, marginRight: 4 }}>Legenda</span>
+              {chartModal.seriesPaths.map((p) => (
+                <span
+                  key={p.label}
+                  style={{
+                    color: '#e2e8f0',
+                    fontWeight: 600,
+                    fontSize: 12,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    padding: '6px 12px',
+                    borderRadius: 999,
+                    border: `1px solid ${p.color}55`,
+                    background: `${p.color}14`,
+                  }}
+                >
+                  <span style={{ width: 10, height: 10, borderRadius: 999, background: p.color, boxShadow: `0 0 10px ${p.color}` }} />
+                  {p.label}
+                </span>
+              ))}
+            </div>
+            <div style={{ position: 'relative' }}>
+              {tip != null && rows[tip.idx] ? (
+                <div
+                  style={{
+                    position: 'absolute',
+                    left: `${tip.pxPct}%`,
+                    top: 6,
+                    transform: 'translateX(-50%)',
+                    zIndex: 2,
+                    pointerEvents: 'none',
+                    minWidth: 220,
+                    padding: '10px 14px',
+                    borderRadius: 12,
+                    background: 'rgba(15,23,42,.94)',
+                    border: '1px solid rgba(56,189,248,.35)',
+                    boxShadow: '0 12px 40px rgba(0,0,0,.45)',
+                    fontSize: 12,
+                  }}
+                >
+                  <div style={{ fontWeight: 700, color: '#e0f2fe', marginBottom: 4 }}>
+                    {formatAxisDateChart(rows[tip.idx].data_registro)}
+                  </div>
+                  <div style={{ fontSize: 11, color: '#64748b', marginBottom: 8 }}>
+                    {formatHoraRegistro(rows[tip.idx].created_at)}
+                  </div>
+                  <div style={{ display: 'grid', gap: 6 }}>
+                    <div style={{ color: '#22c55e' }}>
+                      Câm. 11: <strong>{rows[tip.idx].camara11_temp.toFixed(1)} °C</strong>
+                    </div>
+                    <div style={{ color: '#38bdf8' }}>
+                      Câm. 12: <strong>{rows[tip.idx].camara12_temp.toFixed(1)} °C</strong>
+                    </div>
+                    <div style={{ color: '#f59e0b' }}>
+                      Câm. 13: <strong>{rows[tip.idx].camara13_temp.toFixed(1)} °C</strong>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+              <svg
+                width="100%"
+                viewBox={`0 0 ${chartModal.width} ${chartModal.height}`}
+                preserveAspectRatio="xMidYMid meet"
+                style={{ display: 'block', cursor: 'crosshair' }}
+                onMouseMove={onSvgMoveModal}
+                onMouseLeave={onSvgLeave}
+              >
+                <defs>
+                  {chartModal.seriesPaths.map((p) => (
+                    <linearGradient key={p.gradId} id={p.gradId} x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor={p.color} stopOpacity={0.14} />
+                      <stop offset="55%" stopColor={p.color} stopOpacity={0.04} />
+                      <stop offset="100%" stopColor={p.color} stopOpacity={0} />
+                    </linearGradient>
+                  ))}
+                </defs>
+                <rect x={0} y={0} width={chartModal.width} height={chartModal.height} rx={10} fill="rgba(0,0,0,.16)" />
+                {chartModal.xLabels.map((xl, i) => (
+                  <line
+                    key={`cxgm-${i}`}
+                    x1={xl.x}
+                    y1={chartModal.padT}
+                    x2={xl.x}
+                    y2={chartModal.bottomY}
+                    stroke="rgba(148,163,184,.09)"
+                    strokeWidth={1}
+                  />
+                ))}
+                {chartModal.yTicks.map((t, i) => (
+                  <line
+                    key={`cym-${i}`}
+                    x1={chartModal.padL}
+                    y1={t.y}
+                    x2={chartModal.width - chartModal.padR}
+                    y2={t.y}
+                    stroke="rgba(148,163,184,.2)"
+                    strokeDasharray="4 8"
+                    strokeWidth={1}
+                  />
+                ))}
+                {tip != null ? (
+                  <line
+                    x1={chartModal.xAt(tip.idx)}
+                    y1={chartModal.padT}
+                    x2={chartModal.xAt(tip.idx)}
+                    y2={chartModal.bottomY}
+                    stroke="rgba(56,189,248,.35)"
+                    strokeWidth={1.5}
+                    strokeDasharray="6 4"
+                  />
+                ) : null}
+                {chartModal.seriesPaths.map((p, si) => {
+                  const lineD = p.lineD
+                  const pts = rows.map((_, i) => ({
+                    x: chartModal.padL + (rows.length > 1 ? (chartModal.innerW * i) / (rows.length - 1) : chartModal.innerW / 2),
+                  }))
+                  const lastX = pts[pts.length - 1]?.x ?? chartModal.padL
+                  const firstX = pts[0]?.x ?? chartModal.padL
+                  const areaD = `${lineD} L ${lastX.toFixed(2)} ${chartModal.bottomY.toFixed(2)} L ${firstX.toFixed(2)} ${chartModal.bottomY.toFixed(2)} Z`
+                  return (
+                    <AnimatedAreaPath
+                      key={p.label}
+                      d={areaD}
+                      fill={`url(#${p.gradId})`}
+                      targetOpacity={0.55}
+                      delaySec={0.06 + si * 0.06}
+                    />
+                  )
+                })}
+                {chartModal.seriesPaths.map((p, si) => (
+                  <AnimatedStrokePath
+                    key={`line-m-${p.label}`}
+                    animKey={`${combTempLineAnimKey}-m-${chartModal.width}`}
+                    strokeDelaySec={0.05 * si}
+                    d={p.lineD}
+                    stroke={p.color}
+                    strokeWidth={2.85}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    style={{ filter: `drop-shadow(0 0 6px ${p.color}55)` }}
+                  />
+                ))}
+                {(() => {
+                  const n = rows.length
+                  const idxs =
+                    n <= 18 ? Array.from({ length: n }, (_, i) => i) : [0, Math.floor((n - 1) / 4), Math.floor((n - 1) / 2), Math.floor((3 * (n - 1)) / 4), n - 1]
+                  const uniqIdxs = [...new Set(idxs)].sort((a, b) => a - b)
+                  return COMBINED_SERIES.flatMap((s, si) =>
+                    uniqIdxs.map((i) => {
+                      const v = s.valueOf(rows[i])
+                      const x = chartModal.xAt(i)
+                      const y = chartModal.yAt(v)
+                      const yShift = si === 0 ? -10 : si === 1 ? -18 : -6
+                      return (
+                        <text
+                          key={`tmp-valm-${si}-${i}`}
+                          x={x}
+                          y={Math.max(chartModal.padT + 11, y + yShift)}
+                          textAnchor="middle"
+                          fill={s.color}
+                          fontSize={11}
+                          fontWeight={700}
+                          fontFamily="system-ui, sans-serif"
+                          style={{ filter: 'drop-shadow(0 1px 2px rgba(2,6,23,.9))' }}
+                        >
+                          {v.toFixed(1)}°C
+                        </text>
+                      )
+                    }),
+                  )
+                })()}
+                {tip != null
+                  ? COMBINED_SERIES.map((s) => {
+                      const v = s.valueOf(rows[tip.idx])
+                      const cx = chartModal.xAt(tip.idx)
+                      const cy = chartModal.yAt(v)
+                      return (
+                        <circle
+                          key={`dotm-${s.label}`}
+                          cx={cx}
+                          cy={cy}
+                          r={5.5}
+                          fill={s.color}
+                          stroke="rgba(15,23,42,.92)"
+                          strokeWidth={2}
+                        />
+                      )
+                    })
+                  : null}
+                {chartModal.yTicks.map((t, i) => (
+                  <text
+                    key={`cylm-${i}`}
+                    x={chartModal.padL - 10}
+                    y={t.y + 4}
+                    textAnchor="end"
+                    fill="#cbd5e1"
+                    fontSize={12}
+                    fontFamily="system-ui, sans-serif"
+                  >
+                    {t.v.toFixed(1)}°C
+                  </text>
+                ))}
+                <text x={chartModal.padL} y={chartModal.padT - 2} fill="#64748b" fontSize={11} fontFamily="system-ui, sans-serif">
+                  °C
+                </text>
+                <line
+                  x1={chartModal.padL}
+                  y1={chartModal.bottomY}
+                  x2={chartModal.width - chartModal.padR}
+                  y2={chartModal.bottomY}
+                  stroke="rgba(148,163,184,.45)"
+                  strokeWidth={1.5}
+                />
+                <line
+                  x1={chartModal.padL}
+                  y1={chartModal.padT}
+                  x2={chartModal.padL}
+                  y2={chartModal.bottomY}
+                  stroke="rgba(148,163,184,.45)"
+                  strokeWidth={1.5}
+                />
+                {chartModal.xLabels.map((xl, i) => (
+                  <g key={`cxlm-${i}`}>
+                    <text
+                      x={xl.x}
+                      y={chartModal.height - (xl.hora ? 22 : 12)}
+                      textAnchor="middle"
+                      fill="#94a3b8"
+                      fontSize={11}
+                      fontFamily="system-ui, sans-serif"
+                    >
+                      {xl.text}
+                    </text>
+                    {xl.hora ? (
+                      <text
+                        x={xl.x}
+                        y={chartModal.height - 8}
+                        textAnchor="middle"
+                        fill="#64748b"
+                        fontSize={9}
+                        fontFamily="system-ui, sans-serif"
+                        style={{ fontVariantNumeric: 'tabular-nums' }}
+                      >
+                        {xl.hora}
+                      </text>
+                    ) : null}
+                  </g>
+                ))}
+              </svg>
+            </div>
+            <div
+              style={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: 12,
+                marginTop: 12,
+                fontSize: 12,
+                paddingTop: 10,
+                borderTop: '1px solid rgba(255,255,255,.08)',
+                color: '#94a3b8',
+              }}
+            >
+              <span>
+                Escala: <strong style={{ color: '#e2e8f0' }}>{chartModal.min.toFixed(1)} °C</strong> a{' '}
+                <strong style={{ color: '#e2e8f0' }}>{chartModal.max.toFixed(1)} °C</strong>
+              </span>
+              <span style={{ color: '#64748b' }}>{rows.length} lançamento(s)</span>
+            </div>
+          </div>
+        </div>
+      ) : null}
       <div
         style={{
-          fontWeight: 700,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 10,
+          flexWrap: 'wrap',
           marginBottom: 8,
-          fontSize: 17,
-          letterSpacing: '0.02em',
-          background: 'linear-gradient(90deg, #a7f3d0, #6ee7b7)',
-          WebkitBackgroundClip: 'text',
-          WebkitTextFillColor: 'transparent',
-          backgroundClip: 'text',
         }}
       >
-        Comparativo — Câmaras 11, 12 e 13
+        <div
+          style={{
+            fontWeight: 700,
+            fontSize: 17,
+            letterSpacing: '0.02em',
+            background: 'linear-gradient(90deg, #a7f3d0, #6ee7b7)',
+            WebkitBackgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
+            backgroundClip: 'text',
+          }}
+        >
+          Comparativo — Câmaras 11, 12 e 13
+        </div>
+        <button
+          type="button"
+          onClick={() => setExpanded(true)}
+          disabled={!rows.length}
+          style={{
+            border: '1px solid rgba(34,197,94,.45)',
+            background: rows.length ? 'rgba(2,6,23,.52)' : 'rgba(15,23,42,.4)',
+            color: '#22c55e',
+            borderRadius: 8,
+            padding: '5px 11px',
+            fontSize: 11,
+            fontWeight: 700,
+            cursor: rows.length ? 'pointer' : 'not-allowed',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          Ampliar
+        </button>
       </div>
       {!rows.length || !chart ? (
         <div style={{ fontSize: 13, color: 'var(--text, #9ca3af)' }}>Sem dados ainda.</div>
@@ -971,7 +1698,7 @@ function CombinedTempChart({ rows }: { rows: TempRow[] }) {
               viewBox={`0 0 ${width} ${height}`}
               preserveAspectRatio="xMidYMid meet"
               style={{ display: 'block', cursor: 'crosshair' }}
-              onMouseMove={onSvgMove}
+              onMouseMove={onSvgMoveCard}
               onMouseLeave={onSvgLeave}
             >
               <defs>
@@ -1018,7 +1745,7 @@ function CombinedTempChart({ rows }: { rows: TempRow[] }) {
                   strokeDasharray="6 4"
                 />
               ) : null}
-              {chart.seriesPaths.map((p) => {
+              {chart.seriesPaths.map((p, si) => {
                 const lineD = p.lineD
                 const pts = rows.map((_, i) => ({
                   x: padL + (rows.length > 1 ? (innerW * i) / (rows.length - 1) : innerW / 2),
@@ -1026,15 +1753,24 @@ function CombinedTempChart({ rows }: { rows: TempRow[] }) {
                 const lastX = pts[pts.length - 1]?.x ?? padL
                 const firstX = pts[0]?.x ?? padL
                 const areaD = `${lineD} L ${lastX.toFixed(2)} ${bottomY.toFixed(2)} L ${firstX.toFixed(2)} ${bottomY.toFixed(2)} Z`
-                return <path key={p.label} d={areaD} fill={`url(#${p.gradId})`} opacity={0.55} />
+                return (
+                  <AnimatedAreaPath
+                    key={p.label}
+                    d={areaD}
+                    fill={`url(#${p.gradId})`}
+                    targetOpacity={0.55}
+                    delaySec={0.06 + si * 0.06}
+                  />
+                )
               })}
-              {chart.seriesPaths.map((p) => (
-                <path
+              {chart.seriesPaths.map((p, si) => (
+                <AnimatedStrokePath
                   key={`line-${p.label}`}
+                  animKey={`${combTempLineAnimKey}-c-${width}`}
+                  strokeDelaySec={0.05 * si}
                   d={p.lineD}
                   stroke={p.color}
                   strokeWidth={2.85}
-                  fill="none"
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   style={{ filter: `drop-shadow(0 0 6px ${p.color}55)` }}
@@ -1166,90 +1902,532 @@ const COMBINED_OCP_SERIES = [
   { color: '#f59e0b', valueOf: ocupPercCam13, label: 'Câmara 13', strokeWidth: 2.7 },
 ] as const
 
-function CombinedOcupacaoChart({ rows }: { rows: OcupRow[] }) {
-  const uid = useId().replace(/:/g, '')
-  const width = 1100
-  const height = 292
-  const padL = 54
-  const padR = 18
-  const padT = 20
-  const padB = 50
+const COMB_OCP_LAYOUT_CARD: CombTempLayout = { width: 1100, height: 292, padL: 54, padR: 18, padT: 20, padB: 50 }
+const COMB_OCP_LAYOUT_MODAL: CombTempLayout = { width: 1240, height: 410, padL: 60, padR: 22, padT: 24, padB: 72 }
+
+function buildCombinedOcupChartModel(
+  rows: OcupRow[],
+  uid: string,
+  L: CombTempLayout,
+  gradPrefix: string,
+  xDense: boolean,
+) {
+  const { width, height, padL, padR, padT, padB } = L
   const innerW = width - padL - padR
   const innerH = height - padT - padB
   const bottomY = padT + innerH
+  if (!rows.length) return null
+  const allVals = rows.flatMap((r) => COMBINED_OCP_SERIES.map((s) => s.valueOf(r)))
+  const min = Math.min(...allVals)
+  const max = Math.max(...allVals)
+  const pad = (max - min) * 0.06 || 1
+  const safeMin = min === max ? min - pad : min - pad * 0.35
+  const safeMax = min === max ? max + pad : max + pad * 0.35
+  const rng = safeMax - safeMin
+  const xAt = (i: number) => padL + (rows.length > 1 ? (innerW * i) / (rows.length - 1) : innerW / 2)
+  const yAt = (v: number) => padT + innerH - ((v - safeMin) / rng) * innerH
+  const seriesPaths = COMBINED_OCP_SERIES.map((s, si) => {
+    const pts = rows.map((r, i) => {
+      const v = s.valueOf(r)
+      return { x: xAt(i), y: yAt(v) }
+    })
+    return {
+      lineD: smoothLinePath(pts),
+      color: s.color,
+      label: s.label,
+      strokeWidth: s.strokeWidth,
+      gradId: `${gradPrefix}-${uid}-${si}`,
+    }
+  })
+  const yTicks = linearYTicks(safeMin, safeMax, yAt, 6)
+  const n = rows.length
+  let xIdx: number[]
+  if (xDense) {
+    if (n <= 1) xIdx = [0]
+    else if (n <= 16) xIdx = Array.from({ length: n }, (_, i) => i)
+    else {
+      xIdx = [0]
+      for (let k = 1; k <= 12; k++) xIdx.push(Math.round(((n - 1) * k) / 13))
+      xIdx.push(n - 1)
+      xIdx = [...new Set(xIdx)].sort((a, b) => a - b)
+    }
+  } else {
+    xIdx =
+      n <= 1 ? [0] : n === 2 ? [0, 1] : [0, Math.floor((n - 1) / 4), Math.floor((n - 1) / 2), Math.floor((3 * (n - 1)) / 4), n - 1]
+  }
+  const xLabels = [...new Set(xIdx)]
+    .sort((a, b) => a - b)
+    .map((i) => ({
+      x: xAt(i),
+      text: formatAxisDateChart(rows[i].data_registro),
+      hora: formatHoraRegistro(rows[i].created_at),
+    }))
+  return { seriesPaths, yTicks, xLabels, min, max, xAt, yAt, bottomY, innerW, width, height, padL, padR, padT, padB }
+}
+
+function CombinedOcupacaoChart({ rows }: { rows: OcupRow[] }) {
+  const uid = useId().replace(/:/g, '')
+  const [expanded, setExpanded] = useState(false)
   const [tip, setTip] = useState<{ idx: number; pxPct: number } | null>(null)
 
-  const chart = useMemo(() => {
-    if (!rows.length) return null
-    const allVals = rows.flatMap((r) => COMBINED_OCP_SERIES.map((s) => s.valueOf(r)))
-    const min = Math.min(...allVals)
-    const max = Math.max(...allVals)
-    const pad = (max - min) * 0.06 || 1
-    const safeMin = min === max ? min - pad : min - pad * 0.35
-    const safeMax = min === max ? max + pad : max + pad * 0.35
-    const rng = safeMax - safeMin
-    const xAt = (i: number) => padL + (rows.length > 1 ? (innerW * i) / (rows.length - 1) : innerW / 2)
-    const yAt = (v: number) => padT + innerH - ((v - safeMin) / rng) * innerH
-    const seriesPaths = COMBINED_OCP_SERIES.map((s, si) => {
-      const pts = rows.map((r, i) => {
-        const v = s.valueOf(r)
-        return { x: xAt(i), y: yAt(v) }
-      })
-      return {
-        lineD: smoothLinePath(pts),
-        color: s.color,
-        label: s.label,
-        strokeWidth: s.strokeWidth,
-        gradId: `ocp-grad-${uid}-${si}`,
-      }
-    })
-    const yTicks = linearYTicks(safeMin, safeMax, yAt, 6)
-    const n = rows.length
-    const xIdx =
-      n <= 1 ? [0] : n === 2 ? [0, 1] : [0, Math.floor((n - 1) / 4), Math.floor((n - 1) / 2), Math.floor((3 * (n - 1)) / 4), n - 1]
-    const xLabels = [...new Set(xIdx)]
-      .sort((a, b) => a - b)
-      .map((i) => ({ x: xAt(i), text: formatAxisDateChart(rows[i].data_registro) }))
-    return { seriesPaths, yTicks, xLabels, min, max, xAt, yAt }
-  }, [rows, innerW, innerH, padL, padT, bottomY, uid])
+  const chart = useMemo(
+    () => buildCombinedOcupChartModel(rows, uid, COMB_OCP_LAYOUT_CARD, 'ocp-grad', false),
+    [rows, uid],
+  )
+  const chartModal = useMemo(
+    () => buildCombinedOcupChartModel(rows, uid, COMB_OCP_LAYOUT_MODAL, 'ocp-grad-m', true),
+    [rows, uid],
+  )
 
-  const onSvgMove = useCallback(
-    (e: React.MouseEvent<SVGSVGElement>) => {
-      if (!rows.length || !chart) return
-      const svg = e.currentTarget
-      const rect = svg.getBoundingClientRect()
-      const vx = ((e.clientX - rect.left) / Math.max(1, rect.width)) * width
-      const n = rows.length
-      if (vx < padL || vx > width - padR) {
-        setTip(null)
-        return
-      }
-      const step = n > 1 ? innerW / (n - 1) : 0
-      let idx = n <= 1 ? 0 : Math.round((vx - padL) / step)
-      idx = Math.max(0, Math.min(n - 1, idx))
-      const xCenter = padL + step * idx
-      setTip({ idx, pxPct: (xCenter / width) * 100 })
-    },
-    [rows.length, chart, width, padL, padR, innerW],
+  const makeCombOcpMove = useCallback(
+    (M: NonNullable<typeof chart>) =>
+      (e: React.MouseEvent<SVGSVGElement>) => {
+        if (!rows.length) return
+        const { width, padL, padR, innerW } = M
+        const svg = e.currentTarget
+        const rect = svg.getBoundingClientRect()
+        const vx = ((e.clientX - rect.left) / Math.max(1, rect.width)) * width
+        const n = rows.length
+        if (vx < padL || vx > width - padR) {
+          setTip(null)
+          return
+        }
+        const step = n > 1 ? innerW / (n - 1) : 0
+        let idx = n <= 1 ? 0 : Math.round((vx - padL) / step)
+        idx = Math.max(0, Math.min(n - 1, idx))
+        const xCenter = padL + step * idx
+        setTip({ idx, pxPct: (xCenter / width) * 100 })
+      },
+    [rows.length],
+  )
+
+  const onSvgMoveCard = useMemo(() => (chart ? makeCombOcpMove(chart) : undefined), [chart, makeCombOcpMove])
+  const onSvgMoveModal = useMemo(
+    () => (chartModal ? makeCombOcpMove(chartModal) : undefined),
+    [chartModal, makeCombOcpMove],
   )
 
   const onSvgLeave = useCallback(() => setTip(null), [])
 
+  const combOcpLineAnimKey = useMemo(() => rows.map((r) => r.id).join(','), [rows])
+
+  const width = COMB_OCP_LAYOUT_CARD.width
+  const height = COMB_OCP_LAYOUT_CARD.height
+  const padL = COMB_OCP_LAYOUT_CARD.padL
+  const padR = COMB_OCP_LAYOUT_CARD.padR
+  const padT = COMB_OCP_LAYOUT_CARD.padT
+  const innerW = COMB_OCP_LAYOUT_CARD.width - COMB_OCP_LAYOUT_CARD.padL - COMB_OCP_LAYOUT_CARD.padR
+  const bottomY = chart?.bottomY ?? COMB_OCP_LAYOUT_CARD.padT + (COMB_OCP_LAYOUT_CARD.height - COMB_OCP_LAYOUT_CARD.padT - COMB_OCP_LAYOUT_CARD.padB)
+
   return (
     <div style={{ ...chartCardStyle, padding: 16 }}>
-      <div
-        style={{
-          fontWeight: 800,
-          marginBottom: 6,
-          fontSize: 18,
-          letterSpacing: '0.02em',
-          background: 'linear-gradient(90deg, #bae6fd, #38bdf8, #7dd3fc)',
-          WebkitBackgroundClip: 'text',
-          WebkitTextFillColor: 'transparent',
-          backgroundClip: 'text',
-        }}
-      >
-        Comparativo — ocupação %
+      {expanded && chartModal ? (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(2,6,23,.72)',
+            zIndex: 1200,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16,
+          }}
+          onClick={() => setExpanded(false)}
+        >
+          <div
+            style={{
+              ...chartCardStyle,
+              width: 'min(1240px, 98vw)',
+              maxHeight: '94vh',
+              overflow: 'auto',
+              padding: 16,
+              border: '1px solid rgba(56,189,248,.4)',
+              boxShadow: '0 22px 70px rgba(0,0,0,.55)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, marginBottom: 8 }}>
+              <div>
+                <div
+                  style={{
+                    fontWeight: 800,
+                    fontSize: 18,
+                    letterSpacing: '0.02em',
+                    background: 'linear-gradient(90deg, #bae6fd, #38bdf8, #7dd3fc)',
+                    WebkitBackgroundClip: 'text',
+                    WebkitTextFillColor: 'transparent',
+                    backgroundClip: 'text',
+                  }}
+                >
+                  Comparativo — ocupação %
+                </div>
+                <div style={{ fontSize: 11, color: '#64748b', marginTop: 6, lineHeight: 1.45, maxWidth: 720 }}>
+                  Linha <strong style={{ color: '#e2e8f0' }}>geral</strong> inclui avaria. Eixo X: data e horário do registro.
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setExpanded(false)}
+                style={{
+                  border: '1px solid rgba(148,163,184,.45)',
+                  background: 'rgba(15,23,42,.7)',
+                  color: '#e2e8f0',
+                  borderRadius: 8,
+                  padding: '6px 10px',
+                  fontSize: 12,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  flexShrink: 0,
+                }}
+              >
+                Fechar
+              </button>
+            </div>
+            <div
+              style={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                alignItems: 'center',
+                gap: 10,
+                marginBottom: 12,
+                padding: '10px 12px',
+                background: 'rgba(0,0,0,.22)',
+                borderRadius: 12,
+                border: '1px solid rgba(56,189,248,.12)',
+              }}
+            >
+              <span style={{ fontSize: 11, color: '#64748b', fontWeight: 600, marginRight: 4 }}>Legenda</span>
+              {chartModal.seriesPaths.map((p) => (
+                <span
+                  key={p.label}
+                  style={{
+                    color: '#e2e8f0',
+                    fontWeight: 600,
+                    fontSize: 12,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    padding: '6px 12px',
+                    borderRadius: 999,
+                    border: `1px solid ${p.color === '#f0f9ff' ? 'rgba(240,249,255,.45)' : `${p.color}55`}`,
+                    background: `${p.color === '#f0f9ff' ? 'rgba(240,249,255,.12)' : `${p.color}14`}`,
+                  }}
+                >
+                  <span
+                    style={{
+                      width: 10,
+                      height: 10,
+                      borderRadius: 999,
+                      background: p.color,
+                      boxShadow: `0 0 10px ${p.color === '#f0f9ff' ? 'rgba(240,249,255,.5)' : p.color}`,
+                    }}
+                  />
+                  {p.label}
+                </span>
+              ))}
+            </div>
+            <div style={{ position: 'relative' }}>
+              {tip != null && rows[tip.idx] ? (
+                <div
+                  style={{
+                    position: 'absolute',
+                    left: `${tip.pxPct}%`,
+                    top: 6,
+                    transform: 'translateX(-50%)',
+                    zIndex: 2,
+                    pointerEvents: 'none',
+                    minWidth: 240,
+                    padding: '12px 14px',
+                    borderRadius: 12,
+                    background: 'rgba(15,23,42,.96)',
+                    border: '1px solid rgba(56,189,248,.4)',
+                    boxShadow: '0 12px 40px rgba(0,0,0,.5)',
+                    fontSize: 12,
+                  }}
+                >
+                  <div style={{ fontWeight: 700, color: '#e0f2fe', marginBottom: 4 }}>
+                    {formatAxisDateChart(rows[tip.idx].data_registro)}
+                  </div>
+                  <div style={{ fontSize: 11, color: '#64748b', marginBottom: 10 }}>
+                    {rows[tip.idx].conferente_nome}
+                    <span style={{ color: '#475569' }}> · </span>
+                    {formatHoraRegistro(rows[tip.idx].created_at)}
+                  </div>
+                  <div style={{ display: 'grid', gap: 7 }}>
+                    <div style={{ color: '#f0f9ff' }}>
+                      Geral: <strong>{ocupPercGeral(rows[tip.idx]).toFixed(1)} %</strong>
+                    </div>
+                    <div style={{ color: '#22c55e' }}>
+                      Câm. 11: <strong>{ocupPercCam11(rows[tip.idx]).toFixed(1)} %</strong>
+                    </div>
+                    <div style={{ color: '#38bdf8' }}>
+                      Câm. 12: <strong>{ocupPercCam12(rows[tip.idx]).toFixed(1)} %</strong>
+                    </div>
+                    <div style={{ color: '#f59e0b' }}>
+                      Câm. 13: <strong>{ocupPercCam13(rows[tip.idx]).toFixed(1)} %</strong>
+                    </div>
+                    <div
+                      style={{
+                        marginTop: 4,
+                        paddingTop: 8,
+                        borderTop: '1px solid rgba(255,255,255,.08)',
+                        color: '#fdba74',
+                      }}
+                    >
+                      Avaria: <strong>{rows[tip.idx].avaria_acrescimo_ocupacao}</strong> pos. (
+                      {ocupAvariaPercTotal(rows[tip.idx]).toFixed(1)}% do armazém)
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+              <svg
+                width="100%"
+                viewBox={`0 0 ${chartModal.width} ${chartModal.height}`}
+                preserveAspectRatio="xMidYMid meet"
+                style={{ display: 'block', cursor: 'crosshair' }}
+                onMouseMove={onSvgMoveModal}
+                onMouseLeave={onSvgLeave}
+              >
+                <defs>
+                  {chartModal.seriesPaths.map((p) => (
+                    <linearGradient key={p.gradId} id={p.gradId} x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor={p.color} stopOpacity={0.16} />
+                      <stop offset="55%" stopColor={p.color} stopOpacity={0.05} />
+                      <stop offset="100%" stopColor={p.color} stopOpacity={0} />
+                    </linearGradient>
+                  ))}
+                </defs>
+                <rect x={0} y={0} width={chartModal.width} height={chartModal.height} rx={10} fill="rgba(0,0,0,.2)" />
+                {chartModal.xLabels.map((xl, i) => (
+                  <line
+                    key={`oxgm-${i}`}
+                    x1={xl.x}
+                    y1={chartModal.padT}
+                    x2={xl.x}
+                    y2={chartModal.bottomY}
+                    stroke="rgba(148,163,184,.08)"
+                    strokeWidth={1}
+                  />
+                ))}
+                {chartModal.yTicks.map((t, i) => (
+                  <line
+                    key={`oym-${i}`}
+                    x1={chartModal.padL}
+                    y1={t.y}
+                    x2={chartModal.width - chartModal.padR}
+                    y2={t.y}
+                    stroke="rgba(148,163,184,.2)"
+                    strokeDasharray="4 8"
+                    strokeWidth={1}
+                  />
+                ))}
+                {tip != null ? (
+                  <line
+                    x1={chartModal.xAt(tip.idx)}
+                    y1={chartModal.padT}
+                    x2={chartModal.xAt(tip.idx)}
+                    y2={chartModal.bottomY}
+                    stroke="rgba(56,189,248,.4)"
+                    strokeWidth={1.5}
+                    strokeDasharray="6 4"
+                  />
+                ) : null}
+                {chartModal.seriesPaths.map((p, si) => {
+                  const lineD = p.lineD
+                  const pts = rows.map((_, i) => ({
+                    x: chartModal.padL + (rows.length > 1 ? (chartModal.innerW * i) / (rows.length - 1) : chartModal.innerW / 2),
+                  }))
+                  const lastX = pts[pts.length - 1]?.x ?? chartModal.padL
+                  const firstX = pts[0]?.x ?? chartModal.padL
+                  const areaD = `${lineD} L ${lastX.toFixed(2)} ${chartModal.bottomY.toFixed(2)} L ${firstX.toFixed(2)} ${chartModal.bottomY.toFixed(2)} Z`
+                  return (
+                    <AnimatedAreaPath
+                      key={p.label}
+                      d={areaD}
+                      fill={`url(#${p.gradId})`}
+                      targetOpacity={0.5}
+                      delaySec={0.05 + si * 0.05}
+                    />
+                  )
+                })}
+                {chartModal.seriesPaths.map((p, si) => (
+                  <AnimatedStrokePath
+                    key={`olinem-${p.label}`}
+                    animKey={`${combOcpLineAnimKey}-m-${chartModal.width}`}
+                    strokeDelaySec={0.04 * si}
+                    d={p.lineD}
+                    stroke={p.color}
+                    strokeWidth={p.strokeWidth}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    style={{ filter: `drop-shadow(0 0 6px ${p.color === '#f0f9ff' ? 'rgba(240,249,255,.45)' : `${p.color}55`})` }}
+                  />
+                ))}
+                {(() => {
+                  const n = rows.length
+                  const idxs =
+                    n <= 18
+                      ? Array.from({ length: n }, (_, i) => i)
+                      : [0, Math.floor((n - 1) / 4), Math.floor((n - 1) / 2), Math.floor((3 * (n - 1)) / 4), n - 1]
+                  const uniqIdxs = [...new Set(idxs)].sort((a, b) => a - b)
+                  return COMBINED_OCP_SERIES.flatMap((s, si) =>
+                    uniqIdxs.map((i) => {
+                      const v = s.valueOf(rows[i])
+                      const x = chartModal.xAt(i)
+                      const y = chartModal.yAt(v)
+                      const yShift = si === 0 ? -10 : si === 1 ? -18 : si === 2 ? -6 : -14
+                      return (
+                        <text
+                          key={`ocp-valm-${si}-${i}`}
+                          x={x}
+                          y={Math.max(chartModal.padT + 11, y + yShift)}
+                          textAnchor="middle"
+                          fill={s.color}
+                          fontSize={11}
+                          fontWeight={700}
+                          fontFamily="system-ui, sans-serif"
+                          style={{ filter: 'drop-shadow(0 1px 2px rgba(2,6,23,.9))' }}
+                        >
+                          {v.toFixed(1)}%
+                        </text>
+                      )
+                    }),
+                  )
+                })()}
+                {tip != null
+                  ? COMBINED_OCP_SERIES.map((s) => {
+                      const v = s.valueOf(rows[tip.idx])
+                      const cx = chartModal.xAt(tip.idx)
+                      const cy = chartModal.yAt(v)
+                      return (
+                        <circle
+                          key={`odm-${s.label}`}
+                          cx={cx}
+                          cy={cy}
+                          r={s.strokeWidth > 3 ? 5.8 : 5.2}
+                          fill={s.color}
+                          stroke="rgba(15,23,42,.92)"
+                          strokeWidth={2}
+                        />
+                      )
+                    })
+                  : null}
+                {chartModal.yTicks.map((t, i) => (
+                  <text
+                    key={`oylm-${i}`}
+                    x={chartModal.padL - 10}
+                    y={t.y + 4}
+                    textAnchor="end"
+                    fill="#cbd5e1"
+                    fontSize={12}
+                    fontFamily="system-ui, sans-serif"
+                  >
+                    {t.v.toFixed(1)}%
+                  </text>
+                ))}
+                <text x={chartModal.padL} y={chartModal.padT - 2} fill="#64748b" fontSize={11} fontFamily="system-ui, sans-serif">
+                  % ocupada
+                </text>
+                <line
+                  x1={chartModal.padL}
+                  y1={chartModal.bottomY}
+                  x2={chartModal.width - chartModal.padR}
+                  y2={chartModal.bottomY}
+                  stroke="rgba(148,163,184,.45)"
+                  strokeWidth={1.5}
+                />
+                <line
+                  x1={chartModal.padL}
+                  y1={chartModal.padT}
+                  x2={chartModal.padL}
+                  y2={chartModal.bottomY}
+                  stroke="rgba(148,163,184,.45)"
+                  strokeWidth={1.5}
+                />
+                {chartModal.xLabels.map((xl, i) => (
+                  <g key={`oxlm-${i}`}>
+                    <text
+                      x={xl.x}
+                      y={chartModal.height - (xl.hora ? 22 : 12)}
+                      textAnchor="middle"
+                      fill="#94a3b8"
+                      fontSize={11}
+                      fontFamily="system-ui, sans-serif"
+                    >
+                      {xl.text}
+                    </text>
+                    {xl.hora ? (
+                      <text
+                        x={xl.x}
+                        y={chartModal.height - 8}
+                        textAnchor="middle"
+                        fill="#64748b"
+                        fontSize={9}
+                        fontFamily="system-ui, sans-serif"
+                        style={{ fontVariantNumeric: 'tabular-nums' }}
+                      >
+                        {xl.hora}
+                      </text>
+                    ) : null}
+                  </g>
+                ))}
+              </svg>
+            </div>
+            <div
+              style={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: 12,
+                marginTop: 12,
+                fontSize: 12,
+                paddingTop: 10,
+                borderTop: '1px solid rgba(255,255,255,.08)',
+                color: '#94a3b8',
+              }}
+            >
+              <span>
+                Faixa: <strong style={{ color: '#e2e8f0' }}>{chartModal.min.toFixed(1)} %</strong> a{' '}
+                <strong style={{ color: '#e2e8f0' }}>{chartModal.max.toFixed(1)} %</strong>
+              </span>
+              <span style={{ color: '#64748b' }}>{rows.length} lançamento(s)</span>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 6 }}>
+        <div
+          style={{
+            fontWeight: 800,
+            fontSize: 18,
+            letterSpacing: '0.02em',
+            background: 'linear-gradient(90deg, #bae6fd, #38bdf8, #7dd3fc)',
+            WebkitBackgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
+            backgroundClip: 'text',
+          }}
+        >
+          Comparativo — ocupação %
+        </div>
+        <button
+          type="button"
+          onClick={() => setExpanded(true)}
+          disabled={!rows.length}
+          style={{
+            border: '1px solid rgba(56,189,248,.5)',
+            background: rows.length ? 'rgba(15,23,42,.65)' : 'rgba(15,23,42,.4)',
+            color: '#38bdf8',
+            borderRadius: 8,
+            padding: '5px 11px',
+            fontSize: 11,
+            fontWeight: 700,
+            cursor: rows.length ? 'pointer' : 'not-allowed',
+            whiteSpace: 'nowrap',
+            flexShrink: 0,
+          }}
+        >
+          Ampliar
+        </button>
       </div>
       <div style={{ fontSize: 12, color: '#64748b', marginBottom: 14, lineHeight: 1.45 }}>
         Linha <strong style={{ color: '#e2e8f0' }}>geral</strong> inclui avaria no total ocupado. As outras três curvas são só as câmaras 11, 12 e 13 (percentual sobre a capacidade de cada uma).
@@ -1364,7 +2542,7 @@ function CombinedOcupacaoChart({ rows }: { rows: OcupRow[] }) {
               viewBox={`0 0 ${width} ${height}`}
               preserveAspectRatio="xMidYMid meet"
               style={{ display: 'block', cursor: 'crosshair' }}
-              onMouseMove={onSvgMove}
+              onMouseMove={onSvgMoveCard}
               onMouseLeave={onSvgLeave}
             >
               <defs>
@@ -1411,7 +2589,7 @@ function CombinedOcupacaoChart({ rows }: { rows: OcupRow[] }) {
                   strokeDasharray="6 4"
                 />
               ) : null}
-              {chart.seriesPaths.map((p) => {
+              {chart.seriesPaths.map((p, si) => {
                 const lineD = p.lineD
                 const pts = rows.map((_, i) => ({
                   x: padL + (rows.length > 1 ? (innerW * i) / (rows.length - 1) : innerW / 2),
@@ -1419,15 +2597,24 @@ function CombinedOcupacaoChart({ rows }: { rows: OcupRow[] }) {
                 const lastX = pts[pts.length - 1]?.x ?? padL
                 const firstX = pts[0]?.x ?? padL
                 const areaD = `${lineD} L ${lastX.toFixed(2)} ${bottomY.toFixed(2)} L ${firstX.toFixed(2)} ${bottomY.toFixed(2)} Z`
-                return <path key={p.label} d={areaD} fill={`url(#${p.gradId})`} opacity={0.5} />
+                return (
+                  <AnimatedAreaPath
+                    key={p.label}
+                    d={areaD}
+                    fill={`url(#${p.gradId})`}
+                    targetOpacity={0.5}
+                    delaySec={0.05 + si * 0.05}
+                  />
+                )
               })}
-              {chart.seriesPaths.map((p) => (
-                <path
+              {chart.seriesPaths.map((p, si) => (
+                <AnimatedStrokePath
                   key={`oline-${p.label}`}
+                  animKey={`${combOcpLineAnimKey}-c-${width}`}
+                  strokeDelaySec={0.04 * si}
                   d={p.lineD}
                   stroke={p.color}
                   strokeWidth={p.strokeWidth}
-                  fill="none"
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   style={{ filter: `drop-shadow(0 0 6px ${p.color === '#f0f9ff' ? 'rgba(240,249,255,.45)' : `${p.color}55`})` }}
@@ -2138,7 +3325,7 @@ function OcupacaoCamaras111213Secao({
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 960 }}>
           <thead>
             <tr>
-              <th style={th}>Data</th>
+              <th style={th}>Data / horário</th>
               <th style={th}>Conferente</th>
               <th style={th}>Cam 11 (vazias)</th>
               <th style={th}>Cam 12 (vazias)</th>
@@ -2165,7 +3352,7 @@ function OcupacaoCamaras111213Secao({
                 const percOcup = totalPos > 0 ? (totalOcup / totalPos) * 100 : 0
                 return (
                   <tr key={r.id}>
-                    <td style={td}>{formatDataBr(r.data_registro)}</td>
+                    <td style={td}>{celulaDataComHoraRegistro(r.data_registro, r.created_at)}</td>
                     <td style={td}>{r.conferente_nome}</td>
                     <td style={td}>{r.camara11_vazias}</td>
                     <td style={td}>{r.camara12_vazias}</td>
@@ -2418,7 +3605,9 @@ export default function ContagemDiariaAmbiental() {
   const ocupRowsChrono = useMemo(() => [...ocupRows].reverse(), [ocupRows])
 
   return (
-    <div style={{ maxWidth: 1360, margin: '0 auto', padding: '0 16px 22px', width: '100%', boxSizing: 'border-box' }}>
+    <>
+      <style dangerouslySetInnerHTML={{ __html: CHART_ANIM_CSS }} />
+      <div style={{ maxWidth: 1360, margin: '0 auto', padding: '0 16px 22px', width: '100%', boxSizing: 'border-box' }}>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
         <button
           type="button"
@@ -2523,8 +3712,7 @@ export default function ContagemDiariaAmbiental() {
               <thead>
                 <tr>
                   <th style={th}>Conferente</th>
-                  <th style={th}>Data</th>
-                  <th style={th}>Hora do registro</th>
+                  <th style={th}>Data / horário</th>
                   <th style={{ ...th, color: '#22c55e' }}>Câm. 11 (°C)</th>
                   <th style={{ ...th, color: '#38bdf8' }}>Câm. 12 (°C)</th>
                   <th style={{ ...th, color: '#f59e0b' }}>Câm. 13 (°C)</th>
@@ -2533,7 +3721,7 @@ export default function ContagemDiariaAmbiental() {
               <tbody>
                 {tempHistoricoDesc.length === 0 ? (
                   <tr>
-                    <td colSpan={6} style={{ ...td, color: 'var(--text, #9ca3af)' }}>
+                    <td colSpan={5} style={{ ...td, color: 'var(--text, #9ca3af)' }}>
                       Nenhum registro ainda.
                     </td>
                   </tr>
@@ -2541,8 +3729,7 @@ export default function ContagemDiariaAmbiental() {
                   tempHistoricoPagina.map((r) => (
                     <tr key={r.id}>
                       <td style={td}>{r.conferente_nome}</td>
-                      <td style={td}>{formatDataBr(r.data_registro)}</td>
-                      <td style={td}>{formatHoraRegistro(r.created_at)}</td>
+                      <td style={td}>{celulaDataComHoraRegistro(r.data_registro, r.created_at)}</td>
                       <td style={{ ...td, fontVariantNumeric: 'tabular-nums' }}>{r.camara11_temp.toFixed(1)}</td>
                       <td style={{ ...td, fontVariantNumeric: 'tabular-nums' }}>{r.camara12_temp.toFixed(1)}</td>
                       <td style={{ ...td, fontVariantNumeric: 'tabular-nums' }}>{r.camara13_temp.toFixed(1)}</td>
@@ -2723,5 +3910,6 @@ export default function ContagemDiariaAmbiental() {
         </div>
       )}
     </div>
+    </>
   )
 }
