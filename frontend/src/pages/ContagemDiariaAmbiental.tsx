@@ -3007,13 +3007,14 @@ function OcupacaoCamaras111213Secao({
             </div>
             <div
               style={{
-                fontSize: 12,
+                fontSize: 'clamp(15px, 2.6vw, 19px)',
                 fontWeight: 800,
                 textTransform: 'uppercase',
-                letterSpacing: '0.12em',
+                letterSpacing: '0.1em',
                 color: t.tituloResumo,
                 textAlign: 'center',
                 paddingTop: 2,
+                lineHeight: 1.2,
               }}
             >
               {labels.resumo}
