@@ -445,6 +445,8 @@ export default function RelatorioContagem({
     /** Força busca só neste dia civil (ex.: “Ver contagem” no histórico). */
     singleDayYmd?: string
     allTimeOverride?: boolean
+    /** Inclui linhas rascunho (`contagem_rascunho = true`) no resultado. */
+    includeRascunho?: boolean
   }): Promise<{
     rows: ContagemRow[]
     successMessage?: string
@@ -454,6 +456,9 @@ export default function RelatorioContagem({
     const allT = opts?.allTimeOverride ?? allTime
     const useSd = opts?.singleDayYmd != null ? true : useSingleDay
     const singleDayVal = opts?.singleDayYmd ?? singleDay
+    const includeRascunho = opts?.includeRascunho ?? false
+    const applyRascunhoPolicy = <T extends { contagem_rascunho?: boolean | null }>(data: T[]): T[] =>
+      includeRascunho ? data : semLinhasRascunhoRelatorio(data)
 
     const selectCompletoSemSessao = `
       id,
@@ -782,7 +787,7 @@ export default function RelatorioContagem({
         data = await fetchRowsComFallbackEmbed(selectCompletoSemSessaoCompact, selectFlatCompletoSemSessaoCompact, true)
       }
       return {
-        rows: await enrichPlanilhaEConferente(mapSemOrigem(semLinhasRascunhoRelatorio(data))),
+        rows: await enrichPlanilhaEConferente(mapSemOrigem(applyRascunhoPolicy(data))),
         origemAusenteNoResultado: false,
       }
     } catch (e: unknown) {
@@ -796,7 +801,7 @@ export default function RelatorioContagem({
           true,
         )
         return {
-          rows: await enrichPlanilhaEConferente(mapSemOrigem(injectNumeroSeFiltroAtivo(semLinhasRascunhoRelatorio(data)))),
+          rows: await enrichPlanilhaEConferente(mapSemOrigem(injectNumeroSeFiltroAtivo(applyRascunhoPolicy(data)))),
           successMessage:
             'Colunas origem / nº contagem ausentes no SELECT (migre com os SQL em supabase/sql). O filtro por nº da contagem foi aplicado no servidor.',
           origemAusenteNoResultado: true,
@@ -809,7 +814,7 @@ export default function RelatorioContagem({
         }
       }
       try {
-        const data = semLinhasRascunhoRelatorio(
+        const data = applyRascunhoPolicy(
           await fetchRowsComFallbackEmbed(
             selectSemColunasInventarioCompact,
             selectFlatSemColunasInventarioCompact,
@@ -850,7 +855,7 @@ export default function RelatorioContagem({
           if (!isColumnMissingErrorRel(eExt)) throw eExt
           data = (await fetchRowsComFallbackEmbed(selectBasicoCompact, selectFlatBasicoCompact, false)) as ContagemRow[]
         }
-        const mapped = semLinhasRascunhoRelatorio(data).map((r) => ({
+        const mapped = applyRascunhoPolicy(data).map((r) => ({
           ...r,
           data_fabricacao: null,
           data_validade: null,
@@ -1098,6 +1103,7 @@ export default function RelatorioContagem({
       const { rows: data, successMessage, origemAusenteNoResultado } = await fetchRelatorioContagemRows({
         singleDayYmd: item.dataYmd,
         allTimeOverride: false,
+        includeRascunho: true,
       })
       const fh = item.conferenteId == null ? '__sem__' : item.conferenteId
       let dataForPrevia = data
@@ -1135,7 +1141,9 @@ export default function RelatorioContagem({
     setSuccess('')
     setRows([])
     try {
-      const { rows: data, successMessage, origemAusenteNoResultado } = await fetchRelatorioContagemRows()
+      const { rows: data, successMessage, origemAusenteNoResultado } = await fetchRelatorioContagemRows({
+        includeRascunho: true,
+      })
       let dataForPrevia = data
       const aplicarFiltroHistorico = isDiaMode && !opts?.ignoreHistoricoFilter
       if (aplicarFiltroHistorico && conferenteFiltroHistorico) {
@@ -1320,6 +1328,35 @@ export default function RelatorioContagem({
     setExportExcelLoading(true)
     setError('')
     try {
+      if (!useInventarioCols && isExportUmDiaCivil) {
+        const diaAlvo = useSingleDay ? singleDay : startDate
+        const {
+          rows: rowsComRascunho,
+          origemAusenteNoResultado: origemAusenteComRascunho,
+        } = await fetchRelatorioContagemRows({ includeRascunho: true })
+        const { filtered: filteredComRascunho } = await filtrarLinhasParaPrevia(
+          rowsComRascunho,
+          origemAusenteComRascunho,
+        )
+        const pendentesNoDia = filteredComRascunho.filter((r) => {
+          const ymd = String(r.data_contagem ?? r.data_hora_contagem ?? '').slice(0, 10)
+          return ymd === diaAlvo && r.contagem_rascunho === true
+        })
+        if (pendentesNoDia.length > 0) {
+          const conferentesPendentes = Array.from(
+            new Set(
+              pendentesNoDia
+                .map((r) => String(r.conferente_id ?? '').trim())
+                .filter((v) => v !== ''),
+            ),
+          )
+          setError(
+            `Excel bloqueado: ainda há contagem pendente de finalização para ${conferentesPendentes.length || 1} conferente(s) em ${formatDateBR(diaAlvo)}. Aguarde todos finalizarem a contagem e tente novamente.`,
+          )
+          return
+        }
+      }
+
       const { rows: data, origemAusenteNoResultado } = await fetchRelatorioContagemRows()
 
       if (!useInventarioCols && isExportUmDiaCivil) {
