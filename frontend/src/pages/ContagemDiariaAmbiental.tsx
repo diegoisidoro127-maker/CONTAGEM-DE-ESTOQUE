@@ -2841,7 +2841,11 @@ type OcupResumoSalvo = {
   /** Inclui acréscimo de avaria; usado na tabela e nos gráficos “geral”. */
   totalOcup: number
   percOcup: number
+  /** % vagas físicas vazias (soma câmaras) / totalPos — fecha 100% com ocupação física. */
   percLivre: number
+  /** Complemento da ocupação c/ avaria: max(0, totalPos − totalOcup); % fecha 100% com percOcup no resumo. */
+  totalSaldoLivre: number
+  percSaldoLivre: number
 }
 
 type OcupResumoRascunho = {
@@ -3139,8 +3143,9 @@ function OcupacaoCamaras111213Secao({
                 <strong style={{ color: '#cbd5e1', fontVariantNumeric: 'tabular-nums' }}>{resumoDia.percOcupFisico.toFixed(1)}%</strong>
                 {' — '}
                 <span style={{ color: '#64748b' }}>
-                  com a física, <strong style={{ color: '#94a3b8' }}>% ocupada + % livre = 100%</strong> sobre as{' '}
-                  <strong style={{ color: '#94a3b8' }}>{resumoDia.totalPos}</strong> pos.
+                  com a física (sem avaria), <strong style={{ color: '#94a3b8' }}>% ocupada + % livre = 100%</strong> sobre as{' '}
+                  <strong style={{ color: '#94a3b8' }}>{resumoDia.totalPos}</strong> pos. O painel <strong style={{ color: '#6ee7b7' }}>Livres</strong>{' '}
+                  ao lado usa o complemento da ocupação <strong style={{ color: '#94a3b8' }}>com avaria</strong>.
                 </span>
               </div>
               <div style={{ fontSize: 10, color: '#64748b', lineHeight: 1.35, marginTop: 6 }}>
@@ -3174,20 +3179,26 @@ function OcupacaoCamaras111213Secao({
                 }}
               >
                 <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Posições livres</div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    Saldo livre (capacidade)
+                  </div>
                   <div style={{ fontSize: 22, fontWeight: 800, color: '#ecfdf5', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
-                    {resumoDia.totalVaz}
+                    {resumoDia.totalSaldoLivre}
                   </div>
                 </div>
                 <div style={{ textAlign: 'center' }}>
                   <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.05em' }}>% Livre</div>
                   <div style={{ fontSize: 26, fontWeight: 800, color: '#34d399', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
-                    {resumoDia.percLivre.toFixed(1)}%
+                    {resumoDia.percSaldoLivre.toFixed(1)}%
                   </div>
                 </div>
               </div>
               <div style={{ fontSize: 10, color: '#64748b', lineHeight: 1.35, marginTop: 6 }}>
-                Soma das vagas vazias nas três câmaras; % sobre {resumoDia.totalPos} pos. Fecha com a ocupação física do painel ao lado.
+                Complemento do painel <strong style={{ color: '#7dd3fc' }}>Ocupação (c/ avaria)</strong>:{' '}
+                <strong style={{ color: '#94a3b8' }}>% ocupada + % livre = 100%</strong> sobre as {resumoDia.totalPos} pos.{' '}
+                <strong style={{ color: '#6ee7b7' }}>Vagas físicas vazias</strong> (soma câmaras 11+12+13):{' '}
+                <strong style={{ color: '#cbd5e1', fontVariantNumeric: 'tabular-nums' }}>{resumoDia.totalVaz}</strong> pos. (
+                {resumoDia.percLivre.toFixed(1)}% do armazém — fecha com ocupação <em>física</em>).
               </div>
             </div>
 
@@ -3774,7 +3785,20 @@ export default function ContagemDiariaAmbiental() {
     const percOcupFisico = totalPos > 0 ? (totalOcupFisico / totalPos) * 100 : 0
     const percOcup = totalPos > 0 ? (totalOcup / totalPos) * 100 : 0
     const percLivre = totalPos > 0 ? (totalVaz / totalPos) * 100 : 0
-    return { r, totalPos, totalVaz, totalOcupFisico, percOcupFisico, totalOcup, percOcup, percLivre }
+    const totalSaldoLivre = Math.max(0, totalPos - totalOcup)
+    const percSaldoLivre = totalPos > 0 ? (totalSaldoLivre / totalPos) * 100 : 0
+    return {
+      r,
+      totalPos,
+      totalVaz,
+      totalOcupFisico,
+      percOcupFisico,
+      totalOcup,
+      percOcup,
+      percLivre,
+      totalSaldoLivre,
+      percSaldoLivre,
+    }
   }, [ocupRows])
 
   /** Um ponto por dia civil nos gráficos — último `created_at` daquele dia (todos os gráficos alinhados). */
