@@ -1189,10 +1189,10 @@ export default function RelatorioContagem({
         const diaYmd = diaCivilFiltroAtual()
         if (diaYmd) {
           const aviso = await avaliarPendenciasFinalizacaoDia(diaYmd)
-          // Sempre confirmar no carregamento por dia (pedido do usuário),
-          // mesmo quando a checagem automática não encontrar pendências explícitas.
-          setAvisoCargaPendente(aviso ?? { diaYmd, pendencias: 0, conferentes: 0 })
-          return
+          if (aviso) {
+            setAvisoCargaPendente(aviso)
+            return
+          }
         }
       }
       await load({ ignoreHistoricoFilter: true })
@@ -1470,9 +1470,10 @@ export default function RelatorioContagem({
       if (!useInventarioCols && isExportUmDiaCivil) {
         const diaYmd = useSingleDay ? singleDay : startDate
         const aviso = await avaliarPendenciasFinalizacaoDia(diaYmd)
-        // Mesmo comportamento do carregar: sempre confirmar no fluxo por dia.
-        setAvisoExportPendente(aviso ?? { diaYmd, pendencias: 0, conferentes: 0 })
-        return
+        if (aviso) {
+          setAvisoExportPendente(aviso)
+          return
+        }
       }
       await exportToExcel()
     } catch (e: unknown) {
