@@ -1559,6 +1559,10 @@ type OcupResumoSalvo = {
   r: OcupRow
   totalPos: number
   totalVaz: number
+  /** Posições ocupadas nas câmaras (total − vazias), sem somar avaria. */
+  totalOcupFisico: number
+  percOcupFisico: number
+  /** Inclui acréscimo de avaria; usado na tabela e nos gráficos “geral”. */
   totalOcup: number
   percOcup: number
   percLivre: number
@@ -1569,9 +1573,11 @@ type OcupResumoRascunho = {
   o12: number
   o13: number
   totalPos: number
+  totalOcupFisico: number
   totalOcup: number
   totalVaz: number
   avariaAcrescimo: number
+  percOcupFisico: number
   percOcup: number
   percLivre: number
 }
@@ -1665,10 +1671,10 @@ function OcupacaoCamaras111213Secao({
     const acc = rows.reduce(
       (s, r) => {
         const totalVaz = r.camara11_vazias + r.camara12_vazias + r.camara13_vazias
-        const totalOcup = totalPos - totalVaz + r.avaria_acrescimo_ocupacao
-        const percOcup = totalPos > 0 ? (totalOcup / totalPos) * 100 : 0
+        const totalOcupFisico = totalPos - totalVaz
+        const percOcupFisico = totalPos > 0 ? (totalOcupFisico / totalPos) * 100 : 0
         const percLivre = totalPos > 0 ? (totalVaz / totalPos) * 100 : 0
-        return { ocup: s.ocup + percOcup, livre: s.livre + percLivre }
+        return { ocup: s.ocup + percOcupFisico, livre: s.livre + percLivre }
       },
       { ocup: 0, livre: 0 },
     )
@@ -1789,20 +1795,25 @@ function OcupacaoCamaras111213Secao({
                 }}
               >
                 <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: 9, color: '#64748b', marginBottom: 2, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Posições ocupadas</div>
+                  <div style={{ fontSize: 9, color: '#64748b', marginBottom: 2, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    Posições ocupadas (físico)
+                  </div>
                   <div style={{ fontSize: 22, fontWeight: 800, color: '#f8fafc', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
-                    {resumoDia.totalOcup}
+                    {resumoDia.totalOcupFisico}
                   </div>
                 </div>
                 <div style={{ textAlign: 'center' }}>
                   <div style={{ fontSize: 9, color: '#64748b', marginBottom: 2, textTransform: 'uppercase', letterSpacing: '0.05em' }}>% Ocupada</div>
                   <div style={{ fontSize: 26, fontWeight: 800, color: t.kpiOcupValor, lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
-                    {resumoDia.percOcup.toFixed(1)}%
+                    {resumoDia.percOcupFisico.toFixed(1)}%
                   </div>
                 </div>
               </div>
               <div style={{ fontSize: 10, color: '#64748b', lineHeight: 1.35, marginTop: 6 }}>
-                Base: <strong style={{ color: '#94a3b8' }}>{resumoDia.totalPos}</strong> posições totais (câm. 11+12+13). O total ocupado inclui o acréscimo de avaria.
+                Base: <strong style={{ color: '#94a3b8' }}>{resumoDia.totalPos}</strong> pos. (câm. 11+12+13).{' '}
+                <strong style={{ color: '#94a3b8' }}>% ocupada + % livre = 100%</strong> (ocupação física vs vagas vazias). Com acréscimo de avaria no mesmo lançamento:{' '}
+                <strong style={{ color: '#94a3b8' }}>{resumoDia.totalOcup}</strong> pos. (
+                {resumoDia.percOcup.toFixed(1)}% sobre a mesma base — indicador à parte, ver painel Avaria).
               </div>
             </div>
 
@@ -1845,7 +1856,7 @@ function OcupacaoCamaras111213Secao({
                 </div>
               </div>
               <div style={{ fontSize: 10, color: '#64748b', lineHeight: 1.35, marginTop: 6 }}>
-                Soma das vagas vazias informadas nas três câmaras; percentual sobre o total do armazém ({resumoDia.totalPos} pos.).
+                Soma das vagas vazias nas três câmaras; % sobre {resumoDia.totalPos} pos. Fecha com a ocupação física do painel ao lado.
               </div>
             </div>
 
@@ -2114,9 +2125,9 @@ function OcupacaoCamaras111213Secao({
               Avaria (acréscimo): {resumoRascunho.avariaAcrescimo} posição(ões)
             </div>
             <div style={{ marginTop: 4, fontWeight: 700 }}>
-              Total ocupadas (câmaras + avaria): {resumoRascunho.totalOcup} · Vagas livres (soma vazias):{' '}
-              {resumoRascunho.totalVaz} | % Ocupada: {resumoRascunho.percOcup.toFixed(0)}% | % Livre:{' '}
-              {resumoRascunho.percLivre.toFixed(0)}%
+              Ocupadas físico: {resumoRascunho.totalOcupFisico} · Com avaria: {resumoRascunho.totalOcup} · Livres:{' '}
+              {resumoRascunho.totalVaz} | % Ocup. {resumoRascunho.percOcupFisico.toFixed(0)}% + % Livre{' '}
+              {resumoRascunho.percLivre.toFixed(0)}% = 100% · Com avaria ({resumoRascunho.percOcup.toFixed(0)}% da base)
             </div>
           </div>
         </div>
@@ -2135,7 +2146,7 @@ function OcupacaoCamaras111213Secao({
               <th style={{ ...th, color: t.avariaDestaque }}>Avaria (+ ocup.)</th>
               <th style={th}>Livre</th>
               <th style={th}>Total ocupadas</th>
-              <th style={th}>% Ocupada</th>
+              <th style={th}>% Ocup. (c/ avaria)</th>
             </tr>
           </thead>
           <tbody>
@@ -2370,16 +2381,19 @@ export default function ContagemDiariaAmbiental() {
     const o13 = Math.max(0, OCUP_TOTAL.camara13 - v13)
     const totalPos = OCUP_TOTAL_POSICOES
     const avariaAcrescimo = ocupAvariaAcrescimo.trim() === '' ? 0 : asInt(ocupAvariaAcrescimo)
-    const totalOcup = o11 + o12 + o13 + avariaAcrescimo
+    const totalOcupFisico = o11 + o12 + o13
+    const totalOcup = totalOcupFisico + avariaAcrescimo
     const totalVaz = v11 + v12 + v13
     return {
       o11,
       o12,
       o13,
       totalPos,
+      totalOcupFisico,
       totalOcup,
       totalVaz,
       avariaAcrescimo,
+      percOcupFisico: totalPos > 0 ? (totalOcupFisico / totalPos) * 100 : 0,
       percOcup: totalPos > 0 ? (totalOcup / totalPos) * 100 : 0,
       percLivre: totalPos > 0 ? (totalVaz / totalPos) * 100 : 0,
     }
@@ -2392,10 +2406,12 @@ export default function ContagemDiariaAmbiental() {
     const totalPos = OCUP_TOTAL_POSICOES
     const totalVaz = r.camara11_vazias + r.camara12_vazias + r.camara13_vazias
     const av = r.avaria_acrescimo_ocupacao
-    const totalOcup = totalPos - totalVaz + av
+    const totalOcupFisico = totalPos - totalVaz
+    const totalOcup = totalOcupFisico + av
+    const percOcupFisico = totalPos > 0 ? (totalOcupFisico / totalPos) * 100 : 0
     const percOcup = totalPos > 0 ? (totalOcup / totalPos) * 100 : 0
     const percLivre = totalPos > 0 ? (totalVaz / totalPos) * 100 : 0
-    return { r, totalPos, totalVaz, totalOcup, percOcup, percLivre }
+    return { r, totalPos, totalVaz, totalOcupFisico, percOcupFisico, totalOcup, percOcup, percLivre }
   }, [ocupRows])
 
   /** Ordem cronológica para eixo X dos gráficos (mais antigo → mais recente). */
