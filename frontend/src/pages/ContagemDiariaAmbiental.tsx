@@ -436,6 +436,10 @@ function TinyLineChart<T extends { data_registro: string }>({
   const gradIdModal = `tgrad-m-${uid}`
   const [expanded, setExpanded] = useState(false)
   const [tip, setTip] = useState<{ idx: number; pxPct: number } | null>(null)
+  const [hoverReplayCard, setHoverReplayCard] = useState(0)
+  const [hoverReplayModal, setHoverReplayModal] = useState(0)
+  const onChartHoverCard = useCallback(() => setHoverReplayCard((n) => n + 1), [])
+  const onChartHoverModal = useCallback(() => setHoverReplayModal((n) => n + 1), [])
 
   const capAxis = axisCaption ?? valueSuffix
   const fmt = (v: number) => v.toFixed(decimals)
@@ -581,6 +585,7 @@ function TinyLineChart<T extends { data_registro: string }>({
                     viewBox={`0 0 ${wM} ${hM}`}
                     preserveAspectRatio="xMidYMid meet"
                     style={{ display: 'block', cursor: 'crosshair' }}
+                    onMouseEnter={onChartHoverModal}
                     onMouseMove={onSvgMoveModal}
                     onMouseLeave={onSvgLeave}
                   >
@@ -615,7 +620,12 @@ function TinyLineChart<T extends { data_registro: string }>({
                         strokeWidth={1}
                       />
                     ))}
-                    <AnimatedAreaPath d={geomModal.areaD} fill={`url(#${gradIdModal})`} delaySec={0.06} />
+                    <AnimatedAreaPath
+                      key={`tl-am-${lineAnimKey}-${hoverReplayModal}`}
+                      d={geomModal.areaD}
+                      fill={`url(#${gradIdModal})`}
+                      delaySec={0.06}
+                    />
                     {tip != null ? (
                       <line
                         x1={geomModal.xAt(tip.idx)}
@@ -628,7 +638,8 @@ function TinyLineChart<T extends { data_registro: string }>({
                       />
                     ) : null}
                     <AnimatedStrokePath
-                      animKey={`${lineAnimKey}-m`}
+                      key={`tl-stroke-m-${lineAnimKey}-${hoverReplayModal}`}
+                      animKey={`${lineAnimKey}-m-${hoverReplayModal}`}
                       d={geomModal.lineD}
                       stroke={color}
                       strokeWidth={3.2}
@@ -854,6 +865,7 @@ function TinyLineChart<T extends { data_registro: string }>({
               viewBox={`0 0 ${wC} ${hC}`}
               preserveAspectRatio="xMidYMid meet"
               style={{ display: 'block', cursor: 'crosshair' }}
+              onMouseEnter={onChartHoverCard}
               onMouseMove={onSvgMoveCard}
               onMouseLeave={onSvgLeave}
             >
@@ -888,7 +900,12 @@ function TinyLineChart<T extends { data_registro: string }>({
                 strokeWidth={1}
               />
             ))}
-            <AnimatedAreaPath d={geomCard.areaD} fill={`url(#${gradId})`} delaySec={0.06} />
+            <AnimatedAreaPath
+              key={`tl-ac-${lineAnimKey}-${hoverReplayCard}`}
+              d={geomCard.areaD}
+              fill={`url(#${gradId})`}
+              delaySec={0.06}
+            />
             {tip != null ? (
               <line
                 x1={geomCard.xAt(tip.idx)}
@@ -901,7 +918,8 @@ function TinyLineChart<T extends { data_registro: string }>({
               />
             ) : null}
             <AnimatedStrokePath
-              animKey={`${lineAnimKey}-c`}
+              key={`tl-stroke-c-${lineAnimKey}-${hoverReplayCard}`}
+              animKey={`${lineAnimKey}-c-${hoverReplayCard}`}
               d={geomCard.lineD}
               stroke={color}
               strokeWidth={3}
@@ -1176,6 +1194,10 @@ function CombinedTempChart({ rows }: { rows: TempRow[] }) {
   const uid = useId().replace(/:/g, '')
   const [expanded, setExpanded] = useState(false)
   const [tip, setTip] = useState<{ idx: number; pxPct: number } | null>(null)
+  const [hoverReplayCard, setHoverReplayCard] = useState(0)
+  const [hoverReplayModal, setHoverReplayModal] = useState(0)
+  const onChartHoverCard = useCallback(() => setHoverReplayCard((n) => n + 1), [])
+  const onChartHoverModal = useCallback(() => setHoverReplayModal((n) => n + 1), [])
 
   const chart = useMemo(
     () => buildCombinedTempChartModel(rows, uid, COMB_TEMP_LAYOUT_CARD, 'cgrad', false),
@@ -1366,6 +1388,7 @@ function CombinedTempChart({ rows }: { rows: TempRow[] }) {
                 viewBox={`0 0 ${chartModal.width} ${chartModal.height}`}
                 preserveAspectRatio="xMidYMid meet"
                 style={{ display: 'block', cursor: 'crosshair' }}
+                onMouseEnter={onChartHoverModal}
                 onMouseMove={onSvgMoveModal}
                 onMouseLeave={onSvgLeave}
               >
@@ -1423,7 +1446,7 @@ function CombinedTempChart({ rows }: { rows: TempRow[] }) {
                   const areaD = `${lineD} L ${lastX.toFixed(2)} ${chartModal.bottomY.toFixed(2)} L ${firstX.toFixed(2)} ${chartModal.bottomY.toFixed(2)} Z`
                   return (
                     <AnimatedAreaPath
-                      key={p.label}
+                      key={`${p.label}-m-${hoverReplayModal}`}
                       d={areaD}
                       fill={`url(#${p.gradId})`}
                       targetOpacity={0.55}
@@ -1433,8 +1456,8 @@ function CombinedTempChart({ rows }: { rows: TempRow[] }) {
                 })}
                 {chartModal.seriesPaths.map((p, si) => (
                   <AnimatedStrokePath
-                    key={`line-m-${p.label}`}
-                    animKey={`${combTempLineAnimKey}-m-${chartModal.width}`}
+                    key={`line-m-${p.label}-${hoverReplayModal}`}
+                    animKey={`${combTempLineAnimKey}-m-${chartModal.width}-${hoverReplayModal}`}
                     strokeDelaySec={0.05 * si}
                     d={p.lineD}
                     stroke={p.color}
@@ -1698,6 +1721,7 @@ function CombinedTempChart({ rows }: { rows: TempRow[] }) {
               viewBox={`0 0 ${width} ${height}`}
               preserveAspectRatio="xMidYMid meet"
               style={{ display: 'block', cursor: 'crosshair' }}
+              onMouseEnter={onChartHoverCard}
               onMouseMove={onSvgMoveCard}
               onMouseLeave={onSvgLeave}
             >
@@ -1755,7 +1779,7 @@ function CombinedTempChart({ rows }: { rows: TempRow[] }) {
                 const areaD = `${lineD} L ${lastX.toFixed(2)} ${bottomY.toFixed(2)} L ${firstX.toFixed(2)} ${bottomY.toFixed(2)} Z`
                 return (
                   <AnimatedAreaPath
-                    key={p.label}
+                    key={`${p.label}-c-${hoverReplayCard}`}
                     d={areaD}
                     fill={`url(#${p.gradId})`}
                     targetOpacity={0.55}
@@ -1765,8 +1789,8 @@ function CombinedTempChart({ rows }: { rows: TempRow[] }) {
               })}
               {chart.seriesPaths.map((p, si) => (
                 <AnimatedStrokePath
-                  key={`line-${p.label}`}
-                  animKey={`${combTempLineAnimKey}-c-${width}`}
+                  key={`line-${p.label}-${hoverReplayCard}`}
+                  animKey={`${combTempLineAnimKey}-c-${width}-${hoverReplayCard}`}
                   strokeDelaySec={0.05 * si}
                   d={p.lineD}
                   stroke={p.color}
@@ -1969,6 +1993,10 @@ function CombinedOcupacaoChart({ rows }: { rows: OcupRow[] }) {
   const uid = useId().replace(/:/g, '')
   const [expanded, setExpanded] = useState(false)
   const [tip, setTip] = useState<{ idx: number; pxPct: number } | null>(null)
+  const [hoverReplayCard, setHoverReplayCard] = useState(0)
+  const [hoverReplayModal, setHoverReplayModal] = useState(0)
+  const onChartHoverCard = useCallback(() => setHoverReplayCard((n) => n + 1), [])
+  const onChartHoverModal = useCallback(() => setHoverReplayModal((n) => n + 1), [])
 
   const chart = useMemo(
     () => buildCombinedOcupChartModel(rows, uid, COMB_OCP_LAYOUT_CARD, 'ocp-grad', false),
@@ -2186,6 +2214,7 @@ function CombinedOcupacaoChart({ rows }: { rows: OcupRow[] }) {
                 viewBox={`0 0 ${chartModal.width} ${chartModal.height}`}
                 preserveAspectRatio="xMidYMid meet"
                 style={{ display: 'block', cursor: 'crosshair' }}
+                onMouseEnter={onChartHoverModal}
                 onMouseMove={onSvgMoveModal}
                 onMouseLeave={onSvgLeave}
               >
@@ -2243,7 +2272,7 @@ function CombinedOcupacaoChart({ rows }: { rows: OcupRow[] }) {
                   const areaD = `${lineD} L ${lastX.toFixed(2)} ${chartModal.bottomY.toFixed(2)} L ${firstX.toFixed(2)} ${chartModal.bottomY.toFixed(2)} Z`
                   return (
                     <AnimatedAreaPath
-                      key={p.label}
+                      key={`${p.label}-m-${hoverReplayModal}`}
                       d={areaD}
                       fill={`url(#${p.gradId})`}
                       targetOpacity={0.5}
@@ -2253,8 +2282,8 @@ function CombinedOcupacaoChart({ rows }: { rows: OcupRow[] }) {
                 })}
                 {chartModal.seriesPaths.map((p, si) => (
                   <AnimatedStrokePath
-                    key={`olinem-${p.label}`}
-                    animKey={`${combOcpLineAnimKey}-m-${chartModal.width}`}
+                    key={`olinem-${p.label}-${hoverReplayModal}`}
+                    animKey={`${combOcpLineAnimKey}-m-${chartModal.width}-${hoverReplayModal}`}
                     strokeDelaySec={0.04 * si}
                     d={p.lineD}
                     stroke={p.color}
@@ -2542,6 +2571,7 @@ function CombinedOcupacaoChart({ rows }: { rows: OcupRow[] }) {
               viewBox={`0 0 ${width} ${height}`}
               preserveAspectRatio="xMidYMid meet"
               style={{ display: 'block', cursor: 'crosshair' }}
+              onMouseEnter={onChartHoverCard}
               onMouseMove={onSvgMoveCard}
               onMouseLeave={onSvgLeave}
             >
@@ -2599,7 +2629,7 @@ function CombinedOcupacaoChart({ rows }: { rows: OcupRow[] }) {
                 const areaD = `${lineD} L ${lastX.toFixed(2)} ${bottomY.toFixed(2)} L ${firstX.toFixed(2)} ${bottomY.toFixed(2)} Z`
                 return (
                   <AnimatedAreaPath
-                    key={p.label}
+                    key={`${p.label}-c-${hoverReplayCard}`}
                     d={areaD}
                     fill={`url(#${p.gradId})`}
                     targetOpacity={0.5}
@@ -2609,8 +2639,8 @@ function CombinedOcupacaoChart({ rows }: { rows: OcupRow[] }) {
               })}
               {chart.seriesPaths.map((p, si) => (
                 <AnimatedStrokePath
-                  key={`oline-${p.label}`}
-                  animKey={`${combOcpLineAnimKey}-c-${width}`}
+                  key={`oline-${p.label}-${hoverReplayCard}`}
+                  animKey={`${combOcpLineAnimKey}-c-${width}-${hoverReplayCard}`}
                   strokeDelaySec={0.04 * si}
                   d={p.lineD}
                   stroke={p.color}
