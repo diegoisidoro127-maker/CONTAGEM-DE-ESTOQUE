@@ -1126,10 +1126,10 @@ export default function RelatorioContagem({
 
   async function limparFiltroHistorico() {
     setConferenteFiltroHistorico(null)
-    await load()
+    await load({ ignoreHistoricoFilter: true })
   }
 
-  async function load() {
+  async function load(opts?: { ignoreHistoricoFilter?: boolean }) {
     setLoading(true)
     setError('')
     setSuccess('')
@@ -1137,7 +1137,8 @@ export default function RelatorioContagem({
     try {
       const { rows: data, successMessage, origemAusenteNoResultado } = await fetchRelatorioContagemRows()
       let dataForPrevia = data
-      if (conferenteFiltroHistorico) {
+      const aplicarFiltroHistorico = isDiaMode && !opts?.ignoreHistoricoFilter
+      if (aplicarFiltroHistorico && conferenteFiltroHistorico) {
         if (conferenteFiltroHistorico === '__sem__') {
           dataForPrevia = data.filter((r) => !String(r.conferente_id ?? '').trim())
         } else {
@@ -1800,7 +1801,7 @@ export default function RelatorioContagem({
           >
             <button
               type="button"
-              onClick={load}
+              onClick={() => void load({ ignoreHistoricoFilter: true })}
               disabled={loading}
               style={{
                 ...relBtnCarregar,
