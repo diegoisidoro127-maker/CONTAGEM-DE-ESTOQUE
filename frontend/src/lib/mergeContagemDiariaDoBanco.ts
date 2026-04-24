@@ -1,5 +1,6 @@
 import { supabase } from './supabaseClient'
 import { contagemLinhaAVenceB } from './contagemOrdemLinha'
+import { contagemDiariaChaveProdutoDia } from './contagemListagemCompat'
 import { normalizeCodigoInternoCompareKey } from './codigoInternoCompare'
 import { isContagemDiariaRowResumo } from './contagemDiariaPresenca'
 import { fetchConferentesNomesPorIds } from './conferentesNomesBatch'
@@ -38,7 +39,7 @@ type RowSnapshot = {
 
 /**
  * Busca registros em `contagens_estoque` do dia civil (todos os conferentes), só contagem diária,
- * e devolve a linha mais recente por código (`data_hora_contagem`).
+ * e devolve a linha mais recente por **dia + código normalizado + descrição** (igual à prévia).
  */
 async function fetchUltimasPorCodigo(dataContagemYmd: string): Promise<Map<string, RowSnapshot>> {
   const map = new Map<string, RowSnapshot>()
@@ -46,7 +47,7 @@ async function fetchUltimasPorCodigo(dataContagemYmd: string): Promise<Map<strin
   if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return map
 
   const sel =
-    'id,conferente_id,codigo_interno,quantidade_up,up_adicional,lote,observacao,data_fabricacao,data_validade,ean,dun,data_hora_contagem,origem,inventario_repeticao,inventario_numero_contagem'
+    'id,conferente_id,codigo_interno,descricao,quantidade_up,up_adicional,lote,observacao,data_fabricacao,data_validade,ean,dun,data_hora_contagem,origem,inventario_repeticao,inventario_numero_contagem'
 
   const acc: Record<string, unknown>[] = []
   let from = 0
@@ -73,8 +74,9 @@ async function fetchUltimasPorCodigo(dataContagemYmd: string): Promise<Map<strin
     const cidRow = r.conferente_id != null ? String(r.conferente_id).trim() : ''
     if (!cidRow) continue
     const codRaw = r.codigo_interno != null ? String(r.codigo_interno) : ''
-    const key = normalizeCodigoInternoCompareKey(codRaw)
-    if (!key) continue
+    const descRaw = r.descricao != null ? String(r.descricao) : ''
+    const key = contagemDiariaChaveProdutoDia(ymd, codRaw, descRaw)
+    if (!normalizeCodigoInternoCompareKey(codRaw)) continue
     const dhRaw = r.data_hora_contagem != null ? String(r.data_hora_contagem) : ''
     const qRaw = r.quantidade_up
     const q = typeof qRaw === 'number' ? qRaw : Number(String(qRaw ?? '').replace(',', '.'))
@@ -133,26 +135,27 @@ export async function mergeContagensDiariasDoDiaParaItems(
   options?: MergeContagemDiariaOptions,
 ): Promise<{ items: OfflineChecklistItem[]; preenchidos: number }> {
   const skipKeys = options?.skipKeys
-  const porCodigo = await fetchUltimasPorCodigo(dataContagemYmd)
-  if (porCodigo.size === 0) {
+  const porChave = await fetchUltimasPorCodigo(dataContagemYmd)
+  if (porChave.size === 0) {
     return { items: items.map((i) => ({ ...i })), preenchidos: 0 }
   }
 
-  const ids = [...new Set([...porCodigo.values()].map((s) => s.conferente_id).filter(Boolean))]
+  const ids = [...new Set([...porChave.values()].map((s) => s.conferente_id).filter(Boolean))]
   const nomesPorId = await fetchConferentesNomesPorIds(ids)
 
   let preenchidos = 0
+  const ymd = String(dataContagemYmd ?? '').trim()
   const next = items.map((it) => {
     if (skipKeys?.has(it.key)) {
-      const kSkip = normalizeCodigoInternoCompareKey(it.codigo_interno)
-      const snapSkip = kSkip ? porCodigo.get(kSkip) : undefined
+      const kSkip = contagemDiariaChaveProdutoDia(ymd, String(it.codigo_interno ?? ''), String(it.descricao ?? ''))
+      const snapSkip = porChave.get(kSkip)
       if (!snapSkip) return { ...it }
       const nomeUltimo =
         nomesPorId.get(snapSkip.conferente_id)?.trim() || snapSkip.conferente_id
       return { ...it, contagem_banco_ultimo_conferente_nome: nomeUltimo }
     }
-    const k = normalizeCodigoInternoCompareKey(it.codigo_interno)
-    const snap = k ? porCodigo.get(k) : undefined
+    const k = contagemDiariaChaveProdutoDia(ymd, String(it.codigo_interno ?? ''), String(it.descricao ?? ''))
+    const snap = porChave.get(k)
     if (!snap) {
       return { ...it, contagem_banco_ultimo_conferente_nome: undefined }
     }

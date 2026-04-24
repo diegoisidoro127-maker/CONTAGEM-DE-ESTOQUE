@@ -218,11 +218,17 @@ export function agruparContagemDiariaComoPrevia<T extends RowMergeContagemDiaria
   return Array.from(grouped.values())
 }
 
+/** Chave única para o mesmo produto na contagem diária (alinhada à prévia e ao merge da checklist). */
+export function contagemDiariaChaveProdutoDia(dataContagemYmd: string, codigo_interno: string, descricao: string): string {
+  const day = String(dataContagemYmd ?? '').trim().slice(0, 10)
+  const code = normalizeCodigoInternoCompareKey(String(codigo_interno ?? '')).toLowerCase()
+  const desc = String(descricao ?? '').trim().toLowerCase()
+  return `${day}|${code}|${desc}`
+}
+
 function rowKeyCodigoBase(r: RowMergeContagemDiaria): string {
   const day = r.data_contagem != null ? String(r.data_contagem).slice(0, 10) : ''
-  const code = normalizeCodigoInternoCompareKey(String(r.codigo_interno ?? '')).toLowerCase()
-  const desc = String(r.descricao ?? '').trim().toLowerCase()
-  return `${day}|${code}|${desc}`
+  return contagemDiariaChaveProdutoDia(day, String(r.codigo_interno ?? ''), String(r.descricao ?? ''))
 }
 
 /**
@@ -283,7 +289,7 @@ export function consolidarUltimaContagemDiariaPorCodigoEConferente<T extends Row
  * mexem no mesmo item. Conferente e quantidade da linha são só os desse registro (sem somar).
  *
  * `preview_conferentes_detalhe` traz **apenas** o conferente vencedor (o mesmo da linha consolidada),
- * para a coluna Conferente e ações na prévia baterem com o valor único do dia+código.
+ * para a coluna Conferente e ações na prévia baterem com o valor único do dia+código+descrição.
  */
 export function prepararContagemDiariaOficialListaUnicaPorProduto<T extends RowMergeContagemDiaria>(rows: T[]): T[] {
   const cons = consolidarUltimaContagemDiariaPorCodigo(rows)
