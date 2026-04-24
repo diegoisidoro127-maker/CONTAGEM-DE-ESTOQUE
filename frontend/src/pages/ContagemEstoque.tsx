@@ -165,28 +165,19 @@ type ContagemPreviewRow = {
   }>
 }
 
-/** Nome do conferente alinhado à coluna de quantidade (mesma regra que `previewQuantidadeExibidaPrevia`). */
-function conferenteNomeExibicaoPreviaRow(r: ContagemPreviewRow, modoConferenteEfetivo: string): string {
+/** Nome do conferente na prévia (contagem diária: um vencedor por produto — último `data_hora_contagem`). */
+function conferenteNomeExibicaoPreviaRow(r: ContagemPreviewRow): string {
   const det = r.preview_conferentes_detalhe
   if (!det?.length) {
     const n = String(r.conferente_nome ?? '').trim()
     if (n) return n
     return String(r.conferente_id ?? '').trim() || '—'
   }
-  if (det.length <= 1) {
-    const u = String(det[0]?.conferente_nome ?? '').trim()
-    if (u) return u
-    const n = String(r.conferente_nome ?? '').trim()
-    if (n) return n
-    return String(r.conferente_id ?? '').trim() || '—'
-  }
-  const part = det.find((d) => d.conferente_id === modoConferenteEfetivo)
-  if (part) {
-    const n = String(part.conferente_nome ?? '').trim()
-    if (n) return n
-  }
-  const fallback = String(r.conferente_nome ?? '').trim()
-  return fallback || '—'
+  const u = String(det[0]?.conferente_nome ?? '').trim()
+  if (u) return u
+  const n = String(r.conferente_nome ?? '').trim()
+  if (n) return n
+  return String(r.conferente_id ?? '').trim() || '—'
 }
 
 type ProductOption = {
@@ -3705,7 +3696,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                     <div style={{ fontSize: 12, color: 'var(--text, #888)', marginTop: 8 }}>Conferente</div>
                     <div style={{ fontSize: 13 }}>
                       {!inventario
-                        ? conferenteNomeExibicaoPreviaRow(r, previewConferenteModoEffective)
+                        ? conferenteNomeExibicaoPreviaRow(r)
                         : String(r.conferente_nome ?? '').trim() || String(r.conferente_id ?? '').trim() || '—'}
                     </div>
                     {prevCol('codigo') ? (
@@ -3963,7 +3954,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                   ) : null}
                   <td style={{ ...tdStyle, whiteSpace: 'normal', maxWidth: 240 }}>
                     {!inventario
-                      ? conferenteNomeExibicaoPreviaRow(r, previewConferenteModoEffective)
+                      ? conferenteNomeExibicaoPreviaRow(r)
                       : String(r.conferente_nome ?? '').trim() || String(r.conferente_id ?? '').trim() || '—'}
                   </td>
                   {prevCol('codigo') ? <td style={tdStyle}>{r.codigo_interno}</td> : null}
