@@ -82,6 +82,13 @@ function formatDateBRFromYmd(ymd: string | null | undefined): string {
   return formatDateBR(String(ymd).slice(0, 10))
 }
 
+function toYmdSP(d = new Date()): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
 /** Timestamp válido de `data_hora_contagem` ou null. */
 function tsFromDataHoraContagem(iso: string | null | undefined): number | null {
   if (!iso || !String(iso).trim()) return null
