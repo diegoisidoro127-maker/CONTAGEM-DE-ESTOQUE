@@ -168,6 +168,36 @@ export type ResumoFinalizadoDia = {
 const CONTAGENS_FETCH_CHUNK = 1000
 
 /**
+ * Usa a view de painel quando existir no banco (mesma fonte do SQL operacional).
+ * Retorna `null` quando a view/colunas não estiverem disponíveis para manter fallback compatível.
+ */
+async function fetchResumoFinalizadosFromPainelView(dataContagemYmd: string): Promise<Map<string, { count: number; ultima: string | null }> | null> {
+  const map = new Map<string, { count: number; ultima: string | null }>()
+  const ymd = String(dataContagemYmd ?? '').trim()
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return map
+  try {
+    const { data, error } = await supabase
+      .from('v_contagem_diaria_painel')
+      .select('conferente_id,itens_contados,inicio,fim,data_contagem')
+      .eq('data_contagem', ymd)
+    if (error) return null
+    for (const r of (data ?? []) as Record<string, unknown>[]) {
+      const id = String(r.conferente_id ?? '').trim()
+      if (!id) return null
+      const rawCount = Number(r.itens_contados ?? 0)
+      const count = Number.isFinite(rawCount) && rawCount >= 0 ? Math.floor(rawCount) : 0
+      const fim = String(r.fim ?? '').trim()
+      const inicio = String(r.inicio ?? '').trim()
+      const ultima = fim || inicio || null
+      map.set(id, { count, ultima })
+    }
+    return map
+  } catch {
+    return null
+  }
+}
+
+/**
  * Agrega linhas já gravadas em `contagens_estoque` no dia (contagem diária), por conferente.
  * Usado para preencher o painel junto com quem está com checklist aberta.
  */
@@ -175,6 +205,8 @@ export async function fetchResumoFinalizadosContagemDiariaDia(dataContagemYmd: s
   const map = new Map<string, { count: number; ultima: string | null }>()
   const ymd = String(dataContagemYmd ?? '').trim()
   if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return map
+  const fromView = await fetchResumoFinalizadosFromPainelView(ymd)
+  if (fromView) return fromView
 
   async function pull(sel: string): Promise<Record<string, unknown>[] | null> {
     const acc: Record<string, unknown>[] = []
