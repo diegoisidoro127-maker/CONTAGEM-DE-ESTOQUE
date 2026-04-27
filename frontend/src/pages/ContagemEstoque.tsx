@@ -172,17 +172,6 @@ function conferenteNomeExibicaoPreviaRow(r: ContagemPreviewRow): string {
   return String(r.conferente_id ?? '').trim() || '—'
 }
 
-function outrosConferentesNoItemCount(r: ContagemPreviewRow): number {
-  const winnerCid = String(r.conferente_id ?? '').trim()
-  const det = r.preview_conferentes_detalhe ?? []
-  const ids = new Set(
-    det
-      .map((d) => String(d.conferente_id ?? '').trim())
-      .filter((id) => id !== '' && id !== winnerCid),
-  )
-  return ids.size
-}
-
 type ProductOption = {
   id: string
   codigo: string
@@ -2058,6 +2047,45 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         previewList = prepararContagemDiariaOficialListaUnicaPorProduto(
           rawPreviewLinhas,
         ).sort(sortPreviaContagemDiaria) as ContagemPreviewRow[]
+
+        // Nome do conferente conforme a view oficial de itens do painel (1 nome por item).
+        try {
+          const { data: itensPainel, error: itensPainelErr } = await supabase
+            .from('v_contagem_diaria_itens_painel')
+            .select('data_contagem,codigo_interno,descricao,conferente_nome')
+            .eq('data_contagem', dayKey)
+            .limit(20000)
+          if (!itensPainelErr && itensPainel) {
+            const keyOf = (d: string, c: string, desc: string) =>
+              `${String(d ?? '').slice(0, 10)}|${normalizeCodigoInternoCompareKey(String(c ?? '')).toLowerCase()}|${String(desc ?? '').trim().toLowerCase()}`
+            const nomeByKey = new Map<string, string>()
+            for (const row of itensPainel as Array<Record<string, unknown>>) {
+              const key = keyOf(
+                String(row.data_contagem ?? ''),
+                String(row.codigo_interno ?? ''),
+                String(row.descricao ?? ''),
+              )
+              const nome = String(row.conferente_nome ?? '').trim()
+              if (key && nome) nomeByKey.set(key, nome)
+            }
+            previewList = previewList.map((r) => {
+              const key = keyOf(r.data_contagem, r.codigo_interno, r.descricao)
+              const nome = nomeByKey.get(key)
+              if (!nome) return r
+              const det = r.preview_conferentes_detalhe
+              return {
+                ...r,
+                conferente_nome: nome,
+                preview_conferentes_detalhe:
+                  det && det.length > 0
+                    ? [{ ...det[0], conferente_nome: nome }]
+                    : det,
+              }
+            })
+          }
+        } catch {
+          // fallback silencioso para o fluxo padrão da contagens_estoque.
+        }
       }
 
       setPreviewQueryDayYmd(dayKey)
@@ -3702,11 +3730,6 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                         ? conferenteNomeExibicaoPreviaRow(r)
                         : String(r.conferente_nome ?? '').trim() || String(r.conferente_id ?? '').trim() || '—'}
                     </div>
-                    {!inventario && outrosConferentesNoItemCount(r) > 0 ? (
-                      <div style={{ fontSize: 11, color: 'var(--text, #888)' }}>
-                        +{outrosConferentesNoItemCount(r)} conferente(s) participou(ram)
-                      </div>
-                    ) : null}
                     {prevCol('codigo') ? (
                       <>
                         <div style={{ fontSize: 12, color: 'var(--text, #888)', marginTop: 8 }}>
@@ -3964,11 +3987,6 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                     {!inventario
                       ? conferenteNomeExibicaoPreviaRow(r)
                       : String(r.conferente_nome ?? '').trim() || String(r.conferente_id ?? '').trim() || '—'}
-                    {!inventario && outrosConferentesNoItemCount(r) > 0 ? (
-                      <div style={{ fontSize: 11, color: 'var(--text, #888)', marginTop: 2 }}>
-                        +{outrosConferentesNoItemCount(r)} conferente(s)
-                      </div>
-                    ) : null}
                   </td>
                   {prevCol('codigo') ? <td style={tdStyle}>{r.codigo_interno}</td> : null}
                   {prevCol('descricao') ? (
