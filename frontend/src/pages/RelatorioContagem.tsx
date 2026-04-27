@@ -1489,12 +1489,8 @@ export default function RelatorioContagem({
           setError('Nenhum registro no dia para exportar.')
           return
         }
-        const grouped = prepararContagemDiariaOficialListaUnicaPorProduto(filtered as ContagemRow[]) as ContagemRow[]
-        const sorted = grouped.sort((a, b) => {
-          const c = a.codigo_interno.localeCompare(b.codigo_interno, 'pt-BR')
-          if (c !== 0) return c
-          return a.descricao.localeCompare(b.descricao, 'pt-BR')
-        })
+        // Usa a mesma regra da listagem (inclui alinhamento com v_contagem_diaria_itens_painel).
+        const sorted = await aplicarMesmaRegraDaPreviaAsync(data, origemAusenteNoResultado)
         const ws = XLSX.utils.aoa_to_sheet(buildRelatorioExcelAoa(sorted))
         const wb = XLSX.utils.book_new()
         XLSX.utils.book_append_sheet(wb, ws, 'Contagens')
