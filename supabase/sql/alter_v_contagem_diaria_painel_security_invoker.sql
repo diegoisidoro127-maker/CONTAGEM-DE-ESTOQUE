@@ -10,6 +10,15 @@ begin
   ) then
     execute 'alter view public.v_contagem_diaria_painel set (security_invoker = true)';
   end if;
+
+  if exists (
+    select 1
+    from pg_catalog.pg_views
+    where schemaname = 'public'
+      and viewname = 'v_contagem_diaria_itens_painel'
+  ) then
+    execute 'alter view public.v_contagem_diaria_itens_painel set (security_invoker = true)';
+  end if;
 end
 $$;
 

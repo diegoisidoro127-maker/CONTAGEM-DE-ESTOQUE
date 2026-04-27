@@ -198,6 +198,67 @@ async function fetchResumoFinalizadosFromPainelView(dataContagemYmd: string): Pr
 }
 
 /**
+ * Fallback para ambientes em que o resumo agregado não está coerente/disponível:
+ * agrega por conferente diretamente da view de itens do painel.
+ */
+async function fetchResumoFinalizadosFromItensPainelView(
+  dataContagemYmd: string,
+): Promise<Map<string, { count: number; ultima: string | null }> | null> {
+  const map = new Map<string, { count: number; ultima: string | null }>()
+  const ymd = String(dataContagemYmd ?? '').trim()
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return map
+  try {
+    const { data, error } = await supabase
+      .from('v_contagem_diaria_itens_painel')
+      .select('conferente_nome,data_contagem,data_hora_contagem')
+      .eq('data_contagem', ymd)
+    if (error) return null
+
+    // Resolve nome -> id para manter compatibilidade com o restante da UI.
+    const nomes = [
+      ...new Set(
+        ((data ?? []) as Record<string, unknown>[])
+          .map((r) => String(r.conferente_nome ?? '').trim())
+          .filter((n) => n !== ''),
+      ),
+    ]
+    const nomeParaId = new Map<string, string>()
+    if (nomes.length > 0) {
+      const { data: confRows, error: confErr } = await supabase.from('conferentes').select('id,nome').in('nome', nomes)
+      if (confErr) return null
+      for (const row of confRows ?? []) {
+        const id = String((row as { id?: unknown }).id ?? '').trim()
+        const nome = String((row as { nome?: unknown }).nome ?? '').trim()
+        if (id && nome) nomeParaId.set(nome.toLowerCase(), id)
+      }
+    }
+
+    for (const r of (data ?? []) as Record<string, unknown>[]) {
+      const nome = String(r.conferente_nome ?? '').trim()
+      if (!nome) continue
+      const id = nomeParaId.get(nome.toLowerCase())
+      if (!id) continue
+      const dhRaw = String(r.data_hora_contagem ?? '').trim()
+      const dh = dhRaw !== '' ? dhRaw : null
+      const prev = map.get(id)
+      const count = (prev?.count ?? 0) + 1
+      let ultima = prev?.ultima ?? null
+      if (dh) {
+        const t = new Date(dh).getTime()
+        if (Number.isFinite(t) && (!ultima || t > new Date(ultima).getTime())) {
+          ultima = dh
+        }
+      }
+      map.set(id, { count, ultima })
+    }
+
+    return map
+  } catch {
+    return null
+  }
+}
+
+/**
  * Agrega linhas já gravadas em `contagens_estoque` no dia (contagem diária), por conferente.
  * Usado para preencher o painel junto com quem está com checklist aberta.
  */
@@ -207,6 +268,8 @@ export async function fetchResumoFinalizadosContagemDiariaDia(dataContagemYmd: s
   if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return map
   const fromView = await fetchResumoFinalizadosFromPainelView(ymd)
   if (fromView) return fromView
+  const fromItensView = await fetchResumoFinalizadosFromItensPainelView(ymd)
+  if (fromItensView) return fromItensView
 
   async function pull(sel: string): Promise<Record<string, unknown>[] | null> {
     const acc: Record<string, unknown>[] = []
