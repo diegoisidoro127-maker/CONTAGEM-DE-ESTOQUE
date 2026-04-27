@@ -283,12 +283,12 @@ export function consolidarUltimaContagemDiariaPorCodigoEConferente<T extends Row
 }
 
 /**
- * Contagem diária na prévia/lista: **uma linha por produto + conferente** no dia.
- * Considera rascunho e oficiais juntos e mantém o último lançamento daquele conferente
- * para o item (`data_hora_contagem`, depois `id`), alinhando com o painel por conferente.
+ * Contagem diária na prévia/lista: **uma linha por produto** no dia.
+ * Considera rascunho e oficiais juntos e mantém o último lançamento do item
+ * (`data_hora_contagem`, depois `id`), sem duplicar linhas.
  */
 export function prepararContagemDiariaOficialListaUnicaPorProduto<T extends RowMergeContagemDiaria>(rows: T[]): T[] {
-  const cons = consolidarUltimaContagemDiariaPorCodigoEConferente(rows)
+  const cons = consolidarUltimaContagemDiariaPorCodigo(rows)
   return cons.map((r) => {
     const rowRec = r as Record<string, unknown>
     const cid = String(r.conferente_id ?? '').trim() || '__sem__'
