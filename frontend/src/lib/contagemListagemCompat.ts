@@ -288,50 +288,24 @@ export function consolidarUltimaContagemDiariaPorCodigoEConferente<T extends Row
  * (`data_hora_contagem`, depois `id`) — assim quem lançou por último prevalece quando dois conferentes
  * mexem no mesmo item. Conferente e quantidade da linha são só os desse registro (sem somar).
  *
- * `preview_conferentes_detalhe` lista cada conferente com lançamento no item/dia (último de cada conferente),
- * para exibir os nomes de todos na coluna Conferente sem alterar o valor consolidado da linha.
+ * `preview_conferentes_detalhe` traz só o conferente vencedor (o mesmo da quantidade consolidada).
  */
 export function prepararContagemDiariaOficialListaUnicaPorProduto<T extends RowMergeContagemDiaria>(rows: T[]): T[] {
   const cons = consolidarUltimaContagemDiariaPorCodigo(rows)
   return cons.map((r) => {
-    const key = rowKeyCodigoBase(r)
-    const sameKeyRows = rows.filter((row) => rowKeyCodigoBase(row) === key)
-
-    const byCid = new Map<string, T>()
-    for (const row of sameKeyRows) {
-      const cid = String(row.conferente_id ?? '').trim() || '__sem__'
-      const prev = byCid.get(cid)
-      if (!prev) {
-        byCid.set(cid, row)
-        continue
-      }
-      if (
-        contagemLinhaAVenceB(
-          { data_hora_contagem: String(row.data_hora_contagem ?? ''), id: String(row.id) },
-          { data_hora_contagem: String(prev.data_hora_contagem ?? ''), id: String(prev.id) },
-        )
-      ) {
-        byCid.set(cid, row)
-      }
-    }
-
+    const rowRec = r as Record<string, unknown>
+    const cid = String(r.conferente_id ?? '').trim() || '__sem__'
+    const nomeLinha = conferenteNomeParaDetalhe(rowRec)
     const q = Number(r.quantidade_up ?? 0)
-    const det: ConferenteDetalheGrupo[] = []
-    for (const row of byCid.values()) {
-      const rowRec = row as Record<string, unknown>
-      const cid = String(row.conferente_id ?? '').trim() || '__sem__'
-      const nomeLinha = conferenteNomeParaDetalhe(rowRec)
-      const sid = row.source_ids?.length ? [...row.source_ids] : [String(row.id)]
-      det.push({
+    const sid = r.source_ids?.length ? [...r.source_ids] : [String(r.id)]
+    const det: ConferenteDetalheGrupo[] = [
+      {
         conferente_id: cid,
         conferente_nome: nomeLinha,
-        quantidade_up: Number(row.quantidade_up ?? 0),
+        quantidade_up: q,
         source_ids: sid,
-      })
-    }
-    det.sort((a, b) => a.conferente_nome.localeCompare(b.conferente_nome, 'pt-BR'))
-
-    const sid = r.source_ids?.length ? [...r.source_ids] : [String(r.id)]
+      },
+    ]
     return {
       ...r,
       quantidade_up: q,

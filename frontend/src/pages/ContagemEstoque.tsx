@@ -165,22 +165,13 @@ type ContagemPreviewRow = {
   }>
 }
 
-/**
- * Nome do conferente na prévia.
- * Quando houver múltiplos conferentes no mesmo item/dia, exibe todos os nomes.
- */
+/** Nome do conferente na prévia (sempre o conferente vencedor da linha consolidada). */
 function conferenteNomeExibicaoPreviaRow(r: ContagemPreviewRow): string {
   const det = r.preview_conferentes_detalhe
   if (!det?.length) {
     const n = String(r.conferente_nome ?? '').trim()
     if (n) return n
     return String(r.conferente_id ?? '').trim() || '—'
-  }
-  if (det.length > 1) {
-    const nomes = det
-      .map((d) => String(d.conferente_nome ?? '').trim())
-      .filter((n) => n !== '')
-    if (nomes.length) return nomes.join(' · ')
   }
   const u = String(det[0]?.conferente_nome ?? '').trim()
   if (u) return u

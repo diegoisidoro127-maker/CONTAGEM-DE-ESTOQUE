@@ -125,14 +125,6 @@ const TABELA_PRODUTOS_REL = 'Todos os Produtos'
 const RELATORIO_COLS_PLANILHA_LOCAL = 6
 
 function conferenteNomeRelatorio(r: ContagemRow): string {
-  const det = r.preview_conferentes_detalhe
-  if (det?.length) {
-    const nomes = det
-      .map((d) => String(d.conferente_nome ?? '').trim())
-      .filter((n) => n !== '')
-    if (nomes.length > 1) return nomes.join(' · ')
-    if (nomes.length === 1) return nomes[0]
-  }
   const c = r.conferentes
   if (Array.isArray(c)) {
     const n = c[0]?.nome
