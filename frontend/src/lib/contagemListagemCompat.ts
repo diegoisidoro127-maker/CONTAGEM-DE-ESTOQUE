@@ -286,23 +286,60 @@ export function consolidarUltimaContagemDiariaPorCodigoEConferente<T extends Row
  * Contagem diária na prévia/lista: **uma linha por produto** no dia.
  * Considera rascunho e oficiais juntos e mantém o último lançamento do item
  * (`data_hora_contagem`, depois `id`), sem duplicar linhas.
+ *
+ * `preview_conferentes_detalhe` mantém o último lançamento de cada conferente no item/dia
+ * para permitir indicar participação de outros conferentes sem duplicar linhas.
  */
 export function prepararContagemDiariaOficialListaUnicaPorProduto<T extends RowMergeContagemDiaria>(rows: T[]): T[] {
   const cons = consolidarUltimaContagemDiariaPorCodigo(rows)
   return cons.map((r) => {
-    const rowRec = r as Record<string, unknown>
-    const cid = String(r.conferente_id ?? '').trim() || '__sem__'
-    const nomeLinha = conferenteNomeParaDetalhe(rowRec)
+    const key = rowKeyCodigoBase(r)
+    const sameKeyRows = rows.filter((row) => rowKeyCodigoBase(row) === key)
+
+    const byCid = new Map<string, T>()
+    for (const row of sameKeyRows) {
+      const cid = String(row.conferente_id ?? '').trim() || '__sem__'
+      const prev = byCid.get(cid)
+      if (!prev) {
+        byCid.set(cid, row)
+        continue
+      }
+      if (
+        contagemLinhaAVenceB(
+          { data_hora_contagem: String(row.data_hora_contagem ?? ''), id: String(row.id) },
+          { data_hora_contagem: String(prev.data_hora_contagem ?? ''), id: String(prev.id) },
+        )
+      ) {
+        byCid.set(cid, row)
+      }
+    }
+
     const q = Number(r.quantidade_up ?? 0)
     const sid = r.source_ids?.length ? [...r.source_ids] : [String(r.id)]
-    const det: ConferenteDetalheGrupo[] = [
-      {
+    const winnerCid = String(r.conferente_id ?? '').trim() || '__sem__'
+    const winnerRow = byCid.get(winnerCid)
+    const det: ConferenteDetalheGrupo[] = []
+    if (winnerRow) {
+      const wr = winnerRow as Record<string, unknown>
+      const wSid = winnerRow.source_ids?.length ? [...winnerRow.source_ids] : [String(winnerRow.id)]
+      det.push({
+        conferente_id: winnerCid,
+        conferente_nome: conferenteNomeParaDetalhe(wr),
+        quantidade_up: Number(winnerRow.quantidade_up ?? 0),
+        source_ids: wSid,
+      })
+    }
+    for (const [cid, row] of byCid.entries()) {
+      if (cid === winnerCid) continue
+      const rr = row as Record<string, unknown>
+      const rSid = row.source_ids?.length ? [...row.source_ids] : [String(row.id)]
+      det.push({
         conferente_id: cid,
-        conferente_nome: nomeLinha,
-        quantidade_up: q,
-        source_ids: sid,
-      },
-    ]
+        conferente_nome: conferenteNomeParaDetalhe(rr),
+        quantidade_up: Number(row.quantidade_up ?? 0),
+        source_ids: rSid,
+      })
+    }
     return {
       ...r,
       quantidade_up: q,

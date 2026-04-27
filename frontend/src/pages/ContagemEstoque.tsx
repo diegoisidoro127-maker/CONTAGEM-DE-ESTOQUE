@@ -167,17 +167,20 @@ type ContagemPreviewRow = {
 
 /** Nome do conferente na prévia (sempre o conferente vencedor da linha consolidada). */
 function conferenteNomeExibicaoPreviaRow(r: ContagemPreviewRow): string {
-  const det = r.preview_conferentes_detalhe
-  if (!det?.length) {
-    const n = String(r.conferente_nome ?? '').trim()
-    if (n) return n
-    return String(r.conferente_id ?? '').trim() || '—'
-  }
-  const u = String(det[0]?.conferente_nome ?? '').trim()
-  if (u) return u
   const n = String(r.conferente_nome ?? '').trim()
   if (n) return n
   return String(r.conferente_id ?? '').trim() || '—'
+}
+
+function outrosConferentesNoItemCount(r: ContagemPreviewRow): number {
+  const winnerCid = String(r.conferente_id ?? '').trim()
+  const det = r.preview_conferentes_detalhe ?? []
+  const ids = new Set(
+    det
+      .map((d) => String(d.conferente_id ?? '').trim())
+      .filter((id) => id !== '' && id !== winnerCid),
+  )
+  return ids.size
 }
 
 type ProductOption = {
@@ -3699,6 +3702,11 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                         ? conferenteNomeExibicaoPreviaRow(r)
                         : String(r.conferente_nome ?? '').trim() || String(r.conferente_id ?? '').trim() || '—'}
                     </div>
+                    {!inventario && outrosConferentesNoItemCount(r) > 0 ? (
+                      <div style={{ fontSize: 11, color: 'var(--text, #888)' }}>
+                        +{outrosConferentesNoItemCount(r)} conferente(s) participou(ram)
+                      </div>
+                    ) : null}
                     {prevCol('codigo') ? (
                       <>
                         <div style={{ fontSize: 12, color: 'var(--text, #888)', marginTop: 8 }}>
@@ -3956,6 +3964,11 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                     {!inventario
                       ? conferenteNomeExibicaoPreviaRow(r)
                       : String(r.conferente_nome ?? '').trim() || String(r.conferente_id ?? '').trim() || '—'}
+                    {!inventario && outrosConferentesNoItemCount(r) > 0 ? (
+                      <div style={{ fontSize: 11, color: 'var(--text, #888)', marginTop: 2 }}>
+                        +{outrosConferentesNoItemCount(r)} conferente(s)
+                      </div>
+                    ) : null}
                   </td>
                   {prevCol('codigo') ? <td style={tdStyle}>{r.codigo_interno}</td> : null}
                   {prevCol('descricao') ? (
