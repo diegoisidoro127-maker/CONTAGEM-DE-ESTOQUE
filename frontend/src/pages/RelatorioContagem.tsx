@@ -171,6 +171,10 @@ function mergeContagemRowsById(
   })
 }
 
+function relatorioItemDiaKey(dataYmd: string, codigo: string, descricao: string): string {
+  return `${String(dataYmd ?? '').slice(0, 10)}|${normalizeCodigoInternoCompareKey(String(codigo ?? '')).toLowerCase()}|${String(descricao ?? '').trim().toLowerCase()}`
+}
+
 /** Paginação (15 + “Mostrar tudo”) vale para Relatório completo e Todas as contagens — mesmo componente. */
 const RELATORIO_PAGE_SIZE = 15
 /** PostgREST costuma limitar ~1000 linhas por requisição; buscamos em fatias para trazer o relatório inteiro. */
@@ -957,7 +961,46 @@ export default function RelatorioContagem({
       }
       return inv
     }
-    const grouped = prepararContagemDiariaOficialListaUnicaPorProduto(filtered as ContagemRow[]) as ContagemRow[]
+    let grouped = prepararContagemDiariaOficialListaUnicaPorProduto(filtered as ContagemRow[]) as ContagemRow[]
+
+    // Alinha o nome da coluna Conferente com a view oficial de itens do painel.
+    try {
+      const byDay = grouped
+        .map((r) => String(r.data_contagem ?? '').slice(0, 10))
+        .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d))
+        .sort()
+      if (byDay.length > 0) {
+        const minDay = byDay[0]
+        const maxDay = byDay[byDay.length - 1]
+        const { data: itens, error: itensErr } = await supabase
+          .from('v_contagem_diaria_itens_painel')
+          .select('data_contagem,codigo_interno,descricao,conferente_nome')
+          .gte('data_contagem', minDay)
+          .lte('data_contagem', maxDay)
+          .limit(50000)
+        if (!itensErr && itens) {
+          const nomeByKey = new Map<string, string>()
+          for (const row of itens as Array<Record<string, unknown>>) {
+            const key = relatorioItemDiaKey(
+              String(row.data_contagem ?? ''),
+              String(row.codigo_interno ?? ''),
+              String(row.descricao ?? ''),
+            )
+            const nome = String(row.conferente_nome ?? '').trim()
+            if (key && nome) nomeByKey.set(key, nome)
+          }
+          grouped = grouped.map((r) => {
+            const key = relatorioItemDiaKey(r.data_contagem, r.codigo_interno, r.descricao)
+            const nome = nomeByKey.get(key)
+            if (!nome) return r
+            return { ...r, conferentes: { nome } }
+          })
+        }
+      }
+    } catch {
+      // fallback silencioso para dados nativos de contagens_estoque
+    }
+
     return grouped.sort((a, b) => {
       const c = a.codigo_interno.localeCompare(b.codigo_interno, 'pt-BR')
       if (c !== 0) return c
