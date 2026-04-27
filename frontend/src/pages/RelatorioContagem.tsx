@@ -204,6 +204,12 @@ type AvisoExportPendente = {
   conferentes: number
 }
 
+type PainelDiaResumo = {
+  count: number
+  inicio: string | null
+  fim: string | null
+}
+
 /** Resultado de uma consulta rápida ao dia antes de carregar/exportar (uma única busca). */
 type AvaliacaoUmDiaContagem =
   | { kind: 'vazio' }
@@ -1131,13 +1137,57 @@ export default function RelatorioContagem({
     return out
   }
 
+  async function fetchResumoPainelDia(
+    dataYmd: string,
+  ): Promise<Map<string, PainelDiaResumo> | null> {
+    const ymd = String(dataYmd ?? '').trim()
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return null
+    try {
+      const { data, error } = await supabase
+        .from('v_contagem_diaria_painel')
+        .select('conferente_id,itens_contados,inicio,fim,data_contagem')
+        .eq('data_contagem', ymd)
+      if (error) return null
+      const out = new Map<string, PainelDiaResumo>()
+      for (const r of (data ?? []) as Array<Record<string, unknown>>) {
+        const id = String(r.conferente_id ?? '').trim()
+        if (!id) continue
+        const rawCount = Number(r.itens_contados ?? 0)
+        const count = Number.isFinite(rawCount) && rawCount >= 0 ? Math.floor(rawCount) : 0
+        const inicio = String(r.inicio ?? '').trim() || null
+        const fim = String(r.fim ?? '').trim() || null
+        out.set(id, { count, inicio, fim })
+      }
+      return out
+    } catch {
+      return null
+    }
+  }
+
   async function loadHistoricoContagens() {
     if (!isDiaMode) return
     setHistoricoLoading(true)
     setHistoricoError('')
     try {
       const { rows: raw, origemAusenteNoResultado } = await fetchHistoricoRawRows()
-      const items = await buildHistoricoLista(raw, origemAusenteNoResultado)
+      let items = await buildHistoricoLista(raw, origemAusenteNoResultado)
+      // Alinha os números/horário do dia atual com a mesma fonte do painel da Contagem.
+      const day = diaCivilFiltroAtual() ?? toYmdSP()
+      const painelDia = await fetchResumoPainelDia(day)
+      if (painelDia && painelDia.size > 0) {
+        items = items.map((it) => {
+          if (it.dataYmd !== day || !it.conferenteId) return it
+          const p = painelDia.get(it.conferenteId)
+          if (!p) return it
+          const minTs = tsFromDataHoraContagem(p.inicio)
+          const maxTs = tsFromDataHoraContagem(p.fim ?? p.inicio)
+          return {
+            ...it,
+            totalItens: p.count,
+            horaInputLabel: formatHistoricoHorarioInput(minTs, maxTs),
+          }
+        })
+      }
       setHistoricoItems(items)
     } catch (e: unknown) {
       setHistoricoError(e instanceof Error ? e.message : 'Erro ao carregar histórico.')
