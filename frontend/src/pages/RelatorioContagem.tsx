@@ -89,16 +89,15 @@ function tsFromDataHoraContagem(iso: string | null | undefined): number | null {
   return Number.isFinite(t) ? t : null
 }
 
-/** Primeiro/último horário de lançamento no dia (mesmo grupo); um único horário se coincidir. */
+/** Primeiro/último horário de lançamento no dia (mesmo grupo); sempre exibe intervalo início - fim. */
 function formatHistoricoHorarioInput(minTs: number | null, maxTs: number | null): string {
   if (minTs == null && maxTs == null) return '—'
   const fmt = (t: number) =>
     new Date(t).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
   const a = minTs ?? maxTs
   const b = maxTs ?? minTs
-  if (a != null && b != null && a !== b) return `${fmt(a)} – ${fmt(b)}`
-  const t = a ?? b
-  return t != null ? fmt(t) : '—'
+  if (a == null || b == null) return '—'
+  return `${fmt(a)} - ${fmt(b)}`
 }
 
 function isColumnMissingErrorRel(e: unknown): boolean {
