@@ -799,11 +799,10 @@ export default function EstoqueSeguranca() {
   const [error, setError] = useState<string | null>(null)
   const [rows, setRows] = useState<RowLista[]>([])
   const [source, setSource] = useState('')
-  const [filtroSemaforo, setFiltroSemaforo] = useState<'Todos' | CondClass>('Todos')
   const [page, setPage] = useState(1)
   const [painelAlertasAberto, setPainelAlertasAberto] = useState(false)
   const [filtroPainelAlerta, setFiltroPainelAlerta] = useState<FiltroPainelAlerta>('todos')
-  const [graficoFiltro, setGraficoFiltro] = useState<GraficoFiltro>(null)
+  const [filtroGlobal, setFiltroGlobal] = useState<GraficoFiltro>(null)
 
   useEffect(() => {
     let alive = true
@@ -867,31 +866,39 @@ export default function EstoqueSeguranca() {
     }
   }, [])
 
-  const rowsParaGraficos = useMemo(() => {
-    if (!graficoFiltro) return rows
-    if (graficoFiltro.kind === 'sku') {
-      return rows.filter((r) => labelForRow(r, rows) === graficoFiltro.label)
+  const rowsFiltradasGlobal = useMemo(() => {
+    if (!filtroGlobal) return rows
+    if (filtroGlobal.kind === 'sku') {
+      return rows.filter((r) => labelForRow(r, rows) === filtroGlobal.label)
     }
-    return rows.filter((r) => calcCond(r) === graficoFiltro.cond)
-  }, [rows, graficoFiltro])
+    return rows.filter((r) => calcCond(r) === filtroGlobal.cond)
+  }, [rows, filtroGlobal])
 
   const labelsSkuGraficos = useMemo(
-    () => rowsParaGraficos.map((r) => labelForRow(r, rows)),
-    [rows, rowsParaGraficos],
+    () => rowsFiltradasGlobal.map((r) => labelForRow(r, rows)),
+    [rows, rowsFiltradasGlobal],
   )
 
   const onGraficoCategoriaClick = useCallback((label: string) => {
-    setGraficoFiltro((prev) => {
+    setFiltroGlobal((prev) => {
       if (prev?.kind === 'sku' && prev.label === label) return null
       return { kind: 'sku', label }
     })
   }, [])
 
   const onGraficoCondClick = useCallback((cond: CondClass) => {
-    setGraficoFiltro((prev) => {
+    setFiltroGlobal((prev) => {
       if (prev?.kind === 'cond' && prev.cond === cond) return null
       return { kind: 'cond', cond }
     })
+  }, [])
+
+  const onFiltroTabelaClick = useCallback((st: 'Todos' | CondClass) => {
+    if (st === 'Todos') {
+      setFiltroGlobal(null)
+      return
+    }
+    setFiltroGlobal({ kind: 'cond', cond: st })
   }, [])
 
   const alertasAmareloVermelho = useMemo(() => itensAmareloOuVermelho(rows), [rows])
@@ -932,18 +939,7 @@ export default function EstoqueSeguranca() {
   /** Colunas que ainda têm um gráfico de linha individual (demais estão nos comparativos). */
   const metricasGraficos = useMemo<Coluna[]>(() => ['Estoque Atual (29/04)'], [])
 
-  const rowsTabelaBase = useMemo(() => {
-    if (!graficoFiltro) return rows
-    if (graficoFiltro.kind === 'sku') {
-      return rows.filter((r) => labelForRow(r, rows) === graficoFiltro.label)
-    }
-    return rows.filter((r) => calcCond(r) === graficoFiltro.cond)
-  }, [rows, graficoFiltro])
-
-  const rowsFiltradasSemaforo = useMemo(() => {
-    if (filtroSemaforo === 'Todos') return rowsTabelaBase
-    return rowsTabelaBase.filter((r) => calcCond(r) === filtroSemaforo)
-  }, [filtroSemaforo, rowsTabelaBase])
+  const rowsFiltradasSemaforo = rowsFiltradasGlobal
 
   const totalPages = useMemo(() => Math.max(1, Math.ceil(rowsFiltradasSemaforo.length / 15)), [rowsFiltradasSemaforo.length])
   const rowsPagina = useMemo(() => {
@@ -954,10 +950,11 @@ export default function EstoqueSeguranca() {
 
   useEffect(() => {
     setPage(1)
-  }, [filtroSemaforo, graficoFiltro, rows.length])
+  }, [filtroGlobal, rows.length])
 
   const qtdAlertas = alertasAmareloVermelho.length
-  const temFiltroAtivo = graficoFiltro !== null || filtroSemaforo !== 'Todos'
+  const temFiltroAtivo = filtroGlobal !== null
+  const filtroSemaforoAtivo: 'Todos' | CondClass = filtroGlobal?.kind === 'cond' ? filtroGlobal.cond : 'Todos'
 
   return (
     <section style={{ maxWidth: 1500, margin: '0 auto', padding: '0 12px 26px', position: 'relative' }}>
@@ -994,8 +991,7 @@ export default function EstoqueSeguranca() {
                   : 'Não há filtro ativo nos gráficos nem na lista'
               }
               onClick={() => {
-                setGraficoFiltro(null)
-                setFiltroSemaforo('Todos')
+                setFiltroGlobal(null)
               }}
               style={btnLimparFiltros(temFiltroAtivo)}
             >
@@ -1127,7 +1123,7 @@ export default function EstoqueSeguranca() {
       {!loading && !error ? (
         <>
           <p style={{ margin: '0 0 10px 0', fontSize: 12, color: '#94a3b8' }}>Origem: {source}</p>
-          {graficoFiltro ? (
+          {filtroGlobal ? (
             <div
               style={{
                 marginBottom: 12,
@@ -1143,18 +1139,18 @@ export default function EstoqueSeguranca() {
               }}
             >
               <span style={{ fontSize: 13 }}>
-                {graficoFiltro.kind === 'sku' ? (
+                {filtroGlobal.kind === 'sku' ? (
                   <>
-                    Gráficos filtrados por <strong>SKU / eixo</strong>: «{graficoFiltro.label}»
+                    Filtro ativo por <strong>SKU / eixo</strong>: «{filtroGlobal.label}»
                   </>
                 ) : (
                   <>
-                    Gráficos filtrados por <strong>status</strong>: «{graficoFiltro.cond}»
+                    Filtro ativo por <strong>status</strong>: «{filtroGlobal.cond}»
                   </>
                 )}
                 <span style={{ color: '#94a3b8', fontWeight: 400 }}> — clique de novo no mesmo item para limpar.</span>
               </span>
-              <button type="button" style={pagerBtn} onClick={() => setGraficoFiltro(null)}>
+              <button type="button" style={pagerBtn} onClick={() => setFiltroGlobal(null)}>
                 Mostrar todos os itens
               </button>
             </div>
@@ -1167,22 +1163,22 @@ export default function EstoqueSeguranca() {
           <div style={gridCharts}>
             <ComboPedidosChart
               labels={labelsSkuGraficos}
-              rows={rowsParaGraficos}
+              rows={rowsFiltradasGlobal}
               onCategoryClick={onGraficoCategoriaClick}
             />
             <ComboEstoqueIdealChart
               labels={labelsSkuGraficos}
-              rows={rowsParaGraficos}
+              rows={rowsFiltradasGlobal}
               onCategoryClick={onGraficoCategoriaClick}
             />
             <ComboDiasEstoqueChart
               labels={labelsSkuGraficos}
-              rows={rowsParaGraficos}
+              rows={rowsFiltradasGlobal}
               onCategoryClick={onGraficoCategoriaClick}
             />
             <ComboPosicoesChart
               labels={labelsSkuGraficos}
-              rows={rowsParaGraficos}
+              rows={rowsFiltradasGlobal}
               onCategoryClick={onGraficoCategoriaClick}
             />
             {metricasGraficos.map((m) => (
@@ -1190,12 +1186,11 @@ export default function EstoqueSeguranca() {
                 key={m}
                 titulo={m}
                 labels={labelsSkuGraficos}
-                values={rowsParaGraficos.map((r) => parseNumberBR(r[m]))}
+                values={rowsFiltradasGlobal.map((r) => parseNumberBR(r[m]))}
                 onCategoryClick={onGraficoCategoriaClick}
               />
             ))}
-            <CondicionalChart rows={rowsParaGraficos} onCondClick={onGraficoCondClick} />
-            <SemaforoLinhasChart rows={rowsParaGraficos} onCondClick={onGraficoCondClick} />
+            <SemaforoLinhasChart rows={rowsFiltradasGlobal} onCondClick={onGraficoCondClick} />
           </div>
 
           <h3 style={{ margin: '10px 0 8px' }}>Lista de itens (formatação condicional)</h3>
@@ -1204,8 +1199,8 @@ export default function EstoqueSeguranca() {
               <button
                 key={st}
                 type="button"
-                onClick={() => setFiltroSemaforo(st)}
-                style={btnSemaforo(st, filtroSemaforo === st)}
+                onClick={() => onFiltroTabelaClick(st)}
+                style={btnSemaforo(st, filtroSemaforoAtivo === st)}
               >
                 {st}
               </button>
