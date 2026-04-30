@@ -2,29 +2,11 @@ import type { CSSProperties } from 'react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import * as XLSX from 'xlsx'
 import { ComparativoLinhasSvgChart, type SvgChartSeries } from '../components/ComparativoLinhasSvgChart'
-import {
-  SESSION_KEY_ALERTAS_VISTOS,
-  SESSION_KEY_AUTO_AVIISO,
-} from '../lib/estoqueSegurancaAvisoSession'
 
 const SHEET_ID = '1KBDdsl4GeQL97mAvJS_J7uf0a6M7LRr0fHtPZE_QFhU'
 const SHEET_GID = '1626679618'
-
-function readSessionFlag(key: string): boolean {
-  try {
-    return sessionStorage.getItem(key) === '1'
-  } catch {
-    return false
-  }
-}
-
-function writeSessionFlag(key: string) {
-  try {
-    sessionStorage.setItem(key, '1')
-  } catch {
-    /* private mode */
-  }
-}
+/** Um aviso automático por dia (após carregar os dados do dia). */
+const LS_AVISO_DIARIO_YMD = 'estoque-seguranca.aviso-amarelo-vermelho.ymd'
 
 function todayYmdLocal(): string {
   const d = new Date()
@@ -408,24 +390,8 @@ export default function EstoqueSeguranca() {
   const [source, setSource] = useState('')
   const [page, setPage] = useState(1)
   const [painelAlertasAberto, setPainelAlertasAberto] = useState(false)
-  const [painelAlertasVisto, setPainelAlertasVisto] = useState(() => readSessionFlag(SESSION_KEY_ALERTAS_VISTOS))
   const [filtroPainelAlerta, setFiltroPainelAlerta] = useState<FiltroPainelAlerta>('todos')
   const [filtroGlobal, setFiltroGlobal] = useState<GraficoFiltro>(null)
-
-  const marcarPainelAlertasVisto = useCallback(() => {
-    writeSessionFlag(SESSION_KEY_ALERTAS_VISTOS)
-    setPainelAlertasVisto(true)
-  }, [])
-
-  const fecharPainelAlertas = useCallback(() => {
-    setPainelAlertasAberto(false)
-    marcarPainelAlertasVisto()
-  }, [marcarPainelAlertasVisto])
-
-  const abrirPainelViaSininho = useCallback(() => {
-    marcarPainelAlertasVisto()
-    setPainelAlertasAberto(true)
-  }, [marcarPainelAlertasVisto])
 
   useEffect(() => {
     let alive = true
@@ -531,14 +497,23 @@ export default function EstoqueSeguranca() {
     return alertasAmareloVermelho.filter((r) => calcCond(r) === filtroPainelAlerta)
   }, [alertasAmareloVermelho, filtroPainelAlerta])
 
-  /** Aviso automático no máximo uma vez por sessão (após login); a cada novo login o ciclo recomeça. */
+  /** Aviso automático único por dia, na primeira carga com dados após atualização da planilha. */
   useEffect(() => {
     if (loading || error || rows.length === 0) return
     const lista = itensAmareloOuVermelho(rows)
     if (lista.length === 0) return
-    if (readSessionFlag(SESSION_KEY_AUTO_AVIISO)) return
-    writeSessionFlag(SESSION_KEY_AUTO_AVIISO)
+    const hoje = todayYmdLocal()
+    try {
+      if (localStorage.getItem(LS_AVISO_DIARIO_YMD) === hoje) return
+    } catch {
+      /* private mode / bloqueio */
+    }
     setPainelAlertasAberto(true)
+    try {
+      localStorage.setItem(LS_AVISO_DIARIO_YMD, hoje)
+    } catch {
+      /* ignore */
+    }
     if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
       const n = lista.length
       new Notification('Estoque de segurança', {
@@ -589,14 +564,12 @@ export default function EstoqueSeguranca() {
             <button
               type="button"
               aria-label={`Alertas de estoque: ${qtdAlertas} item(ns) em Amarelo ou Vermelho`}
-              onClick={abrirPainelViaSininho}
+              onClick={() => setPainelAlertasAberto(true)}
               style={btnSininho}
             >
               <IconBell />
               {qtdAlertas > 0 ? (
-                <span style={painelAlertasVisto ? badgeSininhoLido : badgeSininho}>
-                  {qtdAlertas > 99 ? '99+' : qtdAlertas}
-                </span>
+                <span style={badgeSininho}>{qtdAlertas > 99 ? '99+' : qtdAlertas}</span>
               ) : null}
             </button>
             <button
@@ -624,7 +597,7 @@ export default function EstoqueSeguranca() {
           role="dialog"
           aria-modal="true"
           aria-labelledby="titulo-alertas-estoque"
-          onClick={fecharPainelAlertas}
+          onClick={() => setPainelAlertasAberto(false)}
         >
           <div
             style={modalBox}
@@ -638,11 +611,11 @@ export default function EstoqueSeguranca() {
                   Itens em Amarelo ou Vermelho
                 </h3>
                 <p style={{ margin: 0, fontSize: 12, color: '#94a3b8', maxWidth: 520 }}>
-                  Na primeira carga após o login, esta lista abre sozinha se houver alertas. O sininho fica em destaque até você abrir
-                  ou fechar o painel; em um novo login, o aviso volta a aparecer como pendente.
+                  Aviso diário único: na primeira vez que os dados do dia são carregados, esta lista abre automaticamente se houver
+                  alertas. Use o sininho para ver de novo a qualquer momento.
                 </p>
               </div>
-              <button type="button" style={modalFechar} onClick={fecharPainelAlertas} aria-label="Fechar">
+              <button type="button" style={modalFechar} onClick={() => setPainelAlertasAberto(false)} aria-label="Fechar">
                 ×
               </button>
             </div>
@@ -1063,13 +1036,6 @@ const badgeSininho: CSSProperties = {
   justifyContent: 'center',
   lineHeight: 1,
   border: '2px solid var(--bg, #0f172a)',
-}
-
-/** Contagem ainda visível, sem ênfase de “não visto” (após abrir o sininho ou fechar o painel nesta sessão). */
-const badgeSininhoLido: CSSProperties = {
-  ...badgeSininho,
-  background: '#64748b',
-  fontWeight: 700,
 }
 
 const modalOverlay: CSSProperties = {
