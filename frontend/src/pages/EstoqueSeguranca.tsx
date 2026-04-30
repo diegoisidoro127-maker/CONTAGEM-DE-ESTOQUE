@@ -28,6 +28,8 @@ const COLUNAS = [
 
 type Coluna = (typeof COLUNAS)[number]
 type DataRow = Record<Coluna, string>
+/** Linha da planilha com colunas extras para a lista (SKU / DESCRIÇÃO vêm do CSV, fora de COLUNAS). */
+type RowLista = DataRow & { sku: string; descricao: string }
 type CondClass = 'Excedido' | 'Verde' | 'Amarelo' | 'Vermelho' | 'Analisar'
 
 function normalize(s: string): string {
@@ -82,7 +84,7 @@ function isHtmlResponse(txt: string): boolean {
   return /<html|<!doctype html|sign in|google sheets/i.test(txt)
 }
 
-function calcCond(row: DataRow): CondClass {
+function calcCond(row: DataRow | RowLista): CondClass {
   const v = parseNumberBR(row['Estoque Atual (29/04)']) // V
   const r = parseNumberBR(row['Estoque Ideal Mínimo']) // R
   const s = parseNumberBR(row['Estoque Ideal Máximo']) // S
@@ -141,7 +143,224 @@ function MetricChart({ titulo, labels, values }: { titulo: string; labels: strin
   )
 }
 
-function CondicionalChart({ rows }: { rows: DataRow[] }) {
+function ComboPedidosChart({ labels, rows }: { labels: string[]; rows: RowLista[] }) {
+  const config = useMemo<ChartConfiguration>(
+    () => ({
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          {
+            label: 'Pedido Méd. Abril',
+            data: rows.map((r) => parseNumberBR(r['Pedido Méd. Abril'])),
+            backgroundColor: '#22c55e',
+            borderColor: '#16a34a',
+            borderWidth: 1,
+          },
+          {
+            label: 'Pedido Máx. Abril',
+            data: rows.map((r) => parseNumberBR(r['Pedido Máx. Abril'])),
+            backgroundColor: '#3b82f6',
+            borderColor: '#2563eb',
+            borderWidth: 1,
+          },
+          {
+            label: 'Média ult. 5 dias',
+            data: rows.map((r) => parseNumberBR(r['Média ult. 5 dias'])),
+            backgroundColor: '#f59e0b',
+            borderColor: '#d97706',
+            borderWidth: 1,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            display: true,
+            position: 'top',
+            labels: { color: '#cbd5e1', boxWidth: 14, font: { size: 11 } },
+          },
+        },
+        scales: {
+          x: { ticks: { maxRotation: 45, minRotation: 20, color: '#cbd5e1' } },
+          y: { ticks: { color: '#cbd5e1' } },
+        },
+      },
+    }),
+    [labels, rows],
+  )
+  const canvasRef = useChart(config)
+  return (
+    <div style={chartCard}>
+      <h3 style={{ margin: '0 0 8px 0', fontSize: 14 }}>
+        Pedido Méd. Abril · Pedido Máx. Abril · Média ult. 5 dias
+      </h3>
+      <div style={{ height: 230 }}>
+        <canvas ref={canvasRef} />
+      </div>
+    </div>
+  )
+}
+
+function ComboPosicoesChart({ labels, rows }: { labels: string[]; rows: RowLista[] }) {
+  const config = useMemo<ChartConfiguration>(
+    () => ({
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          {
+            label: 'Posições Máximo',
+            data: rows.map((r) => parseNumberBR(r['Posições Máximo'])),
+            backgroundColor: '#8b5cf6',
+            borderColor: '#7c3aed',
+            borderWidth: 1,
+          },
+          {
+            label: 'Posições Média',
+            data: rows.map((r) => parseNumberBR(r['Posições Média'])),
+            backgroundColor: '#3b82f6',
+            borderColor: '#2563eb',
+            borderWidth: 1,
+          },
+          {
+            label: 'Posições Mínimo',
+            data: rows.map((r) => parseNumberBR(r['Posições Mínimo'])),
+            backgroundColor: '#06b6d4',
+            borderColor: '#0891b2',
+            borderWidth: 1,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          x: { ticks: { maxRotation: 45, minRotation: 20, color: '#cbd5e1' } },
+          y: { ticks: { color: '#cbd5e1' } },
+        },
+      },
+    }),
+    [labels, rows],
+  )
+  const canvasRef = useChart(config)
+  return (
+    <div style={chartCard}>
+      <h3 style={{ margin: '0 0 8px 0', fontSize: 14 }}>Comparativo de posições (3 métricas)</h3>
+      <div style={{ height: 230 }}>
+        <canvas ref={canvasRef} />
+      </div>
+    </div>
+  )
+}
+
+function ComboEstoqueIdealChart({ labels, rows }: { labels: string[]; rows: RowLista[] }) {
+  const config = useMemo<ChartConfiguration>(
+    () => ({
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          {
+            label: 'Estoque Ideal Máximo',
+            data: rows.map((r) => parseNumberBR(r['Estoque Ideal Máximo'])),
+            backgroundColor: '#1d4ed8',
+            borderColor: '#1e40af',
+            borderWidth: 1,
+          },
+          {
+            label: 'Estoque Ideal Médio',
+            data: rows.map((r) => parseNumberBR(r['Estoque Ideal Médio'])),
+            backgroundColor: '#3b82f6',
+            borderColor: '#2563eb',
+            borderWidth: 1,
+          },
+          {
+            label: 'Estoque Ideal Mínimo',
+            data: rows.map((r) => parseNumberBR(r['Estoque Ideal Mínimo'])),
+            backgroundColor: '#93c5fd',
+            borderColor: '#60a5fa',
+            borderWidth: 1,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          x: { ticks: { maxRotation: 45, minRotation: 20, color: '#cbd5e1' } },
+          y: { ticks: { color: '#cbd5e1' } },
+        },
+      },
+    }),
+    [labels, rows],
+  )
+  const canvasRef = useChart(config)
+  return (
+    <div style={chartCard}>
+      <h3 style={{ margin: '0 0 8px 0', fontSize: 14 }}>Comparativo de estoque ideal (3 métricas)</h3>
+      <div style={{ height: 230 }}>
+        <canvas ref={canvasRef} />
+      </div>
+    </div>
+  )
+}
+
+function ComboDiasEstoqueChart({ labels, rows }: { labels: string[]; rows: RowLista[] }) {
+  const config = useMemo<ChartConfiguration>(
+    () => ({
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          {
+            label: 'Dias de Estoque Máximo',
+            data: rows.map((r) => parseNumberBR(r['Dias de Estoque Máximo'])),
+            backgroundColor: '#ef4444',
+            borderColor: '#dc2626',
+            borderWidth: 1,
+          },
+          {
+            label: 'Dias de Estoque Médio',
+            data: rows.map((r) => parseNumberBR(r['Dias de Estoque Médio'])),
+            backgroundColor: '#f59e0b',
+            borderColor: '#d97706',
+            borderWidth: 1,
+          },
+          {
+            label: 'Dias de Estoque Mínimo',
+            data: rows.map((r) => parseNumberBR(r['Dias de Estoque Mínimo'])),
+            backgroundColor: '#10b981',
+            borderColor: '#059669',
+            borderWidth: 1,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          x: { ticks: { maxRotation: 45, minRotation: 20, color: '#cbd5e1' } },
+          y: { ticks: { color: '#cbd5e1' } },
+        },
+      },
+    }),
+    [labels, rows],
+  )
+  const canvasRef = useChart(config)
+  return (
+    <div style={chartCard}>
+      <h3 style={{ margin: '0 0 8px 0', fontSize: 14 }}>Comparativo de dias de estoque (3 métricas)</h3>
+      <div style={{ height: 230 }}>
+        <canvas ref={canvasRef} />
+      </div>
+    </div>
+  )
+}
+
+function CondicionalChart({ rows }: { rows: RowLista[] }) {
   const counts = useMemo(() => {
     const out: Record<CondClass, number> = { Excedido: 0, Verde: 0, Amarelo: 0, Vermelho: 0, Analisar: 0 }
     rows.forEach((r) => {
@@ -181,7 +400,7 @@ function CondicionalChart({ rows }: { rows: DataRow[] }) {
 export default function EstoqueSeguranca() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [rows, setRows] = useState<DataRow[]>([])
+  const [rows, setRows] = useState<RowLista[]>([])
   const [source, setSource] = useState('')
   const [filtroSemaforo, setFiltroSemaforo] = useState<'Todos' | CondClass>('Todos')
   const [page, setPage] = useState(1)
@@ -204,7 +423,10 @@ export default function EstoqueSeguranca() {
           if (isHtmlResponse(text)) throw new Error('Google retornou tela HTML/login.')
           const grid = parseCsv(text)
           if (grid.length < 2) throw new Error('CSV vazio.')
-          const head = grid[0].map((h) => normalize(h))
+          const rawHead = grid[0].map((h) => String(h || '').trim())
+          const head = rawHead.map((h) => normalize(h))
+          const skuIdx = head.findIndex((h) => h === 'sku')
+          const descIdx = head.findIndex((h) => h === 'descricao' || h === 'description')
           const idxMap = Object.fromEntries(
             COLUNAS.map((c) => {
               const idx = head.findIndex((h) => h === normalize(c))
@@ -215,12 +437,16 @@ export default function EstoqueSeguranca() {
           if (missing.length) {
             throw new Error(`Colunas não encontradas: ${missing.join(', ')}`)
           }
-          const parsed: DataRow[] = grid.slice(1).map((line) => {
+          const parsed: RowLista[] = grid.slice(1).map((line) => {
             const obj = {} as DataRow
             COLUNAS.forEach((c) => {
               obj[c] = String(line[idxMap[c]] ?? '').trim()
             })
-            return obj
+            return {
+              ...obj,
+              sku: skuIdx >= 0 ? String(line[skuIdx] ?? '').trim() : '',
+              descricao: descIdx >= 0 ? String(line[descIdx] ?? '').trim() : '',
+            }
           })
           if (!alive) return
           setRows(parsed)
@@ -241,19 +467,14 @@ export default function EstoqueSeguranca() {
     }
   }, [])
 
-  const labelsCategoria = useMemo(() => rows.map((r) => r.Categoria || '(sem categoria)'), [rows])
-  const metricasGraficos = useMemo(
-    () =>
-      COLUNAS.filter(
-        (c) =>
-          c !== 'Categoria' &&
-          c !== 'Para condicional' &&
-          c !== 'Posição Atual' &&
-          c !== 'Estoque Atual ( comparação de 5 Dias)' &&
-          c !== 'Estoque Atual (comparação mensal)',
-      ),
-    [],
-  )
+  const labelsSku = useMemo(() => {
+    if (rows.some((r) => r.sku.trim() !== '')) {
+      return rows.map((r) => r.sku.trim() || '(sem SKU)')
+    }
+    return rows.map((r) => r.Categoria || '(sem categoria)')
+  }, [rows])
+  /** Colunas que ainda têm um gráfico de barra individual (demais estão nos comparativos 3-em-1). */
+  const metricasGraficos = useMemo<Coluna[]>(() => ['Estoque Atual (29/04)'], [])
 
   const rowsFiltradasSemaforo = useMemo(() => {
     if (filtroSemaforo === 'Todos') return rows
@@ -281,8 +502,12 @@ export default function EstoqueSeguranca() {
         <>
           <p style={{ margin: '0 0 10px 0', fontSize: 12, color: '#94a3b8' }}>Origem: {source}</p>
           <div style={gridCharts}>
+            <ComboPedidosChart labels={labelsSku} rows={rows} />
+            <ComboEstoqueIdealChart labels={labelsSku} rows={rows} />
+            <ComboDiasEstoqueChart labels={labelsSku} rows={rows} />
+            <ComboPosicoesChart labels={labelsSku} rows={rows} />
             {metricasGraficos.map((m) => (
-              <MetricChart key={m} titulo={m} labels={labelsCategoria} values={rows.map((r) => parseNumberBR(r[m]))} />
+              <MetricChart key={m} titulo={m} labels={labelsSku} values={rows.map((r) => parseNumberBR(r[m]))} />
             ))}
             <CondicionalChart rows={rows} />
           </div>
@@ -301,9 +526,11 @@ export default function EstoqueSeguranca() {
             ))}
           </div>
           <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 8 }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1300 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1500 }}>
               <thead>
                 <tr>
+                  <th style={th}>SKU</th>
+                  <th style={{ ...th, minWidth: 220 }}>DESCRIÇÃO</th>
                   {COLUNAS.map((h) => (
                     <th key={h} style={th}>
                       {h}
@@ -336,7 +563,11 @@ export default function EstoqueSeguranca() {
                             ? 'rgba(239, 68, 68, 0.14)'
                             : 'rgba(236, 72, 153, 0.14)'
                   return (
-                    <tr key={`${r.Categoria}-${i}`} style={{ background: bgLinha }}>
+                    <tr key={`${r.sku || r.Categoria}-${i}`} style={{ background: bgLinha }}>
+                      <td style={td}>{r.sku || '-'}</td>
+                      <td style={{ ...td, maxWidth: 360, whiteSpace: 'normal', wordBreak: 'break-word' }}>
+                        {r.descricao || '-'}
+                      </td>
                       {COLUNAS.map((h) => (
                         <td key={`${i}-${h}`} style={td}>
                           {r[h] || '-'}
