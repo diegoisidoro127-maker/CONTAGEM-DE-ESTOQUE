@@ -955,6 +955,7 @@ export default function EstoqueSeguranca() {
   const qtdAlertas = alertasAmareloVermelho.length
   const temFiltroAtivo = filtroGlobal !== null
   const filtroSemaforoAtivo: 'Todos' | CondClass = filtroGlobal?.kind === 'cond' ? filtroGlobal.cond : 'Todos'
+  const planilhaReadOnlyUrl = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/view?gid=${SHEET_GID}`
 
   return (
     <section style={{ maxWidth: 1500, margin: '0 auto', padding: '0 12px 26px', position: 'relative' }}>
@@ -1122,7 +1123,18 @@ export default function EstoqueSeguranca() {
 
       {!loading && !error ? (
         <>
-          <p style={{ margin: '0 0 10px 0', fontSize: 12, color: '#94a3b8' }}>Origem: {source}</p>
+          <div style={{ margin: '0 0 10px 0', display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
+            <p style={{ margin: 0, fontSize: 12, color: '#94a3b8' }}>Origem: {source}</p>
+            <a
+              href={planilhaReadOnlyUrl}
+              target="_blank"
+              rel="noreferrer"
+              style={btnAbrirReadOnly}
+              title="Abrir planilha em modo leitura"
+            >
+              Abrir (leitura)
+            </a>
+          </div>
           {filtroGlobal ? (
             <div
               style={{
@@ -1382,6 +1394,17 @@ const pagerBtn: CSSProperties = {
   color: 'var(--text-h)',
   padding: '6px 10px',
   cursor: 'pointer',
+}
+
+const btnAbrirReadOnly: CSSProperties = {
+  borderRadius: 8,
+  border: '1px solid #2dd4bf',
+  background: 'rgba(45, 212, 191, 0.12)',
+  color: '#5eead4',
+  padding: '6px 10px',
+  fontSize: 12,
+  fontWeight: 600,
+  textDecoration: 'none',
 }
 
 const th: CSSProperties = {
