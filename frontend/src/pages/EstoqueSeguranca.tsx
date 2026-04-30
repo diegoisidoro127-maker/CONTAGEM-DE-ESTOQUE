@@ -85,7 +85,6 @@ function buildCandidateCsvUrls(): string[] {
   return [
     `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&gid=${SHEET_GID}`,
     `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${SHEET_GID}`,
-    `https://docs.google.com/spreadsheets/d/e/2PACX-1v/pub?gid=${SHEET_GID}&single=true&output=csv`,
   ]
 }
 
@@ -99,8 +98,6 @@ export default function EstoqueSeguranca() {
   const [source, setSource] = useState<string>('')
   const [headers, setHeaders] = useState<string[]>([])
   const [rows, setRows] = useState<Row[]>([])
-  const [csvManual, setCsvManual] = useState('')
-  const [useManual, setUseManual] = useState(false)
 
   async function carregarPorUrls() {
     const urls = buildCandidateCsvUrls()
@@ -133,22 +130,15 @@ export default function EstoqueSeguranca() {
       setError(null)
       try {
         if (!alive) return
-        if (useManual) {
-          const parsed = parseCsv(csvManual)
-          if (!parsed.headers.length) throw new Error('CSV manual vazio ou inválido.')
-          setHeaders(parsed.headers)
-          setRows(parsed.rows)
-          setSource('CSV colado manualmente')
-        } else {
-          await carregarPorUrls()
-        }
+        await carregarPorUrls()
       } catch (e) {
         if (!alive) return
         const raw = e instanceof Error ? e.message : 'Falha ao carregar a planilha.'
-        const msg =
-          raw.toLowerCase().includes('failed to fetch') || raw.toLowerCase().includes('bloqueou')
-            ? 'Falha ao buscar no Google Sheets. Publique a aba "Resumo da Planilha" como CSV ou cole o CSV manualmente abaixo.'
-            : raw
+        const msg = raw.toLowerCase().includes('erro http')
+          || raw.toLowerCase().includes('failed to fetch')
+          || raw.toLowerCase().includes('bloqueou')
+          ? 'Nao foi possivel acessar a aba "Resumo da Planilha" no Google Sheets. Verifique se ela esta publicada/compartilhada para leitura e se o gid esta correto.'
+          : raw
         setError(msg)
       } finally {
         if (alive) setLoading(false)
@@ -158,7 +148,7 @@ export default function EstoqueSeguranca() {
     return () => {
       alive = false
     }
-  }, [csvManual, useManual])
+  }, [])
 
   const numericSummaries = useMemo<NumericSummary[]>(() => {
     if (!headers.length || !rows.length) return []
@@ -205,32 +195,6 @@ export default function EstoqueSeguranca() {
   return (
     <section style={{ maxWidth: 1360, margin: '0 auto', padding: '0 12px 24px' }}>
       <h2 style={{ textAlign: 'center', margin: '10px 0 16px' }}>Estoque de Seguranca</h2>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
-        <button type="button" onClick={() => setUseManual(false)} style={btnMode(useManual === false)}>
-          Google Sheets
-        </button>
-        <button type="button" onClick={() => setUseManual(true)} style={btnMode(useManual === true)}>
-          CSV manual
-        </button>
-      </div>
-      {useManual ? (
-        <div style={{ marginBottom: 12 }}>
-          <textarea
-            value={csvManual}
-            onChange={(e) => setCsvManual(e.target.value)}
-            placeholder="Cole aqui o CSV da aba Resumo da Planilha..."
-            style={{
-              width: '100%',
-              minHeight: 120,
-              borderRadius: 8,
-              border: '1px solid var(--border)',
-              background: 'var(--code-bg)',
-              color: 'var(--text-h)',
-              padding: 10,
-            }}
-          />
-        </div>
-      ) : null}
 
       {loading ? <p style={{ color: '#94a3b8' }}>Carregando resumo da planilha...</p> : null}
       {error ? (
@@ -328,18 +292,6 @@ export default function EstoqueSeguranca() {
       ) : null}
     </section>
   )
-}
-
-function btnMode(active: boolean): CSSProperties {
-  return {
-    padding: '8px 12px',
-    borderRadius: 8,
-    border: `1px solid ${active ? '#2dd4bf' : 'var(--border)'}`,
-    background: active ? '#12343a' : 'transparent',
-    color: active ? '#7cead9' : 'var(--text)',
-    cursor: 'pointer',
-    fontWeight: 600,
-  }
 }
 
 function Card({ title, value }: { title: string; value: string }) {
