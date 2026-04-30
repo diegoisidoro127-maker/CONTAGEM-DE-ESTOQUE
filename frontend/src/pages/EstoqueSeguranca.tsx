@@ -1,5 +1,6 @@
 import type { CSSProperties } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { ChartDataset, TooltipModel } from 'chart.js'
 import { Chart, type ChartConfiguration } from 'chart.js/auto'
 import * as XLSX from 'xlsx'
 
@@ -208,15 +209,133 @@ function doughnutOnClickOptions(onCondClick: ((cond: CondClass) => void) | undef
   } as const
 }
 
-/** Tooltip compartilhado: mostra todas as séries do mesmo índice mesmo fora do ponto exato. */
-function sharedLineInteraction() {
-  return {
-    interaction: { mode: 'index', intersect: false as const },
-    plugins: {
-      tooltip: { mode: 'index' as const, intersect: false },
-    },
-    hover: { mode: 'index' as const, intersect: false },
-  } as const
+const LINE_CHART_TOOLTIP_CLASS = 'estoque-seg-line-tooltip'
+
+/** Tooltip acima do gráfico (mesmo critério do comparativo de temperatura). */
+function chartTooltipOuterStylePct(pxPct: number): Pick<CSSProperties, 'left' | 'right' | 'transform'> {
+  if (pxPct >= 74) return { left: 'auto', right: 6, transform: 'none' }
+  if (pxPct <= 26) return { left: 6, transform: 'none' }
+  return { left: `${pxPct}%`, transform: 'translateX(-50%)' }
+}
+
+function formatLineTooltipNumber(y: number): string {
+  if (Number.isFinite(y) && Math.abs(y - Math.round(y)) < 1e-9) return String(Math.round(y))
+  return y.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
+}
+
+function resolveDatasetLineColor(ds: ChartDataset, dataIndex: number): string {
+  const c = ds.borderColor
+  if (typeof c === 'string') return c
+  if (Array.isArray(c)) {
+    const x = c[dataIndex]
+    return typeof x === 'string' ? x : '#94a3b8'
+  }
+  return '#94a3b8'
+}
+
+function lineTooltipValueLine(datasetLabel: string, y: number): string {
+  const n = formatLineTooltipNumber(y)
+  if (datasetLabel === 'Quantidade por status' || datasetLabel === 'Quantidade de itens') {
+    return `${n} item(ns)`
+  }
+  return n
+}
+
+/** Tooltip HTML no mesmo modelo do gráfico de temperatura (ContagemDiariaAmbiental). */
+function externalLineTooltipLikeTemperature(context: { chart: Chart; tooltip: TooltipModel<'line'> }) {
+  const { chart, tooltip } = context
+  const parent = chart.canvas.parentElement
+  if (!parent) return
+
+  let el = parent.querySelector<HTMLDivElement>(`.${LINE_CHART_TOOLTIP_CLASS}`)
+  if (!el) {
+    el = document.createElement('div')
+    el.className = LINE_CHART_TOOLTIP_CLASS
+    el.style.position = 'absolute'
+    el.style.pointerEvents = 'none'
+    el.style.zIndex = '10'
+    el.style.transition = 'opacity 0.12s ease'
+    parent.appendChild(el)
+  }
+
+  if (tooltip.opacity === 0 || !tooltip.dataPoints?.length) {
+    el.style.opacity = '0'
+    return
+  }
+
+  const idx = tooltip.dataPoints[0].dataIndex
+  const title =
+    chart.data.labels !== undefined && chart.data.labels[idx] !== undefined
+      ? String(chart.data.labels[idx])
+      : ''
+
+  while (el.firstChild) el.removeChild(el.firstChild)
+
+  const head = document.createElement('div')
+  head.style.fontWeight = '700'
+  head.style.color = 'var(--chart-tooltip-title)'
+  head.style.marginBottom = '4px'
+  head.textContent = title
+  el.appendChild(head)
+
+  const cap = document.createElement('div')
+  cap.style.fontSize = '11px'
+  cap.style.color = 'var(--chart-caption)'
+  cap.style.marginBottom = '8px'
+  cap.textContent = 'Todas as séries neste ponto'
+  el.appendChild(cap)
+
+  const grid = document.createElement('div')
+  grid.style.display = 'grid'
+  grid.style.gap = '6px'
+  for (const dp of tooltip.dataPoints) {
+    const ds = dp.dataset
+    const color = resolveDatasetLineColor(ds, dp.dataIndex)
+    const row = document.createElement('div')
+    row.style.color = color
+    const raw = dp.parsed.y
+    const y = typeof raw === 'number' ? raw : Number(raw)
+    const val = lineTooltipValueLine(String(ds.label ?? ''), Number.isFinite(y) ? y : 0)
+    row.innerHTML = `${escapeHtml(String(ds.label ?? ''))}: <strong>${escapeHtml(val)}</strong>`
+    grid.appendChild(row)
+  }
+  el.appendChild(grid)
+
+  const rect = chart.canvas.getBoundingClientRect()
+  const pxPct = rect.width > 0 ? (tooltip.caretX / rect.width) * 100 : 50
+  Object.assign(el.style, {
+    top: '6px',
+    opacity: '1',
+    minWidth: '220px',
+    maxWidth: '340px',
+    padding: '10px 14px',
+    borderRadius: '12px',
+    background: 'var(--chart-tooltip-bg)',
+    border: '1px solid var(--chart-tooltip-border-cyan)',
+    boxShadow: 'var(--chart-tooltip-shadow)',
+    fontSize: '12px',
+    ...chartTooltipOuterStylePct(pxPct),
+  })
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
+const lineChartPointerOptions = {
+  interaction: { mode: 'index' as const, intersect: false as const },
+  hover: { mode: 'index' as const, intersect: false as const },
+}
+
+const lineChartTooltipPlugin = {
+  mode: 'index' as const,
+  intersect: false,
+  enabled: false,
+  external: externalLineTooltipLikeTemperature,
 }
 
 function useChart(config: ChartConfiguration) {
@@ -225,10 +344,13 @@ function useChart(config: ChartConfiguration) {
 
   useEffect(() => {
     if (!ref.current) return
+    const parent = ref.current.parentElement
     if (chartRef.current) chartRef.current.destroy()
     chartRef.current = new Chart(ref.current, config)
     return () => {
       if (chartRef.current) chartRef.current.destroy()
+      chartRef.current = null
+      parent?.querySelector(`.${LINE_CHART_TOOLTIP_CLASS}`)?.remove()
     }
   }, [config])
 
@@ -270,12 +392,12 @@ function MetricChart({
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
+        ...lineChartPointerOptions,
+        plugins: { legend: { display: false }, tooltip: lineChartTooltipPlugin },
         scales: {
           x: { ticks: { maxRotation: 45, minRotation: 20, color: '#cbd5e1' } },
           y: { ticks: { color: '#cbd5e1' } },
         },
-        ...sharedLineInteraction(),
         ...barOnClickOptions(onCategoryClick),
       },
     }),
@@ -285,7 +407,7 @@ function MetricChart({
   return (
     <div style={{ ...chartCard, cursor: onCategoryClick ? 'pointer' : undefined }}>
       <h3 style={{ margin: '0 0 8px 0', fontSize: 14 }}>{titulo}</h3>
-      <div style={{ height: 230 }}>
+      <div style={{ height: 230, position: 'relative' }}>
         <canvas ref={canvasRef} />
       </div>
     </div>
@@ -351,18 +473,19 @@ function ComboPedidosChart({
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        ...lineChartPointerOptions,
         plugins: {
           legend: {
             display: true,
             position: 'top',
             labels: { color: '#cbd5e1', boxWidth: 14, font: { size: 11 } },
           },
+          tooltip: lineChartTooltipPlugin,
         },
         scales: {
           x: { ticks: { maxRotation: 45, minRotation: 20, color: '#cbd5e1' } },
           y: { ticks: { color: '#cbd5e1' } },
         },
-        ...sharedLineInteraction(),
         ...barOnClickOptions(onCategoryClick),
       },
     }),
@@ -374,7 +497,7 @@ function ComboPedidosChart({
       <h3 style={{ margin: '0 0 8px 0', fontSize: 14 }}>
         Pedido Méd. / Máx. / Média 5 dias (linhas)
       </h3>
-      <div style={{ height: 230 }}>
+      <div style={{ height: 230, position: 'relative' }}>
         <canvas ref={canvasRef} />
       </div>
     </div>
@@ -440,18 +563,19 @@ function ComboPosicoesChart({
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        ...lineChartPointerOptions,
         plugins: {
           legend: {
             display: true,
             position: 'top',
             labels: { color: '#cbd5e1', boxWidth: 12, font: { size: 10 } },
           },
+          tooltip: lineChartTooltipPlugin,
         },
         scales: {
           x: { ticks: { maxRotation: 45, minRotation: 20, color: '#cbd5e1' } },
           y: { ticks: { color: '#cbd5e1' } },
         },
-        ...sharedLineInteraction(),
         ...barOnClickOptions(onCategoryClick),
       },
     }),
@@ -461,7 +585,7 @@ function ComboPosicoesChart({
   return (
     <div style={{ ...chartCard, cursor: onCategoryClick ? 'pointer' : undefined }}>
       <h3 style={{ margin: '0 0 8px 0', fontSize: 14 }}>Comparativo de posições (linhas)</h3>
-      <div style={{ height: 230 }}>
+      <div style={{ height: 230, position: 'relative' }}>
         <canvas ref={canvasRef} />
       </div>
     </div>
@@ -527,18 +651,19 @@ function ComboEstoqueIdealChart({
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        ...lineChartPointerOptions,
         plugins: {
           legend: {
             display: true,
             position: 'top',
             labels: { color: '#cbd5e1', boxWidth: 12, font: { size: 10 } },
           },
+          tooltip: lineChartTooltipPlugin,
         },
         scales: {
           x: { ticks: { maxRotation: 45, minRotation: 20, color: '#cbd5e1' } },
           y: { ticks: { color: '#cbd5e1' } },
         },
-        ...sharedLineInteraction(),
         ...barOnClickOptions(onCategoryClick),
       },
     }),
@@ -548,7 +673,7 @@ function ComboEstoqueIdealChart({
   return (
     <div style={{ ...chartCard, cursor: onCategoryClick ? 'pointer' : undefined }}>
       <h3 style={{ margin: '0 0 8px 0', fontSize: 14 }}>Comparativo de estoque ideal (linhas)</h3>
-      <div style={{ height: 230 }}>
+      <div style={{ height: 230, position: 'relative' }}>
         <canvas ref={canvasRef} />
       </div>
     </div>
@@ -627,18 +752,19 @@ function ComboDiasEstoqueChart({
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        ...lineChartPointerOptions,
         plugins: {
           legend: {
             display: true,
             position: 'top',
             labels: { color: '#cbd5e1', boxWidth: 12, font: { size: 10 } },
           },
+          tooltip: lineChartTooltipPlugin,
         },
         scales: {
           x: { ticks: { maxRotation: 45, minRotation: 20, color: '#cbd5e1' } },
           y: { ticks: { color: '#cbd5e1' } },
         },
-        ...sharedLineInteraction(),
         ...barOnClickOptions(onCategoryClick),
       },
     }),
@@ -651,7 +777,7 @@ function ComboDiasEstoqueChart({
       <p style={{ margin: '0 0 6px 0', fontSize: 11, color: '#94a3b8' }}>
         Dias estoque atual: estoque atual ÷ média últ. 5 dias (cobertura em dias).
       </p>
-      <div style={{ height: 230 }}>
+      <div style={{ height: 230, position: 'relative' }}>
         <canvas ref={canvasRef} />
       </div>
     </div>
@@ -697,13 +823,10 @@ function CondicionalChart({
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        ...lineChartPointerOptions,
         plugins: {
           legend: { display: false },
-          tooltip: {
-            callbacks: {
-              label: (ctx) => ` ${ctx.parsed.y} item(ns)`,
-            },
-          },
+          tooltip: lineChartTooltipPlugin,
         },
         scales: {
           x: {
@@ -716,7 +839,6 @@ function CondicionalChart({
             grid: { color: 'rgba(148,163,184,0.12)' },
           },
         },
-        ...sharedLineInteraction(),
         ...doughnutOnClickOptions(onCondClick),
       },
     }),
@@ -726,7 +848,7 @@ function CondicionalChart({
   return (
     <div style={{ ...chartCard, cursor: onCondClick ? 'pointer' : undefined }}>
       <h3 style={{ margin: '0 0 8px 0', fontSize: 14 }}>{'Para condicional (linhas — SE V>=S / V>=T / V<T)'}</h3>
-      <div style={{ height: 230 }}>
+      <div style={{ height: 230, position: 'relative' }}>
         <canvas ref={canvasRef} />
       </div>
     </div>
@@ -773,16 +895,10 @@ function SemaforoLinhasChart({
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        ...lineChartPointerOptions,
         plugins: {
           legend: { display: false },
-          tooltip: {
-            callbacks: {
-              label: (ctx) => {
-                const n = ctx.parsed.y
-                return ` ${n} item(ns)`
-              },
-            },
-          },
+          tooltip: lineChartTooltipPlugin,
         },
         scales: {
           x: {
@@ -795,7 +911,6 @@ function SemaforoLinhasChart({
             grid: { color: 'rgba(148,163,184,0.12)' },
           },
         },
-        ...sharedLineInteraction(),
         ...doughnutOnClickOptions(onCondClick),
       },
     }),
@@ -805,7 +920,7 @@ function SemaforoLinhasChart({
   return (
     <div style={{ ...chartCard, cursor: onCondClick ? 'pointer' : undefined }}>
       <h3 style={{ margin: '0 0 8px 0', fontSize: 14 }}>Semaforo — quantidade por status (linhas)</h3>
-      <div style={{ height: 260 }}>
+      <div style={{ height: 260, position: 'relative' }}>
         <canvas ref={canvasRef} />
       </div>
     </div>
