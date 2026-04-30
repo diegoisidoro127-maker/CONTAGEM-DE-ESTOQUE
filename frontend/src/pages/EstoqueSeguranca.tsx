@@ -4,6 +4,13 @@ import { Chart, type ChartConfiguration } from 'chart.js/auto'
 
 const SHEET_ID = '1KBDdsl4GeQL97mAvJS_J7uf0a6M7LRr0fHtPZE_QFhU'
 const SHEET_GID = '1626679618'
+/** Um aviso automático por dia (após carregar os dados do dia). */
+const LS_AVISO_DIARIO_YMD = 'estoque-seguranca.aviso-amarelo-vermelho.ymd'
+
+function todayYmdLocal(): string {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
 
 const COLUNAS = [
   'Categoria',
@@ -94,6 +101,33 @@ function calcCond(row: DataRow | RowLista): CondClass {
   if (v >= t) return 'Amarelo'
   if (v < t) return 'Vermelho'
   return 'Analisar'
+}
+
+function itensAmareloOuVermelho(rows: RowLista[]): RowLista[] {
+  return rows.filter((r) => {
+    const c = calcCond(r)
+    return c === 'Amarelo' || c === 'Vermelho'
+  })
+}
+
+function IconBell() {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width={22}
+      height={22}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+      <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+    </svg>
+  )
 }
 
 function useChart(config: ChartConfiguration) {
@@ -404,6 +438,7 @@ export default function EstoqueSeguranca() {
   const [source, setSource] = useState('')
   const [filtroSemaforo, setFiltroSemaforo] = useState<'Todos' | CondClass>('Todos')
   const [page, setPage] = useState(1)
+  const [painelAlertasAberto, setPainelAlertasAberto] = useState(false)
 
   useEffect(() => {
     let alive = true
@@ -473,6 +508,37 @@ export default function EstoqueSeguranca() {
     }
     return rows.map((r) => r.Categoria || '(sem categoria)')
   }, [rows])
+
+  const alertasAmareloVermelho = useMemo(() => itensAmareloOuVermelho(rows), [rows])
+
+  /** Aviso automático único por dia, na primeira carga com dados após atualização da planilha. */
+  useEffect(() => {
+    if (loading || error || rows.length === 0) return
+    const lista = itensAmareloOuVermelho(rows)
+    if (lista.length === 0) return
+    const hoje = todayYmdLocal()
+    try {
+      if (localStorage.getItem(LS_AVISO_DIARIO_YMD) === hoje) return
+    } catch {
+      /* private mode / bloqueio */
+    }
+    setPainelAlertasAberto(true)
+    try {
+      localStorage.setItem(LS_AVISO_DIARIO_YMD, hoje)
+    } catch {
+      /* ignore */
+    }
+    if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+      const n = lista.length
+      new Notification('Estoque de segurança', {
+        body:
+          n === 1
+            ? '1 item em Amarelo ou Vermelho. Confira a lista no painel.'
+            : `${n} itens em Amarelo ou Vermelho. Confira a lista no painel.`,
+        tag: 'estoque-seguranca-diario',
+      })
+    }
+  }, [loading, error, rows])
   /** Colunas que ainda têm um gráfico de barra individual (demais estão nos comparativos 3-em-1). */
   const metricasGraficos = useMemo<Coluna[]>(() => ['Estoque Atual (29/04)'], [])
 
@@ -492,9 +558,115 @@ export default function EstoqueSeguranca() {
     setPage(1)
   }, [filtroSemaforo, rows.length])
 
+  const qtdAlertas = alertasAmareloVermelho.length
+
   return (
-    <section style={{ maxWidth: 1500, margin: '0 auto', padding: '0 12px 26px' }}>
-      <h2 style={{ textAlign: 'center', margin: '12px 0 14px' }}>Estoque de Seguranca</h2>
+    <section style={{ maxWidth: 1500, margin: '0 auto', padding: '0 12px 26px', position: 'relative' }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 14,
+          margin: '12px 0 14px',
+          flexWrap: 'wrap',
+        }}
+      >
+        <h2 style={{ margin: 0, textAlign: 'center' }}>Estoque de Seguranca</h2>
+        {!loading && !error ? (
+          <button
+            type="button"
+            aria-label={`Alertas de estoque: ${qtdAlertas} item(ns) em Amarelo ou Vermelho`}
+            onClick={() => setPainelAlertasAberto(true)}
+            style={btnSininho}
+          >
+            <IconBell />
+            {qtdAlertas > 0 ? (
+              <span style={badgeSininho}>{qtdAlertas > 99 ? '99+' : qtdAlertas}</span>
+            ) : null}
+          </button>
+        ) : null}
+      </div>
+
+      {painelAlertasAberto ? (
+        <div
+          style={modalOverlay}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="titulo-alertas-estoque"
+          onClick={() => setPainelAlertasAberto(false)}
+        >
+          <div
+            style={modalBox}
+            onClick={(e) => {
+              e.stopPropagation()
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 12 }}>
+              <div>
+                <h3 id="titulo-alertas-estoque" style={{ margin: '0 0 6px 0', fontSize: 17 }}>
+                  Itens em Amarelo ou Vermelho
+                </h3>
+                <p style={{ margin: 0, fontSize: 12, color: '#94a3b8', maxWidth: 520 }}>
+                  Aviso diário único: na primeira vez que os dados do dia são carregados, esta lista abre automaticamente se houver
+                  alertas. Use o sininho para ver de novo a qualquer momento.
+                </p>
+              </div>
+              <button type="button" style={modalFechar} onClick={() => setPainelAlertasAberto(false)} aria-label="Fechar">
+                ×
+              </button>
+            </div>
+            {qtdAlertas === 0 ? (
+              <p style={{ color: '#94a3b8', margin: 0 }}>Nenhum item em Amarelo ou Vermelho no momento.</p>
+            ) : (
+              <div style={{ maxHeight: 'min(60vh, 420px)', overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 8 }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                  <thead>
+                    <tr>
+                      <th style={{ ...th, position: 'sticky', top: 0, zIndex: 1 }}>SKU</th>
+                      <th style={{ ...th, position: 'sticky', top: 0, zIndex: 1, minWidth: 200 }}>DESCRIÇÃO</th>
+                      <th style={{ ...th, position: 'sticky', top: 0, zIndex: 1 }}>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {alertasAmareloVermelho.map((r, i) => {
+                      const st = calcCond(r)
+                      const cor =
+                        st === 'Amarelo'
+                          ? { bg: 'rgba(234, 179, 8, 0.2)', fg: '#eab308' }
+                          : { bg: 'rgba(239, 68, 68, 0.18)', fg: '#f87171' }
+                      return (
+                        <tr key={`${r.sku || r.Categoria}-${i}`} style={{ background: cor.bg }}>
+                          <td style={td}>{r.sku || '-'}</td>
+                          <td style={{ ...td, whiteSpace: 'normal', wordBreak: 'break-word' }}>{r.descricao || '-'}</td>
+                          <td style={{ ...td, fontWeight: 700, color: cor.fg }}>{st}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <div style={{ marginTop: 14, display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
+              <button type="button" style={pagerBtn} onClick={() => setPainelAlertasAberto(false)}>
+                Fechar
+              </button>
+              {typeof Notification !== 'undefined' && Notification.permission === 'default' ? (
+                <button
+                  type="button"
+                  style={{ ...pagerBtn, borderColor: '#2dd4bf', color: '#2dd4bf' }}
+                  onClick={() => {
+                    void Notification.requestPermission()
+                  }}
+                >
+                  Permitir notificação do navegador (opcional)
+                </button>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {loading ? <p style={{ color: '#94a3b8' }}>Carregando planilha...</p> : null}
       {error ? <div style={errorBox}>{error}</div> : null}
 
@@ -682,4 +854,74 @@ const td: CSSProperties = {
   padding: '8px 10px',
   borderBottom: '1px solid var(--border)',
   fontSize: 12,
+}
+
+const btnSininho: CSSProperties = {
+  position: 'relative',
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: 44,
+  height: 44,
+  padding: 0,
+  borderRadius: 10,
+  border: '1px solid var(--border)',
+  background: 'var(--code-bg)',
+  color: '#cbd5e1',
+  cursor: 'pointer',
+}
+
+const badgeSininho: CSSProperties = {
+  position: 'absolute',
+  top: -4,
+  right: -4,
+  minWidth: 20,
+  height: 20,
+  padding: '0 6px',
+  borderRadius: 999,
+  background: '#dc2626',
+  color: '#fff',
+  fontSize: 11,
+  fontWeight: 800,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  lineHeight: 1,
+  border: '2px solid var(--bg, #0f172a)',
+}
+
+const modalOverlay: CSSProperties = {
+  position: 'fixed',
+  inset: 0,
+  zIndex: 10000,
+  background: 'rgba(0,0,0,0.65)',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  padding: 16,
+}
+
+const modalBox: CSSProperties = {
+  width: '100%',
+  maxWidth: 560,
+  maxHeight: '90vh',
+  overflow: 'hidden',
+  background: 'var(--code-bg)',
+  border: '1px solid var(--border)',
+  borderRadius: 12,
+  padding: 18,
+  boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)',
+}
+
+const modalFechar: CSSProperties = {
+  flexShrink: 0,
+  width: 36,
+  height: 36,
+  border: 'none',
+  borderRadius: 8,
+  background: 'transparent',
+  color: '#94a3b8',
+  fontSize: 24,
+  lineHeight: 1,
+  cursor: 'pointer',
 }
