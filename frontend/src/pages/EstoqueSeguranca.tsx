@@ -28,7 +28,7 @@ const COLUNAS = [
 
 type Coluna = (typeof COLUNAS)[number]
 type DataRow = Record<Coluna, string>
-type CondClass = 'Verde' | 'Amarelo' | 'Vermelho'
+type CondClass = 'Excedido' | 'Verde' | 'Amarelo' | 'Vermelho' | 'Analisar'
 
 function normalize(s: string): string {
   return String(s || '')
@@ -84,11 +84,14 @@ function isHtmlResponse(txt: string): boolean {
 
 function calcCond(row: DataRow): CondClass {
   const v = parseNumberBR(row['Estoque Atual (29/04)']) // V
+  const r = parseNumberBR(row['Estoque Ideal Mínimo']) // R
   const s = parseNumberBR(row['Estoque Ideal Máximo']) // S
   const t = parseNumberBR(row['Estoque Ideal Médio']) // T
+  if (v > r) return 'Excedido'
   if (v >= s) return 'Verde'
   if (v >= t) return 'Amarelo'
-  return 'Vermelho'
+  if (v < t) return 'Vermelho'
+  return 'Analisar'
 }
 
 function useChart(config: ChartConfiguration) {
@@ -140,7 +143,7 @@ function MetricChart({ titulo, labels, values }: { titulo: string; labels: strin
 
 function CondicionalChart({ rows }: { rows: DataRow[] }) {
   const counts = useMemo(() => {
-    const out: Record<CondClass, number> = { Verde: 0, Amarelo: 0, Vermelho: 0 }
+    const out: Record<CondClass, number> = { Excedido: 0, Verde: 0, Amarelo: 0, Vermelho: 0, Analisar: 0 }
     rows.forEach((r) => {
       out[calcCond(r)] += 1
     })
@@ -150,11 +153,11 @@ function CondicionalChart({ rows }: { rows: DataRow[] }) {
     () => ({
       type: 'doughnut',
       data: {
-        labels: ['Verde', 'Amarelo', 'Vermelho'],
+        labels: ['Excedido', 'Verde', 'Amarelo', 'Vermelho', 'Analisar'],
         datasets: [
           {
-            data: [counts.Verde, counts.Amarelo, counts.Vermelho],
-            backgroundColor: ['#22c55e', '#eab308', '#ef4444'],
+            data: [counts.Excedido, counts.Verde, counts.Amarelo, counts.Vermelho, counts.Analisar],
+            backgroundColor: ['#8b5cf6', '#22c55e', '#eab308', '#ef4444', '#64748b'],
             borderColor: '#111827',
             borderWidth: 1,
           },
@@ -180,6 +183,8 @@ export default function EstoqueSeguranca() {
   const [error, setError] = useState<string | null>(null)
   const [rows, setRows] = useState<DataRow[]>([])
   const [source, setSource] = useState('')
+  const [filtroSemaforo, setFiltroSemaforo] = useState<'Todos' | CondClass>('Todos')
+  const [page, setPage] = useState(1)
 
   useEffect(() => {
     let alive = true
@@ -250,6 +255,22 @@ export default function EstoqueSeguranca() {
     [],
   )
 
+  const rowsFiltradasSemaforo = useMemo(() => {
+    if (filtroSemaforo === 'Todos') return rows
+    return rows.filter((r) => calcCond(r) === filtroSemaforo)
+  }, [filtroSemaforo, rows])
+
+  const totalPages = useMemo(() => Math.max(1, Math.ceil(rowsFiltradasSemaforo.length / 15)), [rowsFiltradasSemaforo.length])
+  const rowsPagina = useMemo(() => {
+    const p = Math.min(page, totalPages)
+    const start = (p - 1) * 15
+    return rowsFiltradasSemaforo.slice(start, start + 15)
+  }, [page, rowsFiltradasSemaforo, totalPages])
+
+  useEffect(() => {
+    setPage(1)
+  }, [filtroSemaforo, rows.length])
+
   return (
     <section style={{ maxWidth: 1500, margin: '0 auto', padding: '0 12px 26px' }}>
       <h2 style={{ textAlign: 'center', margin: '12px 0 14px' }}>Estoque de Seguranca</h2>
@@ -267,6 +288,18 @@ export default function EstoqueSeguranca() {
           </div>
 
           <h3 style={{ margin: '10px 0 8px' }}>Lista de itens (formatação condicional)</h3>
+          <div style={filtrosSemaforoWrap}>
+            {(['Todos', 'Excedido', 'Verde', 'Amarelo', 'Vermelho', 'Analisar'] as const).map((st) => (
+              <button
+                key={st}
+                type="button"
+                onClick={() => setFiltroSemaforo(st)}
+                style={btnSemaforo(st, filtroSemaforo === st)}
+              >
+                {st}
+              </button>
+            ))}
+          </div>
           <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 8 }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1300 }}>
               <thead>
@@ -280,22 +313,57 @@ export default function EstoqueSeguranca() {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r, i) => {
+                {rowsPagina.map((r, i) => {
                   const cond = calcCond(r)
-                  const bg = cond === 'Verde' ? '#14532d' : cond === 'Amarelo' ? '#713f12' : '#7f1d1d'
+                  const bgStatus =
+                    cond === 'Excedido'
+                      ? '#3b0764'
+                      : cond === 'Verde'
+                        ? '#14532d'
+                        : cond === 'Amarelo'
+                          ? '#713f12'
+                          : cond === 'Vermelho'
+                            ? '#7f1d1d'
+                            : '#9d174d'
+                  const bgLinha =
+                    cond === 'Excedido'
+                      ? 'rgba(124, 58, 237, 0.14)'
+                      : cond === 'Verde'
+                        ? 'rgba(34, 197, 94, 0.14)'
+                        : cond === 'Amarelo'
+                          ? 'rgba(234, 179, 8, 0.14)'
+                          : cond === 'Vermelho'
+                            ? 'rgba(239, 68, 68, 0.14)'
+                            : 'rgba(236, 72, 153, 0.14)'
                   return (
-                    <tr key={`${r.Categoria}-${i}`}>
+                    <tr key={`${r.Categoria}-${i}`} style={{ background: bgLinha }}>
                       {COLUNAS.map((h) => (
                         <td key={`${i}-${h}`} style={td}>
                           {r[h] || '-'}
                         </td>
                       ))}
-                      <td style={{ ...td, fontWeight: 700, background: bg }}>{cond}</td>
+                      <td style={{ ...td, fontWeight: 700, background: bgStatus }}>{cond}</td>
                     </tr>
                   )
                 })}
               </tbody>
             </table>
+          </div>
+          <div style={paginacaoWrap}>
+            <button type="button" style={pagerBtn} disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
+              Anterior
+            </button>
+            <span style={{ fontSize: 13 }}>
+              Página {Math.min(page, totalPages)} de {totalPages} ({rowsFiltradasSemaforo.length} itens)
+            </span>
+            <button
+              type="button"
+              style={pagerBtn}
+              disabled={page >= totalPages}
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            >
+              Próxima
+            </button>
           </div>
         </>
       ) : null}
@@ -323,6 +391,51 @@ const chartCard: CSSProperties = {
   borderRadius: 8,
   padding: 10,
   background: 'var(--code-bg)',
+}
+
+const filtrosSemaforoWrap: CSSProperties = {
+  display: 'flex',
+  flexWrap: 'wrap',
+  gap: 8,
+  marginBottom: 10,
+}
+
+function btnSemaforo(status: 'Todos' | CondClass, active: boolean): CSSProperties {
+  const paleta: Record<string, string> = {
+    Todos: '#1f2937',
+    Excedido: '#7c3aed',
+    Verde: '#16a34a',
+    Amarelo: '#ca8a04',
+    Vermelho: '#dc2626',
+    Analisar: '#db2777',
+  }
+  return {
+    borderRadius: 999,
+    border: `1px solid ${paleta[status]}`,
+    background: active ? paleta[status] : `${paleta[status]}22`,
+    color: active ? '#fff' : paleta[status],
+    padding: '6px 12px',
+    cursor: 'pointer',
+    fontWeight: 700,
+    fontSize: 12,
+  }
+}
+
+const paginacaoWrap: CSSProperties = {
+  marginTop: 10,
+  display: 'flex',
+  gap: 10,
+  alignItems: 'center',
+  justifyContent: 'flex-end',
+}
+
+const pagerBtn: CSSProperties = {
+  borderRadius: 8,
+  border: '1px solid var(--border)',
+  background: 'var(--code-bg)',
+  color: 'var(--text-h)',
+  padding: '6px 10px',
+  cursor: 'pointer',
 }
 
 const th: CSSProperties = {
