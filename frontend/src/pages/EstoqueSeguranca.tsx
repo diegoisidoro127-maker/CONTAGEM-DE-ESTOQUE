@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Chart, type ChartConfiguration } from 'chart.js/auto'
 import * as XLSX from 'xlsx'
 
@@ -39,6 +39,21 @@ type DataRow = Record<Coluna, string>
 /** Linha da planilha com colunas extras para a lista (SKU / DESCRIÇÃO vêm do CSV, fora de COLUNAS). */
 type RowLista = DataRow & { sku: string; descricao: string }
 type CondClass = 'Excedido' | 'Verde' | 'Amarelo' | 'Vermelho' | 'Analisar'
+
+type GraficoFiltro = null | { kind: 'sku'; label: string } | { kind: 'cond'; cond: CondClass }
+
+const CONDICIONAL_LABELS: CondClass[] = ['Excedido', 'Verde', 'Amarelo', 'Vermelho', 'Analisar']
+
+/** Cores alinhadas aos botões semaforicos da lista. */
+const SEMAFORO_CORES_BARRA = ['#7c3aed', '#16a34a', '#ca8a04', '#dc2626', '#db2777'] as const
+const SEMAFORO_BORDA_BARRA = ['#6d28d9', '#15803d', '#a16207', '#b91c1c', '#be185d'] as const
+
+function labelForRow(r: RowLista, allRows: RowLista[]): string {
+  if (allRows.some((x) => x.sku.trim() !== '')) {
+    return r.sku.trim() || '(sem SKU)'
+  }
+  return r.Categoria || '(sem categoria)'
+}
 
 function normalize(s: string): string {
   return String(s || '')
@@ -104,6 +119,14 @@ function calcCond(row: DataRow | RowLista): CondClass {
   return 'Analisar'
 }
 
+/** Dias de cobertura do estoque atual (Estoque ÷ Média 5 dias), alinhado ao eixo dos demais “dias de estoque”. */
+function diasEstoqueAtualCobertura(r: RowLista): number {
+  const est = parseNumberBR(r['Estoque Atual (29/04)'])
+  const med = parseNumberBR(r['Média ult. 5 dias'])
+  if (med <= 0) return 0
+  return Math.round((est / med) * 100) / 100
+}
+
 function itensAmareloOuVermelho(rows: RowLista[]): RowLista[] {
   return rows.filter((r) => {
     const c = calcCond(r)
@@ -151,6 +174,40 @@ function IconBell() {
   )
 }
 
+function barOnClickOptions(onCategoryClick: ((label: string) => void) | undefined) {
+  if (!onCategoryClick) return {}
+  return {
+    onClick: (_event: unknown, elements: { index: number }[], chart: Chart) => {
+      if (!elements.length) return
+      const i = elements[0].index
+      const lbl = chart.data.labels?.[i]
+      if (lbl !== undefined && lbl !== null) onCategoryClick(String(lbl))
+    },
+    onHover: (_event: unknown, els: unknown[], chart: Chart) => {
+      const canvas = chart.canvas
+      if (canvas) canvas.style.cursor = els.length ? 'pointer' : 'default'
+    },
+  } as const
+}
+
+function doughnutOnClickOptions(onCondClick: ((cond: CondClass) => void) | undefined) {
+  if (!onCondClick) return {}
+  return {
+    onClick: (_event: unknown, elements: { index: number }[], chart: Chart) => {
+      if (!elements.length) return
+      const i = elements[0].index
+      const lbl = chart.data.labels?.[i]
+      if (lbl === undefined || lbl === null) return
+      const s = String(lbl)
+      if ((CONDICIONAL_LABELS as string[]).includes(s)) onCondClick(s as CondClass)
+    },
+    onHover: (_event: unknown, els: unknown[], chart: Chart) => {
+      const canvas = chart.canvas
+      if (canvas) canvas.style.cursor = els.length ? 'pointer' : 'default'
+    },
+  } as const
+}
+
 function useChart(config: ChartConfiguration) {
   const ref = useRef<HTMLCanvasElement | null>(null)
   const chartRef = useRef<Chart | null>(null)
@@ -167,7 +224,17 @@ function useChart(config: ChartConfiguration) {
   return ref
 }
 
-function MetricChart({ titulo, labels, values }: { titulo: string; labels: string[]; values: number[] }) {
+function MetricChart({
+  titulo,
+  labels,
+  values,
+  onCategoryClick,
+}: {
+  titulo: string
+  labels: string[]
+  values: number[]
+  onCategoryClick?: (label: string) => void
+}) {
   const config = useMemo<ChartConfiguration>(
     () => ({
       type: 'bar',
@@ -183,13 +250,14 @@ function MetricChart({ titulo, labels, values }: { titulo: string; labels: strin
           x: { ticks: { maxRotation: 45, minRotation: 20, color: '#cbd5e1' } },
           y: { ticks: { color: '#cbd5e1' } },
         },
+        ...barOnClickOptions(onCategoryClick),
       },
     }),
-    [labels, titulo, values],
+    [labels, titulo, values, onCategoryClick],
   )
   const canvasRef = useChart(config)
   return (
-    <div style={chartCard}>
+    <div style={{ ...chartCard, cursor: onCategoryClick ? 'pointer' : undefined }}>
       <h3 style={{ margin: '0 0 8px 0', fontSize: 14 }}>{titulo}</h3>
       <div style={{ height: 230 }}>
         <canvas ref={canvasRef} />
@@ -198,7 +266,15 @@ function MetricChart({ titulo, labels, values }: { titulo: string; labels: strin
   )
 }
 
-function ComboPedidosChart({ labels, rows }: { labels: string[]; rows: RowLista[] }) {
+function ComboPedidosChart({
+  labels,
+  rows,
+  onCategoryClick,
+}: {
+  labels: string[]
+  rows: RowLista[]
+  onCategoryClick?: (label: string) => void
+}) {
   const config = useMemo<ChartConfiguration>(
     () => ({
       type: 'bar',
@@ -242,13 +318,14 @@ function ComboPedidosChart({ labels, rows }: { labels: string[]; rows: RowLista[
           x: { ticks: { maxRotation: 45, minRotation: 20, color: '#cbd5e1' } },
           y: { ticks: { color: '#cbd5e1' } },
         },
+        ...barOnClickOptions(onCategoryClick),
       },
     }),
-    [labels, rows],
+    [labels, rows, onCategoryClick],
   )
   const canvasRef = useChart(config)
   return (
-    <div style={chartCard}>
+    <div style={{ ...chartCard, cursor: onCategoryClick ? 'pointer' : undefined }}>
       <h3 style={{ margin: '0 0 8px 0', fontSize: 14 }}>
         Pedido Méd. Abril · Pedido Máx. Abril · Média ult. 5 dias
       </h3>
@@ -259,7 +336,15 @@ function ComboPedidosChart({ labels, rows }: { labels: string[]; rows: RowLista[
   )
 }
 
-function ComboPosicoesChart({ labels, rows }: { labels: string[]; rows: RowLista[] }) {
+function ComboPosicoesChart({
+  labels,
+  rows,
+  onCategoryClick,
+}: {
+  labels: string[]
+  rows: RowLista[]
+  onCategoryClick?: (label: string) => void
+}) {
   const config = useMemo<ChartConfiguration>(
     () => ({
       type: 'bar',
@@ -296,13 +381,14 @@ function ComboPosicoesChart({ labels, rows }: { labels: string[]; rows: RowLista
           x: { ticks: { maxRotation: 45, minRotation: 20, color: '#cbd5e1' } },
           y: { ticks: { color: '#cbd5e1' } },
         },
+        ...barOnClickOptions(onCategoryClick),
       },
     }),
-    [labels, rows],
+    [labels, rows, onCategoryClick],
   )
   const canvasRef = useChart(config)
   return (
-    <div style={chartCard}>
+    <div style={{ ...chartCard, cursor: onCategoryClick ? 'pointer' : undefined }}>
       <h3 style={{ margin: '0 0 8px 0', fontSize: 14 }}>Comparativo de posições (3 métricas)</h3>
       <div style={{ height: 230 }}>
         <canvas ref={canvasRef} />
@@ -311,7 +397,15 @@ function ComboPosicoesChart({ labels, rows }: { labels: string[]; rows: RowLista
   )
 }
 
-function ComboEstoqueIdealChart({ labels, rows }: { labels: string[]; rows: RowLista[] }) {
+function ComboEstoqueIdealChart({
+  labels,
+  rows,
+  onCategoryClick,
+}: {
+  labels: string[]
+  rows: RowLista[]
+  onCategoryClick?: (label: string) => void
+}) {
   const config = useMemo<ChartConfiguration>(
     () => ({
       type: 'bar',
@@ -348,13 +442,14 @@ function ComboEstoqueIdealChart({ labels, rows }: { labels: string[]; rows: RowL
           x: { ticks: { maxRotation: 45, minRotation: 20, color: '#cbd5e1' } },
           y: { ticks: { color: '#cbd5e1' } },
         },
+        ...barOnClickOptions(onCategoryClick),
       },
     }),
-    [labels, rows],
+    [labels, rows, onCategoryClick],
   )
   const canvasRef = useChart(config)
   return (
-    <div style={chartCard}>
+    <div style={{ ...chartCard, cursor: onCategoryClick ? 'pointer' : undefined }}>
       <h3 style={{ margin: '0 0 8px 0', fontSize: 14 }}>Comparativo de estoque ideal (3 métricas)</h3>
       <div style={{ height: 230 }}>
         <canvas ref={canvasRef} />
@@ -363,7 +458,15 @@ function ComboEstoqueIdealChart({ labels, rows }: { labels: string[]; rows: RowL
   )
 }
 
-function ComboDiasEstoqueChart({ labels, rows }: { labels: string[]; rows: RowLista[] }) {
+function ComboDiasEstoqueChart({
+  labels,
+  rows,
+  onCategoryClick,
+}: {
+  labels: string[]
+  rows: RowLista[]
+  onCategoryClick?: (label: string) => void
+}) {
   const config = useMemo<ChartConfiguration>(
     () => ({
       type: 'bar',
@@ -391,23 +494,41 @@ function ComboDiasEstoqueChart({ labels, rows }: { labels: string[]; rows: RowLi
             borderColor: '#059669',
             borderWidth: 1,
           },
+          {
+            label: 'Dias estoque atual (Est. ÷ média 5d)',
+            data: rows.map((r) => diasEstoqueAtualCobertura(r)),
+            backgroundColor: '#c084fc',
+            borderColor: '#9333ea',
+            borderWidth: 1,
+          },
         ],
       },
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            display: true,
+            position: 'top',
+            labels: { color: '#cbd5e1', boxWidth: 12, font: { size: 10 } },
+          },
+        },
         scales: {
           x: { ticks: { maxRotation: 45, minRotation: 20, color: '#cbd5e1' } },
           y: { ticks: { color: '#cbd5e1' } },
         },
+        ...barOnClickOptions(onCategoryClick),
       },
     }),
-    [labels, rows],
+    [labels, rows, onCategoryClick],
   )
   const canvasRef = useChart(config)
   return (
-    <div style={chartCard}>
-      <h3 style={{ margin: '0 0 8px 0', fontSize: 14 }}>Comparativo de dias de estoque (3 métricas)</h3>
+    <div style={{ ...chartCard, cursor: onCategoryClick ? 'pointer' : undefined }}>
+      <h3 style={{ margin: '0 0 8px 0', fontSize: 14 }}>Comparativo de dias de estoque (4 métricas)</h3>
+      <p style={{ margin: '0 0 6px 0', fontSize: 11, color: '#94a3b8' }}>
+        Dias estoque atual: estoque atual ÷ média últ. 5 dias (cobertura em dias).
+      </p>
       <div style={{ height: 230 }}>
         <canvas ref={canvasRef} />
       </div>
@@ -415,7 +536,13 @@ function ComboDiasEstoqueChart({ labels, rows }: { labels: string[]; rows: RowLi
   )
 }
 
-function CondicionalChart({ rows }: { rows: RowLista[] }) {
+function CondicionalChart({
+  rows,
+  onCondClick,
+}: {
+  rows: RowLista[]
+  onCondClick?: (cond: CondClass) => void
+}) {
   const counts = useMemo(() => {
     const out: Record<CondClass, number> = { Excedido: 0, Verde: 0, Amarelo: 0, Vermelho: 0, Analisar: 0 }
     rows.forEach((r) => {
@@ -427,7 +554,7 @@ function CondicionalChart({ rows }: { rows: RowLista[] }) {
     () => ({
       type: 'doughnut',
       data: {
-        labels: ['Excedido', 'Verde', 'Amarelo', 'Vermelho', 'Analisar'],
+        labels: [...CONDICIONAL_LABELS],
         datasets: [
           {
             data: [counts.Excedido, counts.Verde, counts.Amarelo, counts.Vermelho, counts.Analisar],
@@ -437,15 +564,97 @@ function CondicionalChart({ rows }: { rows: RowLista[] }) {
           },
         ],
       },
-      options: { responsive: true, maintainAspectRatio: false },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        ...doughnutOnClickOptions(onCondClick),
+      },
     }),
-    [counts],
+    [counts, onCondClick],
   )
   const canvasRef = useChart(config)
   return (
-    <div style={chartCard}>
+    <div style={{ ...chartCard, cursor: onCondClick ? 'pointer' : undefined }}>
       <h3 style={{ margin: '0 0 8px 0', fontSize: 14 }}>{'Para condicional (SE V>=S / V>=T / V<T)'}</h3>
       <div style={{ height: 230 }}>
+        <canvas ref={canvasRef} />
+      </div>
+    </div>
+  )
+}
+
+/** Linhas por status (mesma regra condicional), pontos com cores semaforicas. */
+function SemaforoLinhasChart({
+  rows,
+  onCondClick,
+}: {
+  rows: RowLista[]
+  onCondClick?: (cond: CondClass) => void
+}) {
+  const counts = useMemo(() => {
+    const out: Record<CondClass, number> = { Excedido: 0, Verde: 0, Amarelo: 0, Vermelho: 0, Analisar: 0 }
+    rows.forEach((r) => {
+      out[calcCond(r)] += 1
+    })
+    return out
+  }, [rows])
+  const config = useMemo<ChartConfiguration>(
+    () => ({
+      type: 'line',
+      data: {
+        labels: [...CONDICIONAL_LABELS],
+        datasets: [
+          {
+            label: 'Quantidade de itens',
+            data: CONDICIONAL_LABELS.map((k) => counts[k]),
+            borderColor: '#94a3b8',
+            backgroundColor: 'rgba(148, 163, 184, 0.12)',
+            borderWidth: 2,
+            tension: 0.3,
+            fill: true,
+            pointBackgroundColor: [...SEMAFORO_CORES_BARRA],
+            pointBorderColor: [...SEMAFORO_BORDA_BARRA],
+            pointBorderWidth: 2,
+            pointRadius: 7,
+            pointHoverRadius: 9,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: (ctx) => {
+                const n = ctx.parsed.y
+                return ` ${n} item(ns)`
+              },
+            },
+          },
+        },
+        scales: {
+          x: {
+            ticks: { color: '#cbd5e1', maxRotation: 45, minRotation: 0 },
+            grid: { color: 'rgba(148,163,184,0.08)' },
+          },
+          y: {
+            beginAtZero: true,
+            ticks: { color: '#cbd5e1' },
+            grid: { color: 'rgba(148,163,184,0.12)' },
+          },
+        },
+        ...doughnutOnClickOptions(onCondClick),
+      },
+    }),
+    [counts, onCondClick],
+  )
+  const canvasRef = useChart(config)
+  return (
+    <div style={{ ...chartCard, cursor: onCondClick ? 'pointer' : undefined }}>
+      <h3 style={{ margin: '0 0 8px 0', fontSize: 14 }}>Semaforo — quantidade por status (linhas)</h3>
+      <div style={{ height: 260 }}>
         <canvas ref={canvasRef} />
       </div>
     </div>
@@ -461,6 +670,7 @@ export default function EstoqueSeguranca() {
   const [page, setPage] = useState(1)
   const [painelAlertasAberto, setPainelAlertasAberto] = useState(false)
   const [filtroPainelAlerta, setFiltroPainelAlerta] = useState<FiltroPainelAlerta>('todos')
+  const [graficoFiltro, setGraficoFiltro] = useState<GraficoFiltro>(null)
 
   useEffect(() => {
     let alive = true
@@ -524,12 +734,32 @@ export default function EstoqueSeguranca() {
     }
   }, [])
 
-  const labelsSku = useMemo(() => {
-    if (rows.some((r) => r.sku.trim() !== '')) {
-      return rows.map((r) => r.sku.trim() || '(sem SKU)')
+  const rowsParaGraficos = useMemo(() => {
+    if (!graficoFiltro) return rows
+    if (graficoFiltro.kind === 'sku') {
+      return rows.filter((r) => labelForRow(r, rows) === graficoFiltro.label)
     }
-    return rows.map((r) => r.Categoria || '(sem categoria)')
-  }, [rows])
+    return rows.filter((r) => calcCond(r) === graficoFiltro.cond)
+  }, [rows, graficoFiltro])
+
+  const labelsSkuGraficos = useMemo(
+    () => rowsParaGraficos.map((r) => labelForRow(r, rows)),
+    [rows, rowsParaGraficos],
+  )
+
+  const onGraficoCategoriaClick = useCallback((label: string) => {
+    setGraficoFiltro((prev) => {
+      if (prev?.kind === 'sku' && prev.label === label) return null
+      return { kind: 'sku', label }
+    })
+  }, [])
+
+  const onGraficoCondClick = useCallback((cond: CondClass) => {
+    setGraficoFiltro((prev) => {
+      if (prev?.kind === 'cond' && prev.cond === cond) return null
+      return { kind: 'cond', cond }
+    })
+  }, [])
 
   const alertasAmareloVermelho = useMemo(() => itensAmareloOuVermelho(rows), [rows])
 
@@ -737,15 +967,75 @@ export default function EstoqueSeguranca() {
       {!loading && !error ? (
         <>
           <p style={{ margin: '0 0 10px 0', fontSize: 12, color: '#94a3b8' }}>Origem: {source}</p>
+          {graficoFiltro ? (
+            <div
+              style={{
+                marginBottom: 12,
+                padding: '10px 14px',
+                borderRadius: 8,
+                border: '1px solid var(--border)',
+                background: 'rgba(45, 212, 191, 0.12)',
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: 10,
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}
+            >
+              <span style={{ fontSize: 13 }}>
+                {graficoFiltro.kind === 'sku' ? (
+                  <>
+                    Gráficos filtrados por <strong>SKU / eixo</strong>: «{graficoFiltro.label}»
+                  </>
+                ) : (
+                  <>
+                    Gráficos filtrados por <strong>status</strong>: «{graficoFiltro.cond}»
+                  </>
+                )}
+                <span style={{ color: '#94a3b8', fontWeight: 400 }}> — clique de novo no mesmo item para limpar.</span>
+              </span>
+              <button type="button" style={pagerBtn} onClick={() => setGraficoFiltro(null)}>
+                Mostrar todos os itens
+              </button>
+            </div>
+          ) : (
+            <p style={{ margin: '0 0 12px 0', fontSize: 12, color: '#94a3b8' }}>
+              Clique em uma <strong>barra</strong> (eixo SKU) ou em uma <strong>fatia</strong> do gráfico condicional para filtrar todos
+              os gráficos abaixo.
+            </p>
+          )}
           <div style={gridCharts}>
-            <ComboPedidosChart labels={labelsSku} rows={rows} />
-            <ComboEstoqueIdealChart labels={labelsSku} rows={rows} />
-            <ComboDiasEstoqueChart labels={labelsSku} rows={rows} />
-            <ComboPosicoesChart labels={labelsSku} rows={rows} />
+            <ComboPedidosChart
+              labels={labelsSkuGraficos}
+              rows={rowsParaGraficos}
+              onCategoryClick={onGraficoCategoriaClick}
+            />
+            <ComboEstoqueIdealChart
+              labels={labelsSkuGraficos}
+              rows={rowsParaGraficos}
+              onCategoryClick={onGraficoCategoriaClick}
+            />
+            <ComboDiasEstoqueChart
+              labels={labelsSkuGraficos}
+              rows={rowsParaGraficos}
+              onCategoryClick={onGraficoCategoriaClick}
+            />
+            <ComboPosicoesChart
+              labels={labelsSkuGraficos}
+              rows={rowsParaGraficos}
+              onCategoryClick={onGraficoCategoriaClick}
+            />
             {metricasGraficos.map((m) => (
-              <MetricChart key={m} titulo={m} labels={labelsSku} values={rows.map((r) => parseNumberBR(r[m]))} />
+              <MetricChart
+                key={m}
+                titulo={m}
+                labels={labelsSkuGraficos}
+                values={rowsParaGraficos.map((r) => parseNumberBR(r[m]))}
+                onCategoryClick={onGraficoCategoriaClick}
+              />
             ))}
-            <CondicionalChart rows={rows} />
+            <CondicionalChart rows={rowsParaGraficos} onCondClick={onGraficoCondClick} />
+            <SemaforoLinhasChart rows={rowsParaGraficos} onCondClick={onGraficoCondClick} />
           </div>
 
           <h3 style={{ margin: '10px 0 8px' }}>Lista de itens (formatação condicional)</h3>
