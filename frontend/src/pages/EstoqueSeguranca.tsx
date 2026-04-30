@@ -237,10 +237,24 @@ function MetricChart({
 }) {
   const config = useMemo<ChartConfiguration>(
     () => ({
-      type: 'bar',
+      type: 'line',
       data: {
         labels,
-        datasets: [{ label: titulo, data: values, backgroundColor: '#3b82f6', borderColor: '#2563eb', borderWidth: 1 }],
+        datasets: [
+          {
+            label: titulo,
+            data: values,
+            borderColor: '#3b82f6',
+            backgroundColor: 'rgba(59, 130, 246, 0.12)',
+            borderWidth: 2,
+            tension: 0.25,
+            fill: false,
+            pointBackgroundColor: '#3b82f6',
+            pointBorderColor: '#2563eb',
+            pointRadius: 3,
+            pointHoverRadius: 5,
+          },
+        ],
       },
       options: {
         responsive: true,
@@ -277,30 +291,48 @@ function ComboPedidosChart({
 }) {
   const config = useMemo<ChartConfiguration>(
     () => ({
-      type: 'bar',
+      type: 'line',
       data: {
         labels,
         datasets: [
           {
             label: 'Pedido Méd. Abril',
             data: rows.map((r) => parseNumberBR(r['Pedido Méd. Abril'])),
-            backgroundColor: '#22c55e',
             borderColor: '#16a34a',
-            borderWidth: 1,
+            backgroundColor: 'transparent',
+            borderWidth: 2,
+            tension: 0.25,
+            fill: false,
+            pointBackgroundColor: '#22c55e',
+            pointBorderColor: '#16a34a',
+            pointRadius: 2,
+            pointHoverRadius: 4,
           },
           {
             label: 'Pedido Máx. Abril',
             data: rows.map((r) => parseNumberBR(r['Pedido Máx. Abril'])),
-            backgroundColor: '#3b82f6',
             borderColor: '#2563eb',
-            borderWidth: 1,
+            backgroundColor: 'transparent',
+            borderWidth: 2,
+            tension: 0.25,
+            fill: false,
+            pointBackgroundColor: '#3b82f6',
+            pointBorderColor: '#2563eb',
+            pointRadius: 2,
+            pointHoverRadius: 4,
           },
           {
             label: 'Média ult. 5 dias',
             data: rows.map((r) => parseNumberBR(r['Média ult. 5 dias'])),
-            backgroundColor: '#f59e0b',
             borderColor: '#d97706',
-            borderWidth: 1,
+            backgroundColor: 'transparent',
+            borderWidth: 2,
+            tension: 0.25,
+            fill: false,
+            pointBackgroundColor: '#f59e0b',
+            pointBorderColor: '#d97706',
+            pointRadius: 2,
+            pointHoverRadius: 4,
           },
         ],
       },
@@ -327,7 +359,7 @@ function ComboPedidosChart({
   return (
     <div style={{ ...chartCard, cursor: onCategoryClick ? 'pointer' : undefined }}>
       <h3 style={{ margin: '0 0 8px 0', fontSize: 14 }}>
-        Pedido Méd. Abril · Pedido Máx. Abril · Média ult. 5 dias
+        Pedido Méd. / Máx. / Média 5 dias (linhas)
       </h3>
       <div style={{ height: 230 }}>
         <canvas ref={canvasRef} />
@@ -347,159 +379,48 @@ function ComboPosicoesChart({
 }) {
   const config = useMemo<ChartConfiguration>(
     () => ({
-      type: 'bar',
+      type: 'line',
       data: {
         labels,
         datasets: [
           {
             label: 'Posições Máximo',
             data: rows.map((r) => parseNumberBR(r['Posições Máximo'])),
-            backgroundColor: '#8b5cf6',
             borderColor: '#7c3aed',
-            borderWidth: 1,
+            backgroundColor: 'transparent',
+            borderWidth: 2,
+            tension: 0.25,
+            fill: false,
+            pointBackgroundColor: '#8b5cf6',
+            pointBorderColor: '#7c3aed',
+            pointRadius: 2,
+            pointHoverRadius: 4,
           },
           {
             label: 'Posições Média',
             data: rows.map((r) => parseNumberBR(r['Posições Média'])),
-            backgroundColor: '#3b82f6',
             borderColor: '#2563eb',
-            borderWidth: 1,
+            backgroundColor: 'transparent',
+            borderWidth: 2,
+            tension: 0.25,
+            fill: false,
+            pointBackgroundColor: '#3b82f6',
+            pointBorderColor: '#2563eb',
+            pointRadius: 2,
+            pointHoverRadius: 4,
           },
           {
             label: 'Posições Mínimo',
             data: rows.map((r) => parseNumberBR(r['Posições Mínimo'])),
-            backgroundColor: '#06b6d4',
             borderColor: '#0891b2',
-            borderWidth: 1,
-          },
-        ],
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        scales: {
-          x: { ticks: { maxRotation: 45, minRotation: 20, color: '#cbd5e1' } },
-          y: { ticks: { color: '#cbd5e1' } },
-        },
-        ...barOnClickOptions(onCategoryClick),
-      },
-    }),
-    [labels, rows, onCategoryClick],
-  )
-  const canvasRef = useChart(config)
-  return (
-    <div style={{ ...chartCard, cursor: onCategoryClick ? 'pointer' : undefined }}>
-      <h3 style={{ margin: '0 0 8px 0', fontSize: 14 }}>Comparativo de posições (3 métricas)</h3>
-      <div style={{ height: 230 }}>
-        <canvas ref={canvasRef} />
-      </div>
-    </div>
-  )
-}
-
-function ComboEstoqueIdealChart({
-  labels,
-  rows,
-  onCategoryClick,
-}: {
-  labels: string[]
-  rows: RowLista[]
-  onCategoryClick?: (label: string) => void
-}) {
-  const config = useMemo<ChartConfiguration>(
-    () => ({
-      type: 'bar',
-      data: {
-        labels,
-        datasets: [
-          {
-            label: 'Estoque Ideal Máximo',
-            data: rows.map((r) => parseNumberBR(r['Estoque Ideal Máximo'])),
-            backgroundColor: '#1d4ed8',
-            borderColor: '#1e40af',
-            borderWidth: 1,
-          },
-          {
-            label: 'Estoque Ideal Médio',
-            data: rows.map((r) => parseNumberBR(r['Estoque Ideal Médio'])),
-            backgroundColor: '#3b82f6',
-            borderColor: '#2563eb',
-            borderWidth: 1,
-          },
-          {
-            label: 'Estoque Ideal Mínimo',
-            data: rows.map((r) => parseNumberBR(r['Estoque Ideal Mínimo'])),
-            backgroundColor: '#93c5fd',
-            borderColor: '#60a5fa',
-            borderWidth: 1,
-          },
-        ],
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        scales: {
-          x: { ticks: { maxRotation: 45, minRotation: 20, color: '#cbd5e1' } },
-          y: { ticks: { color: '#cbd5e1' } },
-        },
-        ...barOnClickOptions(onCategoryClick),
-      },
-    }),
-    [labels, rows, onCategoryClick],
-  )
-  const canvasRef = useChart(config)
-  return (
-    <div style={{ ...chartCard, cursor: onCategoryClick ? 'pointer' : undefined }}>
-      <h3 style={{ margin: '0 0 8px 0', fontSize: 14 }}>Comparativo de estoque ideal (3 métricas)</h3>
-      <div style={{ height: 230 }}>
-        <canvas ref={canvasRef} />
-      </div>
-    </div>
-  )
-}
-
-function ComboDiasEstoqueChart({
-  labels,
-  rows,
-  onCategoryClick,
-}: {
-  labels: string[]
-  rows: RowLista[]
-  onCategoryClick?: (label: string) => void
-}) {
-  const config = useMemo<ChartConfiguration>(
-    () => ({
-      type: 'bar',
-      data: {
-        labels,
-        datasets: [
-          {
-            label: 'Dias de Estoque Máximo',
-            data: rows.map((r) => parseNumberBR(r['Dias de Estoque Máximo'])),
-            backgroundColor: '#ef4444',
-            borderColor: '#dc2626',
-            borderWidth: 1,
-          },
-          {
-            label: 'Dias de Estoque Médio',
-            data: rows.map((r) => parseNumberBR(r['Dias de Estoque Médio'])),
-            backgroundColor: '#f59e0b',
-            borderColor: '#d97706',
-            borderWidth: 1,
-          },
-          {
-            label: 'Dias de Estoque Mínimo',
-            data: rows.map((r) => parseNumberBR(r['Dias de Estoque Mínimo'])),
-            backgroundColor: '#10b981',
-            borderColor: '#059669',
-            borderWidth: 1,
-          },
-          {
-            label: 'Dias estoque atual (Est. ÷ média 5d)',
-            data: rows.map((r) => diasEstoqueAtualCobertura(r)),
-            backgroundColor: '#c084fc',
-            borderColor: '#9333ea',
-            borderWidth: 1,
+            backgroundColor: 'transparent',
+            borderWidth: 2,
+            tension: 0.25,
+            fill: false,
+            pointBackgroundColor: '#06b6d4',
+            pointBorderColor: '#0891b2',
+            pointRadius: 2,
+            pointHoverRadius: 4,
           },
         ],
       },
@@ -525,7 +446,192 @@ function ComboDiasEstoqueChart({
   const canvasRef = useChart(config)
   return (
     <div style={{ ...chartCard, cursor: onCategoryClick ? 'pointer' : undefined }}>
-      <h3 style={{ margin: '0 0 8px 0', fontSize: 14 }}>Comparativo de dias de estoque (4 métricas)</h3>
+      <h3 style={{ margin: '0 0 8px 0', fontSize: 14 }}>Comparativo de posições (linhas)</h3>
+      <div style={{ height: 230 }}>
+        <canvas ref={canvasRef} />
+      </div>
+    </div>
+  )
+}
+
+function ComboEstoqueIdealChart({
+  labels,
+  rows,
+  onCategoryClick,
+}: {
+  labels: string[]
+  rows: RowLista[]
+  onCategoryClick?: (label: string) => void
+}) {
+  const config = useMemo<ChartConfiguration>(
+    () => ({
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          {
+            label: 'Estoque Ideal Máximo',
+            data: rows.map((r) => parseNumberBR(r['Estoque Ideal Máximo'])),
+            borderColor: '#1e40af',
+            backgroundColor: 'transparent',
+            borderWidth: 2,
+            tension: 0.25,
+            fill: false,
+            pointBackgroundColor: '#1d4ed8',
+            pointBorderColor: '#1e40af',
+            pointRadius: 2,
+            pointHoverRadius: 4,
+          },
+          {
+            label: 'Estoque Ideal Médio',
+            data: rows.map((r) => parseNumberBR(r['Estoque Ideal Médio'])),
+            borderColor: '#2563eb',
+            backgroundColor: 'transparent',
+            borderWidth: 2,
+            tension: 0.25,
+            fill: false,
+            pointBackgroundColor: '#3b82f6',
+            pointBorderColor: '#2563eb',
+            pointRadius: 2,
+            pointHoverRadius: 4,
+          },
+          {
+            label: 'Estoque Ideal Mínimo',
+            data: rows.map((r) => parseNumberBR(r['Estoque Ideal Mínimo'])),
+            borderColor: '#60a5fa',
+            backgroundColor: 'transparent',
+            borderWidth: 2,
+            tension: 0.25,
+            fill: false,
+            pointBackgroundColor: '#93c5fd',
+            pointBorderColor: '#60a5fa',
+            pointRadius: 2,
+            pointHoverRadius: 4,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            display: true,
+            position: 'top',
+            labels: { color: '#cbd5e1', boxWidth: 12, font: { size: 10 } },
+          },
+        },
+        scales: {
+          x: { ticks: { maxRotation: 45, minRotation: 20, color: '#cbd5e1' } },
+          y: { ticks: { color: '#cbd5e1' } },
+        },
+        ...barOnClickOptions(onCategoryClick),
+      },
+    }),
+    [labels, rows, onCategoryClick],
+  )
+  const canvasRef = useChart(config)
+  return (
+    <div style={{ ...chartCard, cursor: onCategoryClick ? 'pointer' : undefined }}>
+      <h3 style={{ margin: '0 0 8px 0', fontSize: 14 }}>Comparativo de estoque ideal (linhas)</h3>
+      <div style={{ height: 230 }}>
+        <canvas ref={canvasRef} />
+      </div>
+    </div>
+  )
+}
+
+function ComboDiasEstoqueChart({
+  labels,
+  rows,
+  onCategoryClick,
+}: {
+  labels: string[]
+  rows: RowLista[]
+  onCategoryClick?: (label: string) => void
+}) {
+  const config = useMemo<ChartConfiguration>(
+    () => ({
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          {
+            label: 'Dias de Estoque Máximo',
+            data: rows.map((r) => parseNumberBR(r['Dias de Estoque Máximo'])),
+            borderColor: '#dc2626',
+            backgroundColor: 'transparent',
+            borderWidth: 2,
+            tension: 0.25,
+            fill: false,
+            pointBackgroundColor: '#ef4444',
+            pointBorderColor: '#dc2626',
+            pointRadius: 2,
+            pointHoverRadius: 4,
+          },
+          {
+            label: 'Dias de Estoque Médio',
+            data: rows.map((r) => parseNumberBR(r['Dias de Estoque Médio'])),
+            borderColor: '#d97706',
+            backgroundColor: 'transparent',
+            borderWidth: 2,
+            tension: 0.25,
+            fill: false,
+            pointBackgroundColor: '#f59e0b',
+            pointBorderColor: '#d97706',
+            pointRadius: 2,
+            pointHoverRadius: 4,
+          },
+          {
+            label: 'Dias de Estoque Mínimo',
+            data: rows.map((r) => parseNumberBR(r['Dias de Estoque Mínimo'])),
+            borderColor: '#059669',
+            backgroundColor: 'transparent',
+            borderWidth: 2,
+            tension: 0.25,
+            fill: false,
+            pointBackgroundColor: '#10b981',
+            pointBorderColor: '#059669',
+            pointRadius: 2,
+            pointHoverRadius: 4,
+          },
+          {
+            label: 'Dias estoque atual (Est. ÷ média 5d)',
+            data: rows.map((r) => diasEstoqueAtualCobertura(r)),
+            borderColor: '#9333ea',
+            backgroundColor: 'transparent',
+            borderWidth: 2,
+            tension: 0.25,
+            fill: false,
+            pointBackgroundColor: '#c084fc',
+            pointBorderColor: '#9333ea',
+            pointRadius: 2,
+            pointHoverRadius: 4,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            display: true,
+            position: 'top',
+            labels: { color: '#cbd5e1', boxWidth: 12, font: { size: 10 } },
+          },
+        },
+        scales: {
+          x: { ticks: { maxRotation: 45, minRotation: 20, color: '#cbd5e1' } },
+          y: { ticks: { color: '#cbd5e1' } },
+        },
+        ...barOnClickOptions(onCategoryClick),
+      },
+    }),
+    [labels, rows, onCategoryClick],
+  )
+  const canvasRef = useChart(config)
+  return (
+    <div style={{ ...chartCard, cursor: onCategoryClick ? 'pointer' : undefined }}>
+      <h3 style={{ margin: '0 0 8px 0', fontSize: 14 }}>Comparativo de dias de estoque (linhas, 4 métricas)</h3>
       <p style={{ margin: '0 0 6px 0', fontSize: 11, color: '#94a3b8' }}>
         Dias estoque atual: estoque atual ÷ média últ. 5 dias (cobertura em dias).
       </p>
@@ -552,21 +658,48 @@ function CondicionalChart({
   }, [rows])
   const config = useMemo<ChartConfiguration>(
     () => ({
-      type: 'doughnut',
+      type: 'line',
       data: {
         labels: [...CONDICIONAL_LABELS],
         datasets: [
           {
+            label: 'Quantidade por status',
             data: [counts.Excedido, counts.Verde, counts.Amarelo, counts.Vermelho, counts.Analisar],
-            backgroundColor: ['#8b5cf6', '#22c55e', '#eab308', '#ef4444', '#64748b'],
-            borderColor: '#111827',
-            borderWidth: 1,
+            borderColor: '#94a3b8',
+            backgroundColor: 'rgba(148, 163, 184, 0.1)',
+            borderWidth: 2,
+            tension: 0.3,
+            fill: false,
+            pointBackgroundColor: ['#8b5cf6', '#22c55e', '#eab308', '#ef4444', '#64748b'],
+            pointBorderColor: '#111827',
+            pointBorderWidth: 1,
+            pointRadius: 6,
+            pointHoverRadius: 8,
           },
         ],
       },
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: (ctx) => ` ${ctx.parsed.y} item(ns)`,
+            },
+          },
+        },
+        scales: {
+          x: {
+            ticks: { color: '#cbd5e1', maxRotation: 45, minRotation: 0 },
+            grid: { color: 'rgba(148,163,184,0.08)' },
+          },
+          y: {
+            beginAtZero: true,
+            ticks: { color: '#cbd5e1', precision: 0 },
+            grid: { color: 'rgba(148,163,184,0.12)' },
+          },
+        },
         ...doughnutOnClickOptions(onCondClick),
       },
     }),
@@ -575,7 +708,7 @@ function CondicionalChart({
   const canvasRef = useChart(config)
   return (
     <div style={{ ...chartCard, cursor: onCondClick ? 'pointer' : undefined }}>
-      <h3 style={{ margin: '0 0 8px 0', fontSize: 14 }}>{'Para condicional (SE V>=S / V>=T / V<T)'}</h3>
+      <h3 style={{ margin: '0 0 8px 0', fontSize: 14 }}>{'Para condicional (linhas — SE V>=S / V>=T / V<T)'}</h3>
       <div style={{ height: 230 }}>
         <canvas ref={canvasRef} />
       </div>
@@ -611,7 +744,7 @@ function SemaforoLinhasChart({
             backgroundColor: 'rgba(148, 163, 184, 0.12)',
             borderWidth: 2,
             tension: 0.3,
-            fill: true,
+            fill: false,
             pointBackgroundColor: [...SEMAFORO_CORES_BARRA],
             pointBorderColor: [...SEMAFORO_BORDA_BARRA],
             pointBorderWidth: 2,
@@ -796,13 +929,21 @@ export default function EstoqueSeguranca() {
       })
     }
   }, [loading, error, rows])
-  /** Colunas que ainda têm um gráfico de barra individual (demais estão nos comparativos 3-em-1). */
+  /** Colunas que ainda têm um gráfico de linha individual (demais estão nos comparativos). */
   const metricasGraficos = useMemo<Coluna[]>(() => ['Estoque Atual (29/04)'], [])
 
+  const rowsTabelaBase = useMemo(() => {
+    if (!graficoFiltro) return rows
+    if (graficoFiltro.kind === 'sku') {
+      return rows.filter((r) => labelForRow(r, rows) === graficoFiltro.label)
+    }
+    return rows.filter((r) => calcCond(r) === graficoFiltro.cond)
+  }, [rows, graficoFiltro])
+
   const rowsFiltradasSemaforo = useMemo(() => {
-    if (filtroSemaforo === 'Todos') return rows
-    return rows.filter((r) => calcCond(r) === filtroSemaforo)
-  }, [filtroSemaforo, rows])
+    if (filtroSemaforo === 'Todos') return rowsTabelaBase
+    return rowsTabelaBase.filter((r) => calcCond(r) === filtroSemaforo)
+  }, [filtroSemaforo, rowsTabelaBase])
 
   const totalPages = useMemo(() => Math.max(1, Math.ceil(rowsFiltradasSemaforo.length / 15)), [rowsFiltradasSemaforo.length])
   const rowsPagina = useMemo(() => {
@@ -813,9 +954,10 @@ export default function EstoqueSeguranca() {
 
   useEffect(() => {
     setPage(1)
-  }, [filtroSemaforo, rows.length])
+  }, [filtroSemaforo, graficoFiltro, rows.length])
 
   const qtdAlertas = alertasAmareloVermelho.length
+  const temFiltroAtivo = graficoFiltro !== null || filtroSemaforo !== 'Todos'
 
   return (
     <section style={{ maxWidth: 1500, margin: '0 auto', padding: '0 12px 26px', position: 'relative' }}>
@@ -831,17 +973,35 @@ export default function EstoqueSeguranca() {
       >
         <h2 style={{ margin: 0, textAlign: 'center' }}>Estoque de Seguranca</h2>
         {!loading && !error ? (
-          <button
-            type="button"
-            aria-label={`Alertas de estoque: ${qtdAlertas} item(ns) em Amarelo ou Vermelho`}
-            onClick={() => setPainelAlertasAberto(true)}
-            style={btnSininho}
-          >
-            <IconBell />
-            {qtdAlertas > 0 ? (
-              <span style={badgeSininho}>{qtdAlertas > 99 ? '99+' : qtdAlertas}</span>
-            ) : null}
-          </button>
+          <>
+            <button
+              type="button"
+              aria-label={`Alertas de estoque: ${qtdAlertas} item(ns) em Amarelo ou Vermelho`}
+              onClick={() => setPainelAlertasAberto(true)}
+              style={btnSininho}
+            >
+              <IconBell />
+              {qtdAlertas > 0 ? (
+                <span style={badgeSininho}>{qtdAlertas > 99 ? '99+' : qtdAlertas}</span>
+              ) : null}
+            </button>
+            <button
+              type="button"
+              disabled={!temFiltroAtivo}
+              title={
+                temFiltroAtivo
+                  ? 'Remove o filtro dos gráficos e restaura a lista para «Todos»'
+                  : 'Não há filtro ativo nos gráficos nem na lista'
+              }
+              onClick={() => {
+                setGraficoFiltro(null)
+                setFiltroSemaforo('Todos')
+              }}
+              style={btnLimparFiltros(temFiltroAtivo)}
+            >
+              Limpar filtros
+            </button>
+          </>
         ) : null}
       </div>
 
@@ -1000,8 +1160,8 @@ export default function EstoqueSeguranca() {
             </div>
           ) : (
             <p style={{ margin: '0 0 12px 0', fontSize: 12, color: '#94a3b8' }}>
-              Clique em uma <strong>barra</strong> (eixo SKU) ou em uma <strong>fatia</strong> do gráfico condicional para filtrar todos
-              os gráficos abaixo.
+              Clique em um <strong>ponto / linha</strong> no eixo SKU ou em um <strong>status</strong> no gráfico condicional para
+              filtrar todos os gráficos e a tabela.
             </p>
           )}
           <div style={gridCharts}>
@@ -1174,6 +1334,20 @@ function btnFiltroPainel(filtro: FiltroPainelAlerta, active: boolean): CSSProper
     cursor: 'pointer',
     fontWeight: 600,
     fontSize: 12,
+  }
+}
+
+function btnLimparFiltros(enabled: boolean): CSSProperties {
+  return {
+    borderRadius: 8,
+    border: '1px solid var(--border)',
+    background: enabled ? 'var(--code-bg)' : 'transparent',
+    color: enabled ? 'var(--text-h)' : '#64748b',
+    padding: '8px 14px',
+    cursor: enabled ? 'pointer' : 'not-allowed',
+    fontWeight: 600,
+    fontSize: 13,
+    opacity: enabled ? 1 : 0.55,
   }
 }
 
