@@ -1,8 +1,8 @@
 import type { CSSProperties } from 'react'
 import { useEffect, useMemo, useState } from 'react'
 
-const DEFAULT_CSV_URL =
-  'https://docs.google.com/spreadsheets/d/1KBDdsl4GeQL97mAvJS_J7uf0a6M7LRr0fHtPZE_QFhU/gviz/tq?tqx=out:csv&gid=1626679618'
+const SHEET_ID = '1KBDdsl4GeQL97mAvJS_J7uf0a6M7LRr0fHtPZE_QFhU'
+const SHEET_GID = '1626679618'
 
 type Row = Record<string, string>
 
@@ -81,12 +81,50 @@ function parseNumberBR(raw: string): number | null {
   return Number.isFinite(n) ? n : null
 }
 
+function buildCandidateCsvUrls(): string[] {
+  return [
+    `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&gid=${SHEET_GID}`,
+    `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${SHEET_GID}`,
+    `https://docs.google.com/spreadsheets/d/e/2PACX-1v/pub?gid=${SHEET_GID}&single=true&output=csv`,
+  ]
+}
+
+function looksLikeHtmlOrSignIn(text: string): boolean {
+  return /<html|<!doctype html|Google Sheets: Sign-in|Sign in/i.test(text)
+}
+
 export default function EstoqueSeguranca() {
-  const [csvUrl] = useState(DEFAULT_CSV_URL)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [source, setSource] = useState<string>('')
   const [headers, setHeaders] = useState<string[]>([])
   const [rows, setRows] = useState<Row[]>([])
+  const [csvManual, setCsvManual] = useState('')
+  const [useManual, setUseManual] = useState(false)
+
+  async function carregarPorUrls() {
+    const urls = buildCandidateCsvUrls()
+    let lastErr = 'Falha ao carregar a planilha.'
+    for (const url of urls) {
+      try {
+        const resp = await fetch(url, { cache: 'no-store', credentials: 'omit' })
+        const text = await resp.text()
+        if (!resp.ok) throw new Error(`Erro HTTP ${resp.status}`)
+        if (looksLikeHtmlOrSignIn(text)) {
+          throw new Error('Google bloqueou leitura pública (retornou tela de login).')
+        }
+        const parsed = parseCsv(text)
+        if (!parsed.headers.length) throw new Error('CSV sem cabeçalho.')
+        setHeaders(parsed.headers)
+        setRows(parsed.rows)
+        setSource(url)
+        return
+      } catch (e) {
+        lastErr = e instanceof Error ? e.message : 'Falha ao carregar a planilha.'
+      }
+    }
+    throw new Error(lastErr)
+  }
 
   useEffect(() => {
     let alive = true
@@ -94,22 +132,23 @@ export default function EstoqueSeguranca() {
       setLoading(true)
       setError(null)
       try {
-        const resp = await fetch(csvUrl, { cache: 'no-store' })
-        const text = await resp.text()
-        if (!resp.ok) throw new Error(`Erro HTTP ${resp.status}`)
-        // Google bloqueado (planilha privada) retorna tela de login em HTML.
-        if (/<html|Google Sheets: Sign-in|Sign in/i.test(text)) {
-          throw new Error(
-            'Não foi possível ler a planilha. Publique a aba "Resumo da Planilha" em CSV (ou ajuste permissões de leitura).',
-          )
-        }
-        const parsed = parseCsv(text)
         if (!alive) return
-        setHeaders(parsed.headers)
-        setRows(parsed.rows)
+        if (useManual) {
+          const parsed = parseCsv(csvManual)
+          if (!parsed.headers.length) throw new Error('CSV manual vazio ou inválido.')
+          setHeaders(parsed.headers)
+          setRows(parsed.rows)
+          setSource('CSV colado manualmente')
+        } else {
+          await carregarPorUrls()
+        }
       } catch (e) {
         if (!alive) return
-        const msg = e instanceof Error ? e.message : 'Falha ao carregar a planilha.'
+        const raw = e instanceof Error ? e.message : 'Falha ao carregar a planilha.'
+        const msg =
+          raw.toLowerCase().includes('failed to fetch') || raw.toLowerCase().includes('bloqueou')
+            ? 'Falha ao buscar no Google Sheets. Publique a aba "Resumo da Planilha" como CSV ou cole o CSV manualmente abaixo.'
+            : raw
         setError(msg)
       } finally {
         if (alive) setLoading(false)
@@ -119,7 +158,7 @@ export default function EstoqueSeguranca() {
     return () => {
       alive = false
     }
-  }, [csvUrl])
+  }, [csvManual, useManual])
 
   const numericSummaries = useMemo<NumericSummary[]>(() => {
     if (!headers.length || !rows.length) return []
@@ -166,6 +205,32 @@ export default function EstoqueSeguranca() {
   return (
     <section style={{ maxWidth: 1360, margin: '0 auto', padding: '0 12px 24px' }}>
       <h2 style={{ textAlign: 'center', margin: '10px 0 16px' }}>Estoque de Seguranca</h2>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+        <button type="button" onClick={() => setUseManual(false)} style={btnMode(useManual === false)}>
+          Google Sheets
+        </button>
+        <button type="button" onClick={() => setUseManual(true)} style={btnMode(useManual === true)}>
+          CSV manual
+        </button>
+      </div>
+      {useManual ? (
+        <div style={{ marginBottom: 12 }}>
+          <textarea
+            value={csvManual}
+            onChange={(e) => setCsvManual(e.target.value)}
+            placeholder="Cole aqui o CSV da aba Resumo da Planilha..."
+            style={{
+              width: '100%',
+              minHeight: 120,
+              borderRadius: 8,
+              border: '1px solid var(--border)',
+              background: 'var(--code-bg)',
+              color: 'var(--text-h)',
+              padding: 10,
+            }}
+          />
+        </div>
+      ) : null}
 
       {loading ? <p style={{ color: '#94a3b8' }}>Carregando resumo da planilha...</p> : null}
       {error ? (
@@ -180,7 +245,7 @@ export default function EstoqueSeguranca() {
             <Card title="Linhas" value={String(rows.length)} />
             <Card title="Colunas" value={String(headers.length)} />
             <Card title="Metricas num." value={String(numericSummaries.length)} />
-            <Card title="Origem" value="Resumo da Planilha" />
+            <Card title="Origem" value={source || 'Resumo da Planilha'} />
           </div>
 
           <h3 style={{ margin: '8px 0' }}>Indicadores numericos</h3>
@@ -263,6 +328,18 @@ export default function EstoqueSeguranca() {
       ) : null}
     </section>
   )
+}
+
+function btnMode(active: boolean): CSSProperties {
+  return {
+    padding: '8px 12px',
+    borderRadius: 8,
+    border: `1px solid ${active ? '#2dd4bf' : 'var(--border)'}`,
+    background: active ? '#12343a' : 'transparent',
+    color: active ? '#7cead9' : 'var(--text)',
+    cursor: 'pointer',
+    fontWeight: 600,
+  }
 }
 
 function Card({ title, value }: { title: string; value: string }) {
