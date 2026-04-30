@@ -1,6 +1,7 @@
 import type { CSSProperties } from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Chart, type ChartConfiguration } from 'chart.js/auto'
+import * as XLSX from 'xlsx'
 
 const SHEET_ID = '1KBDdsl4GeQL97mAvJS_J7uf0a6M7LRr0fHtPZE_QFhU'
 const SHEET_GID = '1626679618'
@@ -108,6 +109,26 @@ function itensAmareloOuVermelho(rows: RowLista[]): RowLista[] {
     const c = calcCond(r)
     return c === 'Amarelo' || c === 'Vermelho'
   })
+}
+
+type FiltroPainelAlerta = 'todos' | 'Amarelo' | 'Vermelho'
+
+function exportarAlertasParaExcel(lista: RowLista[], filtro: FiltroPainelAlerta) {
+  if (lista.length === 0) return
+  const suf =
+    filtro === 'todos' ? 'amarelo-e-vermelho' : filtro === 'Amarelo' ? 'amarelo' : 'vermelho'
+  const fileName = `alertas-estoque-seguranca-${todayYmdLocal()}-${suf}.xlsx`
+  const data = lista.map((r) => ({
+    SKU: r.sku || '',
+    DESCRIÇÃO: r.descricao || '',
+    'Estoque Ideal Máximo': r['Estoque Ideal Máximo'] ?? '',
+    'Estoque Atual (29/04)': r['Estoque Atual (29/04)'] ?? '',
+    Status: calcCond(r),
+  }))
+  const ws = XLSX.utils.json_to_sheet(data)
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, 'Alertas')
+  XLSX.writeFile(wb, fileName)
 }
 
 function IconBell() {
@@ -439,6 +460,7 @@ export default function EstoqueSeguranca() {
   const [filtroSemaforo, setFiltroSemaforo] = useState<'Todos' | CondClass>('Todos')
   const [page, setPage] = useState(1)
   const [painelAlertasAberto, setPainelAlertasAberto] = useState(false)
+  const [filtroPainelAlerta, setFiltroPainelAlerta] = useState<FiltroPainelAlerta>('todos')
 
   useEffect(() => {
     let alive = true
@@ -510,6 +532,11 @@ export default function EstoqueSeguranca() {
   }, [rows])
 
   const alertasAmareloVermelho = useMemo(() => itensAmareloOuVermelho(rows), [rows])
+
+  const alertasPainelLista = useMemo(() => {
+    if (filtroPainelAlerta === 'todos') return alertasAmareloVermelho
+    return alertasAmareloVermelho.filter((r) => calcCond(r) === filtroPainelAlerta)
+  }, [alertasAmareloVermelho, filtroPainelAlerta])
 
   /** Aviso automático único por dia, na primeira carga com dados após atualização da planilha. */
   useEffect(() => {
@@ -619,38 +646,75 @@ export default function EstoqueSeguranca() {
             {qtdAlertas === 0 ? (
               <p style={{ color: '#94a3b8', margin: 0 }}>Nenhum item em Amarelo ou Vermelho no momento.</p>
             ) : (
-              <div style={{ maxHeight: 'min(60vh, 420px)', overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 8 }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                  <thead>
-                    <tr>
-                      <th style={{ ...th, position: 'sticky', top: 0, zIndex: 1 }}>SKU</th>
-                      <th style={{ ...th, position: 'sticky', top: 0, zIndex: 1, minWidth: 200 }}>DESCRIÇÃO</th>
-                      <th style={{ ...th, position: 'sticky', top: 0, zIndex: 1 }}>Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {alertasAmareloVermelho.map((r, i) => {
-                      const st = calcCond(r)
-                      const cor =
-                        st === 'Amarelo'
-                          ? { bg: 'rgba(234, 179, 8, 0.2)', fg: '#eab308' }
-                          : { bg: 'rgba(239, 68, 68, 0.18)', fg: '#f87171' }
-                      return (
-                        <tr key={`${r.sku || r.Categoria}-${i}`} style={{ background: cor.bg }}>
-                          <td style={td}>{r.sku || '-'}</td>
-                          <td style={{ ...td, whiteSpace: 'normal', wordBreak: 'break-word' }}>{r.descricao || '-'}</td>
-                          <td style={{ ...td, fontWeight: 700, color: cor.fg }}>{st}</td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
+              <>
+                <div style={{ marginBottom: 10, display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+                  <span style={{ fontSize: 12, color: '#94a3b8' }}>Filtrar lista:</span>
+                  {(['todos', 'Amarelo', 'Vermelho'] as const).map((f) => {
+                    const label = f === 'todos' ? 'Amarelo e Vermelho' : f
+                    const active = filtroPainelAlerta === f
+                    return (
+                      <button
+                        key={f}
+                        type="button"
+                        onClick={() => setFiltroPainelAlerta(f)}
+                        style={btnFiltroPainel(f, active)}
+                      >
+                        {label}
+                      </button>
+                    )
+                  })}
+                </div>
+                <div style={{ maxHeight: 'min(60vh, 420px)', overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 8 }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                    <thead>
+                      <tr>
+                        <th style={{ ...th, position: 'sticky', top: 0, zIndex: 1 }}>SKU</th>
+                        <th style={{ ...th, position: 'sticky', top: 0, zIndex: 1, minWidth: 160 }}>DESCRIÇÃO</th>
+                        <th style={{ ...th, position: 'sticky', top: 0, zIndex: 1 }}>Estoque Ideal Máximo</th>
+                        <th style={{ ...th, position: 'sticky', top: 0, zIndex: 1 }}>Estoque Atual (29/04)</th>
+                        <th style={{ ...th, position: 'sticky', top: 0, zIndex: 1 }}>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {alertasPainelLista.map((r, i) => {
+                        const st = calcCond(r)
+                        const cor =
+                          st === 'Amarelo'
+                            ? { bg: 'rgba(234, 179, 8, 0.2)', fg: '#eab308' }
+                            : { bg: 'rgba(239, 68, 68, 0.18)', fg: '#f87171' }
+                        return (
+                          <tr key={`${r.sku || r.Categoria}-${i}`} style={{ background: cor.bg }}>
+                            <td style={td}>{r.sku || '-'}</td>
+                            <td style={{ ...td, whiteSpace: 'normal', wordBreak: 'break-word' }}>{r.descricao || '-'}</td>
+                            <td style={td}>{r['Estoque Ideal Máximo'] || '-'}</td>
+                            <td style={td}>{r['Estoque Atual (29/04)'] || '-'}</td>
+                            <td style={{ ...td, fontWeight: 700, color: cor.fg }}>{st}</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                {alertasPainelLista.length === 0 ? (
+                  <p style={{ color: '#94a3b8', margin: '8px 0 0', fontSize: 13 }}>Nenhum item neste filtro.</p>
+                ) : null}
+              </>
             )}
             <div style={{ marginTop: 14, display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
               <button type="button" style={pagerBtn} onClick={() => setPainelAlertasAberto(false)}>
                 Fechar
               </button>
+              {qtdAlertas > 0 ? (
+                <button
+                  type="button"
+                  style={{ ...pagerBtn, borderColor: '#16a34a', color: '#4ade80', fontWeight: 700 }}
+                  onClick={() => exportarAlertasParaExcel(alertasPainelLista, filtroPainelAlerta)}
+                  disabled={alertasPainelLista.length === 0}
+                >
+                  Exportar Excel ({alertasPainelLista.length} itens —{' '}
+                  {filtroPainelAlerta === 'todos' ? 'Amarelo e Vermelho' : filtroPainelAlerta})
+                </button>
+              ) : null}
               {typeof Notification !== 'undefined' && Notification.permission === 'default' ? (
                 <button
                   type="button"
@@ -783,10 +847,11 @@ const errorBox: CSSProperties = {
 }
 
 const gridCharts: CSSProperties = {
-  display: 'grid',
-  gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+  display: 'flex',
+  flexDirection: 'column',
   gap: 12,
   marginBottom: 16,
+  width: '100%',
 }
 
 const chartCard: CSSProperties = {
@@ -801,6 +866,25 @@ const filtrosSemaforoWrap: CSSProperties = {
   flexWrap: 'wrap',
   gap: 8,
   marginBottom: 10,
+}
+
+function btnFiltroPainel(filtro: FiltroPainelAlerta, active: boolean): CSSProperties {
+  const cores: Record<FiltroPainelAlerta, string> = {
+    todos: '#64748b',
+    Amarelo: '#ca8a04',
+    Vermelho: '#dc2626',
+  }
+  const c = cores[filtro]
+  return {
+    borderRadius: 8,
+    border: `1px solid ${c}`,
+    background: active ? `${c}33` : 'transparent',
+    color: active ? '#f1f5f9' : c,
+    padding: '6px 12px',
+    cursor: 'pointer',
+    fontWeight: 600,
+    fontSize: 12,
+  }
 }
 
 function btnSemaforo(status: 'Todos' | CondClass, active: boolean): CSSProperties {
@@ -903,7 +987,7 @@ const modalOverlay: CSSProperties = {
 
 const modalBox: CSSProperties = {
   width: '100%',
-  maxWidth: 560,
+  maxWidth: 920,
   maxHeight: '90vh',
   overflow: 'hidden',
   background: 'var(--code-bg)',
