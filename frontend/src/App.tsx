@@ -10,6 +10,7 @@ import ContagemEstoque from './pages/ContagemEstoque'
 import EstoqueSeguranca from './pages/EstoqueSeguranca'
 import LoginScreen from './pages/LoginScreen'
 import RelatorioContagem from './pages/RelatorioContagem'
+import { clearEstoqueSegurancaAvisoSessionKeys } from './lib/estoqueSegurancaAvisoSession'
 import { isSupabaseConfigured, supabase } from './lib/supabaseClient'
 
 type View = 'home' | 'contagem' | 'relatorio' | 'todas' | 'seguranca' | 'inventario' | 'baseDados' | 'ambiental'
@@ -100,8 +101,11 @@ export default function App() {
     })
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, s: Session | null) => {
+    } = supabase.auth.onAuthStateChange((event: AuthChangeEvent, s: Session | null) => {
       if (!alive) return
+      if (event === 'SIGNED_IN' || event === 'SIGNED_OUT') {
+        clearEstoqueSegurancaAvisoSessionKeys()
+      }
       setSession(s)
     })
     return () => {

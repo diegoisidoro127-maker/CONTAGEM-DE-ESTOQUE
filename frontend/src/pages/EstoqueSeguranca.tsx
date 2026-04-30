@@ -1,13 +1,30 @@
 import type { CSSProperties } from 'react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { ChartDataset, TooltipModel } from 'chart.js'
-import { Chart, type ChartConfiguration } from 'chart.js/auto'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import * as XLSX from 'xlsx'
+import { ComparativoLinhasSvgChart, type SvgChartSeries } from '../components/ComparativoLinhasSvgChart'
+import {
+  SESSION_KEY_ALERTAS_VISTOS,
+  SESSION_KEY_AUTO_AVIISO,
+} from '../lib/estoqueSegurancaAvisoSession'
 
 const SHEET_ID = '1KBDdsl4GeQL97mAvJS_J7uf0a6M7LRr0fHtPZE_QFhU'
 const SHEET_GID = '1626679618'
-/** Um aviso automático por dia (após carregar os dados do dia). */
-const LS_AVISO_DIARIO_YMD = 'estoque-seguranca.aviso-amarelo-vermelho.ymd'
+
+function readSessionFlag(key: string): boolean {
+  try {
+    return sessionStorage.getItem(key) === '1'
+  } catch {
+    return false
+  }
+}
+
+function writeSessionFlag(key: string) {
+  try {
+    sessionStorage.setItem(key, '1')
+  } catch {
+    /* private mode */
+  }
+}
 
 function todayYmdLocal(): string {
   const d = new Date()
@@ -175,186 +192,17 @@ function IconBell() {
   )
 }
 
-function barOnClickOptions(onCategoryClick: ((label: string) => void) | undefined) {
-  if (!onCategoryClick) return {}
-  return {
-    onClick: (_event: unknown, elements: { index: number }[], chart: Chart) => {
-      if (!elements.length) return
-      const i = elements[0].index
-      const lbl = chart.data.labels?.[i]
-      if (lbl !== undefined && lbl !== null) onCategoryClick(String(lbl))
-    },
-    onHover: (_event: unknown, els: unknown[], chart: Chart) => {
-      const canvas = chart.canvas
-      if (canvas) canvas.style.cursor = els.length ? 'pointer' : 'default'
-    },
-  } as const
-}
-
-function doughnutOnClickOptions(onCondClick: ((cond: CondClass) => void) | undefined) {
-  if (!onCondClick) return {}
-  return {
-    onClick: (_event: unknown, elements: { index: number }[], chart: Chart) => {
-      if (!elements.length) return
-      const i = elements[0].index
-      const lbl = chart.data.labels?.[i]
-      if (lbl === undefined || lbl === null) return
-      const s = String(lbl)
-      if ((CONDICIONAL_LABELS as string[]).includes(s)) onCondClick(s as CondClass)
-    },
-    onHover: (_event: unknown, els: unknown[], chart: Chart) => {
-      const canvas = chart.canvas
-      if (canvas) canvas.style.cursor = els.length ? 'pointer' : 'default'
-    },
-  } as const
-}
-
-const LINE_CHART_TOOLTIP_CLASS = 'estoque-seg-line-tooltip'
-
-/** Tooltip acima do gráfico (mesmo critério do comparativo de temperatura). */
-function chartTooltipOuterStylePct(pxPct: number): Pick<CSSProperties, 'left' | 'right' | 'transform'> {
-  if (pxPct >= 74) return { left: 'auto', right: 6, transform: 'none' }
-  if (pxPct <= 26) return { left: 6, transform: 'none' }
-  return { left: `${pxPct}%`, transform: 'translateX(-50%)' }
-}
-
 function formatLineTooltipNumber(y: number): string {
   if (Number.isFinite(y) && Math.abs(y - Math.round(y)) < 1e-9) return String(Math.round(y))
   return y.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
 }
 
-function resolveDatasetLineColor(ds: ChartDataset, dataIndex: number): string {
-  const c = ds.borderColor
-  if (typeof c === 'string') return c
-  if (Array.isArray(c)) {
-    const x = c[dataIndex]
-    return typeof x === 'string' ? x : '#94a3b8'
-  }
-  return '#94a3b8'
-}
-
-function lineTooltipValueLine(datasetLabel: string, y: number): string {
-  const n = formatLineTooltipNumber(y)
-  if (datasetLabel === 'Quantidade por status' || datasetLabel === 'Quantidade de itens') {
+function formatTooltipEstoque(v: number, seriesLabel: string): string {
+  const n = formatLineTooltipNumber(v)
+  if (seriesLabel === 'Quantidade por status' || seriesLabel === 'Quantidade de itens') {
     return `${n} item(ns)`
   }
   return n
-}
-
-/** Tooltip HTML no mesmo modelo do gráfico de temperatura (ContagemDiariaAmbiental). */
-function externalLineTooltipLikeTemperature(context: { chart: Chart; tooltip: TooltipModel<'line'> }) {
-  const { chart, tooltip } = context
-  const parent = chart.canvas.parentElement
-  if (!parent) return
-
-  let el = parent.querySelector<HTMLDivElement>(`.${LINE_CHART_TOOLTIP_CLASS}`)
-  if (!el) {
-    el = document.createElement('div')
-    el.className = LINE_CHART_TOOLTIP_CLASS
-    el.style.position = 'absolute'
-    el.style.pointerEvents = 'none'
-    el.style.zIndex = '10'
-    el.style.transition = 'opacity 0.12s ease'
-    parent.appendChild(el)
-  }
-
-  if (tooltip.opacity === 0 || !tooltip.dataPoints?.length) {
-    el.style.opacity = '0'
-    return
-  }
-
-  const idx = tooltip.dataPoints[0].dataIndex
-  const title =
-    chart.data.labels !== undefined && chart.data.labels[idx] !== undefined
-      ? String(chart.data.labels[idx])
-      : ''
-
-  while (el.firstChild) el.removeChild(el.firstChild)
-
-  const head = document.createElement('div')
-  head.style.fontWeight = '700'
-  head.style.color = 'var(--chart-tooltip-title)'
-  head.style.marginBottom = '4px'
-  head.textContent = title
-  el.appendChild(head)
-
-  const cap = document.createElement('div')
-  cap.style.fontSize = '11px'
-  cap.style.color = 'var(--chart-caption)'
-  cap.style.marginBottom = '8px'
-  cap.textContent = 'Todas as séries neste ponto'
-  el.appendChild(cap)
-
-  const grid = document.createElement('div')
-  grid.style.display = 'grid'
-  grid.style.gap = '6px'
-  for (const dp of tooltip.dataPoints) {
-    const ds = dp.dataset
-    const color = resolveDatasetLineColor(ds, dp.dataIndex)
-    const row = document.createElement('div')
-    row.style.color = color
-    const raw = dp.parsed.y
-    const y = typeof raw === 'number' ? raw : Number(raw)
-    const val = lineTooltipValueLine(String(ds.label ?? ''), Number.isFinite(y) ? y : 0)
-    row.innerHTML = `${escapeHtml(String(ds.label ?? ''))}: <strong>${escapeHtml(val)}</strong>`
-    grid.appendChild(row)
-  }
-  el.appendChild(grid)
-
-  const rect = chart.canvas.getBoundingClientRect()
-  const pxPct = rect.width > 0 ? (tooltip.caretX / rect.width) * 100 : 50
-  Object.assign(el.style, {
-    top: '6px',
-    opacity: '1',
-    minWidth: '220px',
-    maxWidth: '340px',
-    padding: '10px 14px',
-    borderRadius: '12px',
-    background: 'var(--chart-tooltip-bg)',
-    border: '1px solid var(--chart-tooltip-border-cyan)',
-    boxShadow: 'var(--chart-tooltip-shadow)',
-    fontSize: '12px',
-    ...chartTooltipOuterStylePct(pxPct),
-  })
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-}
-
-const lineChartPointerOptions = {
-  interaction: { mode: 'index' as const, intersect: false as const },
-  hover: { mode: 'index' as const, intersect: false as const },
-}
-
-const lineChartTooltipPlugin = {
-  mode: 'index' as const,
-  intersect: false,
-  enabled: false,
-  external: externalLineTooltipLikeTemperature,
-}
-
-function useChart(config: ChartConfiguration) {
-  const ref = useRef<HTMLCanvasElement | null>(null)
-  const chartRef = useRef<Chart | null>(null)
-
-  useEffect(() => {
-    if (!ref.current) return
-    const parent = ref.current.parentElement
-    if (chartRef.current) chartRef.current.destroy()
-    chartRef.current = new Chart(ref.current, config)
-    return () => {
-      if (chartRef.current) chartRef.current.destroy()
-      chartRef.current = null
-      parent?.querySelector(`.${LINE_CHART_TOOLTIP_CLASS}`)?.remove()
-    }
-  }, [config])
-
-  return ref
 }
 
 function MetricChart({
@@ -368,49 +216,20 @@ function MetricChart({
   values: number[]
   onCategoryClick?: (label: string) => void
 }) {
-  const config = useMemo<ChartConfiguration>(
-    () => ({
-      type: 'line',
-      data: {
-        labels,
-        datasets: [
-          {
-            label: titulo,
-            data: values,
-            borderColor: '#3b82f6',
-            backgroundColor: 'rgba(59, 130, 246, 0.12)',
-            borderWidth: 2,
-            tension: 0.25,
-            fill: false,
-            pointBackgroundColor: '#3b82f6',
-            pointBorderColor: '#2563eb',
-            pointRadius: 3,
-            pointHoverRadius: 5,
-          },
-        ],
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        ...lineChartPointerOptions,
-        plugins: { legend: { display: false }, tooltip: lineChartTooltipPlugin },
-        scales: {
-          x: { ticks: { maxRotation: 45, minRotation: 20, color: '#cbd5e1' } },
-          y: { ticks: { color: '#cbd5e1' } },
-        },
-        ...barOnClickOptions(onCategoryClick),
-      },
-    }),
-    [labels, titulo, values, onCategoryClick],
+  const series = useMemo<SvgChartSeries[]>(
+    () => [{ label: titulo, color: '#3b82f6', values }],
+    [titulo, values],
   )
-  const canvasRef = useChart(config)
   return (
-    <div style={{ ...chartCard, cursor: onCategoryClick ? 'pointer' : undefined }}>
-      <h3 style={{ margin: '0 0 8px 0', fontSize: 14 }}>{titulo}</h3>
-      <div style={{ height: 230, position: 'relative' }}>
-        <canvas ref={canvasRef} />
-      </div>
-    </div>
+    <ComparativoLinhasSvgChart
+      title={titulo}
+      xLabels={labels}
+      series={series}
+      hideLegend
+      yFormat={formatLineTooltipNumber}
+      formatTooltipValue={formatTooltipEstoque}
+      onXClick={onCategoryClick ? (label) => onCategoryClick(label) : undefined}
+    />
   )
 }
 
@@ -423,84 +242,23 @@ function ComboPedidosChart({
   rows: RowLista[]
   onCategoryClick?: (label: string) => void
 }) {
-  const config = useMemo<ChartConfiguration>(
-    () => ({
-      type: 'line',
-      data: {
-        labels,
-        datasets: [
-          {
-            label: 'Pedido Méd. Abril',
-            data: rows.map((r) => parseNumberBR(r['Pedido Méd. Abril'])),
-            borderColor: '#16a34a',
-            backgroundColor: 'transparent',
-            borderWidth: 2,
-            tension: 0.25,
-            fill: false,
-            pointBackgroundColor: '#22c55e',
-            pointBorderColor: '#16a34a',
-            pointRadius: 2,
-            pointHoverRadius: 4,
-          },
-          {
-            label: 'Pedido Máx. Abril',
-            data: rows.map((r) => parseNumberBR(r['Pedido Máx. Abril'])),
-            borderColor: '#2563eb',
-            backgroundColor: 'transparent',
-            borderWidth: 2,
-            tension: 0.25,
-            fill: false,
-            pointBackgroundColor: '#3b82f6',
-            pointBorderColor: '#2563eb',
-            pointRadius: 2,
-            pointHoverRadius: 4,
-          },
-          {
-            label: 'Média ult. 5 dias',
-            data: rows.map((r) => parseNumberBR(r['Média ult. 5 dias'])),
-            borderColor: '#d97706',
-            backgroundColor: 'transparent',
-            borderWidth: 2,
-            tension: 0.25,
-            fill: false,
-            pointBackgroundColor: '#f59e0b',
-            pointBorderColor: '#d97706',
-            pointRadius: 2,
-            pointHoverRadius: 4,
-          },
-        ],
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        ...lineChartPointerOptions,
-        plugins: {
-          legend: {
-            display: true,
-            position: 'top',
-            labels: { color: '#cbd5e1', boxWidth: 14, font: { size: 11 } },
-          },
-          tooltip: lineChartTooltipPlugin,
-        },
-        scales: {
-          x: { ticks: { maxRotation: 45, minRotation: 20, color: '#cbd5e1' } },
-          y: { ticks: { color: '#cbd5e1' } },
-        },
-        ...barOnClickOptions(onCategoryClick),
-      },
-    }),
-    [labels, rows, onCategoryClick],
+  const series = useMemo<SvgChartSeries[]>(
+    () => [
+      { label: 'Pedido Méd. Abril', color: '#16a34a', values: rows.map((r) => parseNumberBR(r['Pedido Méd. Abril'])) },
+      { label: 'Pedido Máx. Abril', color: '#2563eb', values: rows.map((r) => parseNumberBR(r['Pedido Máx. Abril'])) },
+      { label: 'Média ult. 5 dias', color: '#d97706', values: rows.map((r) => parseNumberBR(r['Média ult. 5 dias'])) },
+    ],
+    [rows],
   )
-  const canvasRef = useChart(config)
   return (
-    <div style={{ ...chartCard, cursor: onCategoryClick ? 'pointer' : undefined }}>
-      <h3 style={{ margin: '0 0 8px 0', fontSize: 14 }}>
-        Pedido Méd. / Máx. / Média 5 dias (linhas)
-      </h3>
-      <div style={{ height: 230, position: 'relative' }}>
-        <canvas ref={canvasRef} />
-      </div>
-    </div>
+    <ComparativoLinhasSvgChart
+      title="Pedido Méd. / Máx. / Média 5 dias (linhas)"
+      xLabels={labels}
+      series={series}
+      yFormat={formatLineTooltipNumber}
+      formatTooltipValue={formatTooltipEstoque}
+      onXClick={onCategoryClick ? (l) => onCategoryClick(l) : undefined}
+    />
   )
 }
 
@@ -513,82 +271,23 @@ function ComboPosicoesChart({
   rows: RowLista[]
   onCategoryClick?: (label: string) => void
 }) {
-  const config = useMemo<ChartConfiguration>(
-    () => ({
-      type: 'line',
-      data: {
-        labels,
-        datasets: [
-          {
-            label: 'Posições Máximo',
-            data: rows.map((r) => parseNumberBR(r['Posições Máximo'])),
-            borderColor: '#7c3aed',
-            backgroundColor: 'transparent',
-            borderWidth: 2,
-            tension: 0.25,
-            fill: false,
-            pointBackgroundColor: '#8b5cf6',
-            pointBorderColor: '#7c3aed',
-            pointRadius: 2,
-            pointHoverRadius: 4,
-          },
-          {
-            label: 'Posições Média',
-            data: rows.map((r) => parseNumberBR(r['Posições Média'])),
-            borderColor: '#2563eb',
-            backgroundColor: 'transparent',
-            borderWidth: 2,
-            tension: 0.25,
-            fill: false,
-            pointBackgroundColor: '#3b82f6',
-            pointBorderColor: '#2563eb',
-            pointRadius: 2,
-            pointHoverRadius: 4,
-          },
-          {
-            label: 'Posições Mínimo',
-            data: rows.map((r) => parseNumberBR(r['Posições Mínimo'])),
-            borderColor: '#0891b2',
-            backgroundColor: 'transparent',
-            borderWidth: 2,
-            tension: 0.25,
-            fill: false,
-            pointBackgroundColor: '#06b6d4',
-            pointBorderColor: '#0891b2',
-            pointRadius: 2,
-            pointHoverRadius: 4,
-          },
-        ],
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        ...lineChartPointerOptions,
-        plugins: {
-          legend: {
-            display: true,
-            position: 'top',
-            labels: { color: '#cbd5e1', boxWidth: 12, font: { size: 10 } },
-          },
-          tooltip: lineChartTooltipPlugin,
-        },
-        scales: {
-          x: { ticks: { maxRotation: 45, minRotation: 20, color: '#cbd5e1' } },
-          y: { ticks: { color: '#cbd5e1' } },
-        },
-        ...barOnClickOptions(onCategoryClick),
-      },
-    }),
-    [labels, rows, onCategoryClick],
+  const series = useMemo<SvgChartSeries[]>(
+    () => [
+      { label: 'Posições Máximo', color: '#7c3aed', values: rows.map((r) => parseNumberBR(r['Posições Máximo'])) },
+      { label: 'Posições Média', color: '#2563eb', values: rows.map((r) => parseNumberBR(r['Posições Média'])) },
+      { label: 'Posições Mínimo', color: '#0891b2', values: rows.map((r) => parseNumberBR(r['Posições Mínimo'])) },
+    ],
+    [rows],
   )
-  const canvasRef = useChart(config)
   return (
-    <div style={{ ...chartCard, cursor: onCategoryClick ? 'pointer' : undefined }}>
-      <h3 style={{ margin: '0 0 8px 0', fontSize: 14 }}>Comparativo de posições (linhas)</h3>
-      <div style={{ height: 230, position: 'relative' }}>
-        <canvas ref={canvasRef} />
-      </div>
-    </div>
+    <ComparativoLinhasSvgChart
+      title="Comparativo de posições (linhas)"
+      xLabels={labels}
+      series={series}
+      yFormat={formatLineTooltipNumber}
+      formatTooltipValue={formatTooltipEstoque}
+      onXClick={onCategoryClick ? (l) => onCategoryClick(l) : undefined}
+    />
   )
 }
 
@@ -601,82 +300,23 @@ function ComboEstoqueIdealChart({
   rows: RowLista[]
   onCategoryClick?: (label: string) => void
 }) {
-  const config = useMemo<ChartConfiguration>(
-    () => ({
-      type: 'line',
-      data: {
-        labels,
-        datasets: [
-          {
-            label: 'Estoque Ideal Máximo',
-            data: rows.map((r) => parseNumberBR(r['Estoque Ideal Máximo'])),
-            borderColor: '#1e40af',
-            backgroundColor: 'transparent',
-            borderWidth: 2,
-            tension: 0.25,
-            fill: false,
-            pointBackgroundColor: '#1d4ed8',
-            pointBorderColor: '#1e40af',
-            pointRadius: 2,
-            pointHoverRadius: 4,
-          },
-          {
-            label: 'Estoque Ideal Médio',
-            data: rows.map((r) => parseNumberBR(r['Estoque Ideal Médio'])),
-            borderColor: '#2563eb',
-            backgroundColor: 'transparent',
-            borderWidth: 2,
-            tension: 0.25,
-            fill: false,
-            pointBackgroundColor: '#3b82f6',
-            pointBorderColor: '#2563eb',
-            pointRadius: 2,
-            pointHoverRadius: 4,
-          },
-          {
-            label: 'Estoque Ideal Mínimo',
-            data: rows.map((r) => parseNumberBR(r['Estoque Ideal Mínimo'])),
-            borderColor: '#60a5fa',
-            backgroundColor: 'transparent',
-            borderWidth: 2,
-            tension: 0.25,
-            fill: false,
-            pointBackgroundColor: '#93c5fd',
-            pointBorderColor: '#60a5fa',
-            pointRadius: 2,
-            pointHoverRadius: 4,
-          },
-        ],
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        ...lineChartPointerOptions,
-        plugins: {
-          legend: {
-            display: true,
-            position: 'top',
-            labels: { color: '#cbd5e1', boxWidth: 12, font: { size: 10 } },
-          },
-          tooltip: lineChartTooltipPlugin,
-        },
-        scales: {
-          x: { ticks: { maxRotation: 45, minRotation: 20, color: '#cbd5e1' } },
-          y: { ticks: { color: '#cbd5e1' } },
-        },
-        ...barOnClickOptions(onCategoryClick),
-      },
-    }),
-    [labels, rows, onCategoryClick],
+  const series = useMemo<SvgChartSeries[]>(
+    () => [
+      { label: 'Estoque Ideal Máximo', color: '#1e40af', values: rows.map((r) => parseNumberBR(r['Estoque Ideal Máximo'])) },
+      { label: 'Estoque Ideal Médio', color: '#2563eb', values: rows.map((r) => parseNumberBR(r['Estoque Ideal Médio'])) },
+      { label: 'Estoque Ideal Mínimo', color: '#60a5fa', values: rows.map((r) => parseNumberBR(r['Estoque Ideal Mínimo'])) },
+    ],
+    [rows],
   )
-  const canvasRef = useChart(config)
   return (
-    <div style={{ ...chartCard, cursor: onCategoryClick ? 'pointer' : undefined }}>
-      <h3 style={{ margin: '0 0 8px 0', fontSize: 14 }}>Comparativo de estoque ideal (linhas)</h3>
-      <div style={{ height: 230, position: 'relative' }}>
-        <canvas ref={canvasRef} />
-      </div>
-    </div>
+    <ComparativoLinhasSvgChart
+      title="Comparativo de estoque ideal (linhas)"
+      xLabels={labels}
+      series={series}
+      yFormat={formatLineTooltipNumber}
+      formatTooltipValue={formatTooltipEstoque}
+      onXClick={onCategoryClick ? (l) => onCategoryClick(l) : undefined}
+    />
   )
 }
 
@@ -689,173 +329,33 @@ function ComboDiasEstoqueChart({
   rows: RowLista[]
   onCategoryClick?: (label: string) => void
 }) {
-  const config = useMemo<ChartConfiguration>(
-    () => ({
-      type: 'line',
-      data: {
-        labels,
-        datasets: [
-          {
-            label: 'Dias de Estoque Máximo',
-            data: rows.map((r) => parseNumberBR(r['Dias de Estoque Máximo'])),
-            borderColor: '#dc2626',
-            backgroundColor: 'transparent',
-            borderWidth: 2,
-            tension: 0.25,
-            fill: false,
-            pointBackgroundColor: '#ef4444',
-            pointBorderColor: '#dc2626',
-            pointRadius: 2,
-            pointHoverRadius: 4,
-          },
-          {
-            label: 'Dias de Estoque Médio',
-            data: rows.map((r) => parseNumberBR(r['Dias de Estoque Médio'])),
-            borderColor: '#d97706',
-            backgroundColor: 'transparent',
-            borderWidth: 2,
-            tension: 0.25,
-            fill: false,
-            pointBackgroundColor: '#f59e0b',
-            pointBorderColor: '#d97706',
-            pointRadius: 2,
-            pointHoverRadius: 4,
-          },
-          {
-            label: 'Dias de Estoque Mínimo',
-            data: rows.map((r) => parseNumberBR(r['Dias de Estoque Mínimo'])),
-            borderColor: '#059669',
-            backgroundColor: 'transparent',
-            borderWidth: 2,
-            tension: 0.25,
-            fill: false,
-            pointBackgroundColor: '#10b981',
-            pointBorderColor: '#059669',
-            pointRadius: 2,
-            pointHoverRadius: 4,
-          },
-          {
-            label: 'Dias estoque atual (Est. ÷ média 5d)',
-            data: rows.map((r) => diasEstoqueAtualCobertura(r)),
-            borderColor: '#9333ea',
-            backgroundColor: 'transparent',
-            borderWidth: 2,
-            tension: 0.25,
-            fill: false,
-            pointBackgroundColor: '#c084fc',
-            pointBorderColor: '#9333ea',
-            pointRadius: 2,
-            pointHoverRadius: 4,
-          },
-        ],
+  const series = useMemo<SvgChartSeries[]>(
+    () => [
+      { label: 'Dias de Estoque Máximo', color: '#dc2626', values: rows.map((r) => parseNumberBR(r['Dias de Estoque Máximo'])) },
+      { label: 'Dias de Estoque Médio', color: '#d97706', values: rows.map((r) => parseNumberBR(r['Dias de Estoque Médio'])) },
+      { label: 'Dias de Estoque Mínimo', color: '#059669', values: rows.map((r) => parseNumberBR(r['Dias de Estoque Mínimo'])) },
+      {
+        label: 'Dias estoque atual (Est. ÷ média 5d)',
+        color: '#9333ea',
+        values: rows.map((r) => diasEstoqueAtualCobertura(r)),
       },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        ...lineChartPointerOptions,
-        plugins: {
-          legend: {
-            display: true,
-            position: 'top',
-            labels: { color: '#cbd5e1', boxWidth: 12, font: { size: 10 } },
-          },
-          tooltip: lineChartTooltipPlugin,
-        },
-        scales: {
-          x: { ticks: { maxRotation: 45, minRotation: 20, color: '#cbd5e1' } },
-          y: { ticks: { color: '#cbd5e1' } },
-        },
-        ...barOnClickOptions(onCategoryClick),
-      },
-    }),
-    [labels, rows, onCategoryClick],
+    ],
+    [rows],
   )
-  const canvasRef = useChart(config)
   return (
-    <div style={{ ...chartCard, cursor: onCategoryClick ? 'pointer' : undefined }}>
-      <h3 style={{ margin: '0 0 8px 0', fontSize: 14 }}>Comparativo de dias de estoque (linhas, 4 métricas)</h3>
-      <p style={{ margin: '0 0 6px 0', fontSize: 11, color: '#94a3b8' }}>
-        Dias estoque atual: estoque atual ÷ média últ. 5 dias (cobertura em dias).
-      </p>
-      <div style={{ height: 230, position: 'relative' }}>
-        <canvas ref={canvasRef} />
-      </div>
-    </div>
+    <ComparativoLinhasSvgChart
+      title="Comparativo de dias de estoque (linhas, 4 métricas)"
+      subtitle="Dias estoque atual: estoque atual ÷ média últ. 5 dias (cobertura em dias)."
+      xLabels={labels}
+      series={series}
+      yFormat={formatLineTooltipNumber}
+      formatTooltipValue={formatTooltipEstoque}
+      onXClick={onCategoryClick ? (l) => onCategoryClick(l) : undefined}
+    />
   )
 }
 
-function CondicionalChart({
-  rows,
-  onCondClick,
-}: {
-  rows: RowLista[]
-  onCondClick?: (cond: CondClass) => void
-}) {
-  const counts = useMemo(() => {
-    const out: Record<CondClass, number> = { Excedido: 0, Verde: 0, Amarelo: 0, Vermelho: 0, Analisar: 0 }
-    rows.forEach((r) => {
-      out[calcCond(r)] += 1
-    })
-    return out
-  }, [rows])
-  const config = useMemo<ChartConfiguration>(
-    () => ({
-      type: 'line',
-      data: {
-        labels: [...CONDICIONAL_LABELS],
-        datasets: [
-          {
-            label: 'Quantidade por status',
-            data: [counts.Excedido, counts.Verde, counts.Amarelo, counts.Vermelho, counts.Analisar],
-            borderColor: '#94a3b8',
-            backgroundColor: 'rgba(148, 163, 184, 0.1)',
-            borderWidth: 2,
-            tension: 0.3,
-            fill: false,
-            pointBackgroundColor: ['#8b5cf6', '#22c55e', '#eab308', '#ef4444', '#64748b'],
-            pointBorderColor: '#111827',
-            pointBorderWidth: 1,
-            pointRadius: 6,
-            pointHoverRadius: 8,
-          },
-        ],
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        ...lineChartPointerOptions,
-        plugins: {
-          legend: { display: false },
-          tooltip: lineChartTooltipPlugin,
-        },
-        scales: {
-          x: {
-            ticks: { color: '#cbd5e1', maxRotation: 45, minRotation: 0 },
-            grid: { color: 'rgba(148,163,184,0.08)' },
-          },
-          y: {
-            beginAtZero: true,
-            ticks: { color: '#cbd5e1', precision: 0 },
-            grid: { color: 'rgba(148,163,184,0.12)' },
-          },
-        },
-        ...doughnutOnClickOptions(onCondClick),
-      },
-    }),
-    [counts, onCondClick],
-  )
-  const canvasRef = useChart(config)
-  return (
-    <div style={{ ...chartCard, cursor: onCondClick ? 'pointer' : undefined }}>
-      <h3 style={{ margin: '0 0 8px 0', fontSize: 14 }}>{'Para condicional (linhas — SE V>=S / V>=T / V<T)'}</h3>
-      <div style={{ height: 230, position: 'relative' }}>
-        <canvas ref={canvasRef} />
-      </div>
-    </div>
-  )
-}
-
-/** Linhas por status (mesma regra condicional), pontos com cores semaforicas. */
+/** Linhas por status (mesma regra condicional), pontos com cores semaforicas — SVG como temperatura. */
 function SemaforoLinhasChart({
   rows,
   onCondClick,
@@ -870,60 +370,34 @@ function SemaforoLinhasChart({
     })
     return out
   }, [rows])
-  const config = useMemo<ChartConfiguration>(
-    () => ({
-      type: 'line',
-      data: {
-        labels: [...CONDICIONAL_LABELS],
-        datasets: [
-          {
-            label: 'Quantidade de itens',
-            data: CONDICIONAL_LABELS.map((k) => counts[k]),
-            borderColor: '#94a3b8',
-            backgroundColor: 'rgba(148, 163, 184, 0.12)',
-            borderWidth: 2,
-            tension: 0.3,
-            fill: false,
-            pointBackgroundColor: [...SEMAFORO_CORES_BARRA],
-            pointBorderColor: [...SEMAFORO_BORDA_BARRA],
-            pointBorderWidth: 2,
-            pointRadius: 7,
-            pointHoverRadius: 9,
-          },
-        ],
+  const series = useMemo<SvgChartSeries[]>(
+    () => [
+      {
+        label: 'Quantidade de itens',
+        color: '#94a3b8',
+        values: CONDICIONAL_LABELS.map((k) => counts[k]),
       },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        ...lineChartPointerOptions,
-        plugins: {
-          legend: { display: false },
-          tooltip: lineChartTooltipPlugin,
-        },
-        scales: {
-          x: {
-            ticks: { color: '#cbd5e1', maxRotation: 45, minRotation: 0 },
-            grid: { color: 'rgba(148,163,184,0.08)' },
-          },
-          y: {
-            beginAtZero: true,
-            ticks: { color: '#cbd5e1' },
-            grid: { color: 'rgba(148,163,184,0.12)' },
-          },
-        },
-        ...doughnutOnClickOptions(onCondClick),
-      },
-    }),
-    [counts, onCondClick],
+    ],
+    [counts],
   )
-  const canvasRef = useChart(config)
+  const pointFillColors = useMemo(() => [...SEMAFORO_CORES_BARRA], [])
   return (
-    <div style={{ ...chartCard, cursor: onCondClick ? 'pointer' : undefined }}>
-      <h3 style={{ margin: '0 0 8px 0', fontSize: 14 }}>Semaforo — quantidade por status (linhas)</h3>
-      <div style={{ height: 260, position: 'relative' }}>
-        <canvas ref={canvasRef} />
-      </div>
-    </div>
+    <ComparativoLinhasSvgChart
+      title="Semaforo — quantidade por status (linhas)"
+      xLabels={[...CONDICIONAL_LABELS]}
+      series={series}
+      hideLegend
+      pointFillColors={pointFillColors}
+      yFormat={(v) => String(Math.round(v))}
+      formatTooltipValue={formatTooltipEstoque}
+      onXClick={
+        onCondClick
+          ? (label) => {
+              if ((CONDICIONAL_LABELS as string[]).includes(label)) onCondClick(label as CondClass)
+            }
+          : undefined
+      }
+    />
   )
 }
 
@@ -934,8 +408,24 @@ export default function EstoqueSeguranca() {
   const [source, setSource] = useState('')
   const [page, setPage] = useState(1)
   const [painelAlertasAberto, setPainelAlertasAberto] = useState(false)
+  const [painelAlertasVisto, setPainelAlertasVisto] = useState(() => readSessionFlag(SESSION_KEY_ALERTAS_VISTOS))
   const [filtroPainelAlerta, setFiltroPainelAlerta] = useState<FiltroPainelAlerta>('todos')
   const [filtroGlobal, setFiltroGlobal] = useState<GraficoFiltro>(null)
+
+  const marcarPainelAlertasVisto = useCallback(() => {
+    writeSessionFlag(SESSION_KEY_ALERTAS_VISTOS)
+    setPainelAlertasVisto(true)
+  }, [])
+
+  const fecharPainelAlertas = useCallback(() => {
+    setPainelAlertasAberto(false)
+    marcarPainelAlertasVisto()
+  }, [marcarPainelAlertasVisto])
+
+  const abrirPainelViaSininho = useCallback(() => {
+    marcarPainelAlertasVisto()
+    setPainelAlertasAberto(true)
+  }, [marcarPainelAlertasVisto])
 
   useEffect(() => {
     let alive = true
@@ -1041,23 +531,14 @@ export default function EstoqueSeguranca() {
     return alertasAmareloVermelho.filter((r) => calcCond(r) === filtroPainelAlerta)
   }, [alertasAmareloVermelho, filtroPainelAlerta])
 
-  /** Aviso automático único por dia, na primeira carga com dados após atualização da planilha. */
+  /** Aviso automático no máximo uma vez por sessão (após login); a cada novo login o ciclo recomeça. */
   useEffect(() => {
     if (loading || error || rows.length === 0) return
     const lista = itensAmareloOuVermelho(rows)
     if (lista.length === 0) return
-    const hoje = todayYmdLocal()
-    try {
-      if (localStorage.getItem(LS_AVISO_DIARIO_YMD) === hoje) return
-    } catch {
-      /* private mode / bloqueio */
-    }
+    if (readSessionFlag(SESSION_KEY_AUTO_AVIISO)) return
+    writeSessionFlag(SESSION_KEY_AUTO_AVIISO)
     setPainelAlertasAberto(true)
-    try {
-      localStorage.setItem(LS_AVISO_DIARIO_YMD, hoje)
-    } catch {
-      /* ignore */
-    }
     if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
       const n = lista.length
       new Notification('Estoque de segurança', {
@@ -1108,12 +589,14 @@ export default function EstoqueSeguranca() {
             <button
               type="button"
               aria-label={`Alertas de estoque: ${qtdAlertas} item(ns) em Amarelo ou Vermelho`}
-              onClick={() => setPainelAlertasAberto(true)}
+              onClick={abrirPainelViaSininho}
               style={btnSininho}
             >
               <IconBell />
               {qtdAlertas > 0 ? (
-                <span style={badgeSininho}>{qtdAlertas > 99 ? '99+' : qtdAlertas}</span>
+                <span style={painelAlertasVisto ? badgeSininhoLido : badgeSininho}>
+                  {qtdAlertas > 99 ? '99+' : qtdAlertas}
+                </span>
               ) : null}
             </button>
             <button
@@ -1141,7 +624,7 @@ export default function EstoqueSeguranca() {
           role="dialog"
           aria-modal="true"
           aria-labelledby="titulo-alertas-estoque"
-          onClick={() => setPainelAlertasAberto(false)}
+          onClick={fecharPainelAlertas}
         >
           <div
             style={modalBox}
@@ -1155,11 +638,11 @@ export default function EstoqueSeguranca() {
                   Itens em Amarelo ou Vermelho
                 </h3>
                 <p style={{ margin: 0, fontSize: 12, color: '#94a3b8', maxWidth: 520 }}>
-                  Aviso diário único: na primeira vez que os dados do dia são carregados, esta lista abre automaticamente se houver
-                  alertas. Use o sininho para ver de novo a qualquer momento.
+                  Na primeira carga após o login, esta lista abre sozinha se houver alertas. O sininho fica em destaque até você abrir
+                  ou fechar o painel; em um novo login, o aviso volta a aparecer como pendente.
                 </p>
               </div>
-              <button type="button" style={modalFechar} onClick={() => setPainelAlertasAberto(false)} aria-label="Fechar">
+              <button type="button" style={modalFechar} onClick={fecharPainelAlertas} aria-label="Fechar">
                 ×
               </button>
             </div>
@@ -1444,13 +927,6 @@ const gridCharts: CSSProperties = {
   width: '100%',
 }
 
-const chartCard: CSSProperties = {
-  border: '1px solid var(--border)',
-  borderRadius: 8,
-  padding: 10,
-  background: 'var(--code-bg)',
-}
-
 const filtrosSemaforoWrap: CSSProperties = {
   display: 'flex',
   flexWrap: 'wrap',
@@ -1587,6 +1063,13 @@ const badgeSininho: CSSProperties = {
   justifyContent: 'center',
   lineHeight: 1,
   border: '2px solid var(--bg, #0f172a)',
+}
+
+/** Contagem ainda visível, sem ênfase de “não visto” (após abrir o sininho ou fechar o painel nesta sessão). */
+const badgeSininhoLido: CSSProperties = {
+  ...badgeSininho,
+  background: '#64748b',
+  fontWeight: 700,
 }
 
 const modalOverlay: CSSProperties = {
