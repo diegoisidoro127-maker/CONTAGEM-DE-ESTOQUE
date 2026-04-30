@@ -208,6 +208,17 @@ function doughnutOnClickOptions(onCondClick: ((cond: CondClass) => void) | undef
   } as const
 }
 
+/** Tooltip compartilhado: mostra todas as séries do mesmo índice mesmo fora do ponto exato. */
+function sharedLineInteraction() {
+  return {
+    interaction: { mode: 'index', intersect: false as const },
+    plugins: {
+      tooltip: { mode: 'index' as const, intersect: false },
+    },
+    hover: { mode: 'index' as const, intersect: false },
+  } as const
+}
+
 function useChart(config: ChartConfiguration) {
   const ref = useRef<HTMLCanvasElement | null>(null)
   const chartRef = useRef<Chart | null>(null)
@@ -264,6 +275,7 @@ function MetricChart({
           x: { ticks: { maxRotation: 45, minRotation: 20, color: '#cbd5e1' } },
           y: { ticks: { color: '#cbd5e1' } },
         },
+        ...sharedLineInteraction(),
         ...barOnClickOptions(onCategoryClick),
       },
     }),
@@ -350,6 +362,7 @@ function ComboPedidosChart({
           x: { ticks: { maxRotation: 45, minRotation: 20, color: '#cbd5e1' } },
           y: { ticks: { color: '#cbd5e1' } },
         },
+        ...sharedLineInteraction(),
         ...barOnClickOptions(onCategoryClick),
       },
     }),
@@ -438,6 +451,7 @@ function ComboPosicoesChart({
           x: { ticks: { maxRotation: 45, minRotation: 20, color: '#cbd5e1' } },
           y: { ticks: { color: '#cbd5e1' } },
         },
+        ...sharedLineInteraction(),
         ...barOnClickOptions(onCategoryClick),
       },
     }),
@@ -524,6 +538,7 @@ function ComboEstoqueIdealChart({
           x: { ticks: { maxRotation: 45, minRotation: 20, color: '#cbd5e1' } },
           y: { ticks: { color: '#cbd5e1' } },
         },
+        ...sharedLineInteraction(),
         ...barOnClickOptions(onCategoryClick),
       },
     }),
@@ -623,6 +638,7 @@ function ComboDiasEstoqueChart({
           x: { ticks: { maxRotation: 45, minRotation: 20, color: '#cbd5e1' } },
           y: { ticks: { color: '#cbd5e1' } },
         },
+        ...sharedLineInteraction(),
         ...barOnClickOptions(onCategoryClick),
       },
     }),
@@ -700,6 +716,7 @@ function CondicionalChart({
             grid: { color: 'rgba(148,163,184,0.12)' },
           },
         },
+        ...sharedLineInteraction(),
         ...doughnutOnClickOptions(onCondClick),
       },
     }),
@@ -778,6 +795,7 @@ function SemaforoLinhasChart({
             grid: { color: 'rgba(148,163,184,0.12)' },
           },
         },
+        ...sharedLineInteraction(),
         ...doughnutOnClickOptions(onCondClick),
       },
     }),
