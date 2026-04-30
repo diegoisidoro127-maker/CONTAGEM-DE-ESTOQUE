@@ -89,7 +89,7 @@ function tsFromDataHoraContagem(iso: string | null | undefined): number | null {
   return Number.isFinite(t) ? t : null
 }
 
-/** Primeiro/último horário de lançamento no dia (mesmo grupo); sempre exibe intervalo início - fim. */
+/** Primeiro/último horário de lançamento no dia (mesmo grupo); intervalo só se forem diferentes. */
 function formatHistoricoHorarioInput(minTs: number | null, maxTs: number | null): string {
   if (minTs == null && maxTs == null) return '—'
   const fmt = (t: number) =>
@@ -97,7 +97,10 @@ function formatHistoricoHorarioInput(minTs: number | null, maxTs: number | null)
   const a = minTs ?? maxTs
   const b = maxTs ?? minTs
   if (a == null || b == null) return '—'
-  return `${fmt(a)} - ${fmt(b)}`
+  const sa = fmt(a)
+  const sb = fmt(b)
+  if (sa === sb) return sa
+  return `${sa} - ${sb}`
 }
 
 function isColumnMissingErrorRel(e: unknown): boolean {
@@ -1180,11 +1183,16 @@ export default function RelatorioContagem({
           const p = painelDia.get(it.conferenteId)
           if (!p) return it
           const minTs = tsFromDataHoraContagem(p.inicio)
-          const maxTs = tsFromDataHoraContagem(p.fim ?? p.inicio)
+          const fimRaw = String(p.fim ?? '').trim()
+          const maxTs = fimRaw !== '' ? tsFromDataHoraContagem(p.fim) : null
+          const painelTemIntervaloReal =
+            minTs != null && maxTs != null && Number.isFinite(maxTs) && maxTs > minTs
           return {
             ...it,
             totalItens: p.count,
-            horaInputLabel: formatHistoricoHorarioInput(minTs, maxTs),
+            horaInputLabel: painelTemIntervaloReal
+              ? formatHistoricoHorarioInput(minTs, maxTs)
+              : it.horaInputLabel,
           }
         })
       }

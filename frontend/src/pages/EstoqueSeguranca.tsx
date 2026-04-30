@@ -369,6 +369,7 @@ function SemaforoLinhasChart({
       xLabels={[...CONDICIONAL_LABELS]}
       series={series}
       hideLegend
+      straightSegments
       pointFillColors={pointFillColors}
       yFormat={(v) => String(Math.round(v))}
       formatTooltipValue={formatTooltipEstoque}

@@ -47,6 +47,18 @@ function smoothLinePath(points: { x: number; y: number }[]): string {
   return d
 }
 
+/** Segmentos retos — evita splines que “mergulham” abaixo de zero em contagens categóricas. */
+function straightLinePath(points: { x: number; y: number }[]): string {
+  const n = points.length
+  if (n === 0) return ''
+  if (n === 1) return `M ${points[0].x} ${points[0].y}`
+  let d = `M ${points[0].x} ${points[0].y}`
+  for (let i = 1; i < n; i++) {
+    d += ` L ${points[i].x.toFixed(2)} ${points[i].y.toFixed(2)}`
+  }
+  return d
+}
+
 function linearYTicks(safeMin: number, safeMax: number, yAt: (v: number) => number, count = 5) {
   const ticks: { v: number; y: number }[] = []
   for (let i = 0; i < count; i++) {
@@ -136,6 +148,7 @@ function buildModel(
   gradPrefix: string,
   xDense: boolean,
   layout: Layout = LAYOUT_CARD,
+  useStraightLine = false,
 ) {
   const nPts = xLabelsFull.length
   if (nPts === 0 || !series.length) return null
@@ -146,15 +159,19 @@ function buildModel(
   const allVals = series.flatMap((s) => s.values)
   const min = Math.min(...allVals)
   const max = Math.max(...allVals)
-  const safeMin = min === max ? min - 1 : min
-  const safeMax = min === max ? max + 1 : max
+  let safeMin = min === max ? min - 1 : min
+  let safeMax = min === max ? max + 1 : max
+  if (useStraightLine && min >= 0 && min !== max) {
+    safeMin = Math.min(safeMin, 0)
+  }
   const rng = safeMax - safeMin
   const xAt = (i: number) => padL + (nPts > 1 ? (innerW * i) / (nPts - 1) : innerW / 2)
   const yAt = (v: number) => padT + innerH - ((v - safeMin) / rng) * innerH
+  const linePath = useStraightLine ? straightLinePath : smoothLinePath
   const seriesPaths = series.map((s, si) => {
     const pts = s.values.map((v, i) => ({ x: xAt(i), y: yAt(v) }))
     return {
-      lineD: smoothLinePath(pts),
+      lineD: linePath(pts),
       color: s.color,
       label: s.label,
       gradId: `${gradPrefix}-${uid}-${si}`,
@@ -172,6 +189,8 @@ function buildModel(
       xIdx.push(nPts - 1)
       xIdx = [...new Set(xIdx)].sort((a, b) => a - b)
     }
+  } else if (nPts <= 8) {
+    xIdx = nPts <= 1 ? [0] : Array.from({ length: nPts }, (_, i) => i)
   } else {
     xIdx = nPts <= 1 ? [0] : nPts === 2 ? [0, 1] : [0, Math.floor((nPts - 1) / 3), Math.floor((2 * (nPts - 1)) / 3), nPts - 1]
   }
@@ -214,6 +233,8 @@ export type ComparativoLinhasSvgChartProps = {
   footerHint?: ReactNode
   onXClick?: (xLabel: string, index: number) => void
   emptyMessage?: string
+  /** Linhas em segmentos retos (contagens / categorias); evita curva abaixo do eixo zero. */
+  straightSegments?: boolean
 }
 
 export function ComparativoLinhasSvgChart({
@@ -229,6 +250,7 @@ export function ComparativoLinhasSvgChart({
   footerHint,
   onXClick,
   emptyMessage = 'Sem dados.',
+  straightSegments = false,
 }: ComparativoLinhasSvgChartProps) {
   const uid = useId().replace(/:/g, '')
   const [tip, setTip] = useState<{ idx: number; pxPct: number } | null>(null)
@@ -237,8 +259,8 @@ export function ComparativoLinhasSvgChart({
 
   const xDense = xLabels.length > 8
   const chart = useMemo(
-    () => buildModel(xLabels, series, uid, 'esg', xDense, LAYOUT_CARD),
-    [xLabels, series, uid, xDense],
+    () => buildModel(xLabels, series, uid, 'esg', xDense, LAYOUT_CARD, straightSegments),
+    [xLabels, series, uid, xDense, straightSegments],
   )
 
   const animKey = useMemo(() => `${xLabels.join('\0')}-${series.map((s) => s.values.join(',')).join('|')}`, [xLabels, series])

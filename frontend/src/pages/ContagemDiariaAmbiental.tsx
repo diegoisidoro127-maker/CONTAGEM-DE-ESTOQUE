@@ -499,6 +499,12 @@ function TinyLineChart<T extends { data_registro: string }>({
   const onChartHoverModal = useCallback(() => setHoverReplayModal((n) => n + 1), [])
 
   const capAxis = axisCaption ?? valueSuffix
+  const isTempChart = valueSuffix === '°C'
+  const gradTop = isTempChart ? 0.42 : 0.28
+  const gradMid = isTempChart ? 0.14 : 0.06
+  const lineShadowStyle: CSSProperties = isTempChart
+    ? { filter: `drop-shadow(0 0 16px ${color}bb) drop-shadow(0 6px 22px ${color}55)` }
+    : { filter: `drop-shadow(0 0 8px ${color}66)` }
   const fmt = (v: number) => v.toFixed(decimals)
   const lineAnimKey = useMemo(
     () => rows.map((r) => `${r.data_registro}-${String((r as { id?: string }).id ?? '')}`).join('|'),
@@ -652,8 +658,8 @@ function TinyLineChart<T extends { data_registro: string }>({
                   >
                     <defs>
                       <linearGradient id={gradIdModal} x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor={color} stopOpacity={0.28} />
-                        <stop offset="55%" stopColor={color} stopOpacity={0.06} />
+                        <stop offset="0%" stopColor={color} stopOpacity={gradTop} />
+                        <stop offset="55%" stopColor={color} stopOpacity={gradMid} />
                         <stop offset="100%" stopColor={color} stopOpacity={0} />
                       </linearGradient>
                     </defs>
@@ -703,10 +709,10 @@ function TinyLineChart<T extends { data_registro: string }>({
                       animKey={`${lineAnimKey}-m-${hoverReplayModal}`}
                       d={geomModal.lineD}
                       stroke={color}
-                      strokeWidth={3.2}
+                      strokeWidth={isTempChart ? 3.45 : 3.2}
                       strokeLinecap="round"
                       strokeLinejoin="round"
-                      style={{ filter: `drop-shadow(0 0 8px ${color}66)` }}
+                      style={lineShadowStyle}
                     />
                     {tip != null ? (
                       <circle
@@ -937,8 +943,8 @@ function TinyLineChart<T extends { data_registro: string }>({
             >
             <defs>
               <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={color} stopOpacity={0.28} />
-                <stop offset="55%" stopColor={color} stopOpacity={0.06} />
+                <stop offset="0%" stopColor={color} stopOpacity={gradTop} />
+                <stop offset="55%" stopColor={color} stopOpacity={gradMid} />
                 <stop offset="100%" stopColor={color} stopOpacity={0} />
               </linearGradient>
             </defs>
@@ -988,10 +994,10 @@ function TinyLineChart<T extends { data_registro: string }>({
               animKey={`${lineAnimKey}-c-${hoverReplayCard}`}
               d={geomCard.lineD}
               stroke={color}
-              strokeWidth={3}
+              strokeWidth={isTempChart ? 3.25 : 3}
               strokeLinecap="round"
               strokeLinejoin="round"
-              style={{ filter: `drop-shadow(0 0 8px ${color}66)` }}
+              style={lineShadowStyle}
             />
             {tip != null ? (
               <circle
@@ -1490,8 +1496,8 @@ function CombinedTempChart({ rows }: { rows: TempRow[] }) {
                 <defs>
                   {chartModal.seriesPaths.map((p) => (
                     <linearGradient key={p.gradId} id={p.gradId} x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor={p.color} stopOpacity={0.14} />
-                      <stop offset="55%" stopColor={p.color} stopOpacity={0.04} />
+                      <stop offset="0%" stopColor={p.color} stopOpacity={0.26} />
+                      <stop offset="55%" stopColor={p.color} stopOpacity={0.11} />
                       <stop offset="100%" stopColor={p.color} stopOpacity={0} />
                     </linearGradient>
                   ))}
@@ -1544,7 +1550,7 @@ function CombinedTempChart({ rows }: { rows: TempRow[] }) {
                       key={`${p.label}-m-${hoverReplayModal}`}
                       d={areaD}
                       fill={`url(#${p.gradId})`}
-                      targetOpacity={0.55}
+                      targetOpacity={0.72}
                       delaySec={0.06 + si * 0.06}
                     />
                   )
@@ -1556,10 +1562,10 @@ function CombinedTempChart({ rows }: { rows: TempRow[] }) {
                     strokeDelaySec={0.05 * si}
                     d={p.lineD}
                     stroke={p.color}
-                    strokeWidth={2.85}
+                    strokeWidth={3.05}
                     strokeLinecap="round"
                     strokeLinejoin="round"
-                    style={{ filter: `drop-shadow(0 0 6px ${p.color}55)` }}
+                    style={{ filter: `drop-shadow(0 0 14px ${p.color}99) drop-shadow(0 6px 20px ${p.color}50)` }}
                   />
                 ))}
                 {(() => {
@@ -1823,8 +1829,8 @@ function CombinedTempChart({ rows }: { rows: TempRow[] }) {
               <defs>
                 {chart.seriesPaths.map((p) => (
                   <linearGradient key={p.gradId} id={p.gradId} x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor={p.color} stopOpacity={0.14} />
-                    <stop offset="55%" stopColor={p.color} stopOpacity={0.04} />
+                    <stop offset="0%" stopColor={p.color} stopOpacity={0.26} />
+                    <stop offset="55%" stopColor={p.color} stopOpacity={0.11} />
                     <stop offset="100%" stopColor={p.color} stopOpacity={0} />
                   </linearGradient>
                 ))}
@@ -1877,7 +1883,7 @@ function CombinedTempChart({ rows }: { rows: TempRow[] }) {
                     key={`${p.label}-c-${hoverReplayCard}`}
                     d={areaD}
                     fill={`url(#${p.gradId})`}
-                    targetOpacity={0.55}
+                    targetOpacity={0.72}
                     delaySec={0.06 + si * 0.06}
                   />
                 )
@@ -1889,10 +1895,10 @@ function CombinedTempChart({ rows }: { rows: TempRow[] }) {
                   strokeDelaySec={0.05 * si}
                   d={p.lineD}
                   stroke={p.color}
-                  strokeWidth={2.85}
+                  strokeWidth={3.05}
                   strokeLinecap="round"
                   strokeLinejoin="round"
-                  style={{ filter: `drop-shadow(0 0 6px ${p.color}55)` }}
+                  style={{ filter: `drop-shadow(0 0 14px ${p.color}99) drop-shadow(0 6px 20px ${p.color}50)` }}
                 />
               ))}
               {(() => {
