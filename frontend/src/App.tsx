@@ -7,11 +7,12 @@ import logoUltrapao from './assets/logo-ultrapao.png'
 import BaseProdutos from './pages/BaseProdutos'
 import ContagemDiariaAmbiental from './pages/ContagemDiariaAmbiental'
 import ContagemEstoque from './pages/ContagemEstoque'
+import EstoqueSeguranca from './pages/EstoqueSeguranca'
 import LoginScreen from './pages/LoginScreen'
 import RelatorioContagem from './pages/RelatorioContagem'
 import { isSupabaseConfigured, supabase } from './lib/supabaseClient'
 
-type View = 'home' | 'contagem' | 'relatorio' | 'todas' | 'inventario' | 'baseDados' | 'ambiental'
+type View = 'home' | 'contagem' | 'relatorio' | 'todas' | 'seguranca' | 'inventario' | 'baseDados' | 'ambiental'
 type Theme = 'dark' | 'light'
 
 /** Evita tela vazia se algum filho lançar no render; mostra mensagem e opção de recarregar. */
@@ -284,6 +285,14 @@ export default function App() {
             </button>
             <button
               type="button"
+              onClick={() => setView('seguranca')}
+              style={viewNavBtnStyle(view === 'seguranca', NAV_ACCENT.seguranca)}
+            >
+              <NavIcon emoji="🛡️" anim="glow" />
+              Estoque de Seguranca
+            </button>
+            <button
+              type="button"
               onClick={() => setView('baseDados')}
               style={viewNavBtnStyle(view === 'baseDados', NAV_ACCENT.base)}
             >
@@ -324,6 +333,10 @@ export default function App() {
             </PanelErrorBoundary>
           ) : view === 'baseDados' ? (
             <BaseProdutos key="baseDados" />
+          ) : view === 'seguranca' ? (
+            <PanelErrorBoundary>
+              <EstoqueSeguranca key="seguranca" />
+            </PanelErrorBoundary>
           ) : view === 'relatorio' ? (
             <RelatorioContagem key="relatorio" mode="periodo" />
           ) : (
@@ -343,6 +356,7 @@ const NAV_ACCENT = {
   inventario: '#26c6da',
   relatorio: '#c084fc',
   todas: '#66bb6a',
+  seguranca: '#2dd4bf',
   base: '#ffb74d',
   tema: '#ffd95c',
 } as const
