@@ -27,7 +27,7 @@ const COLUNAS = [
   'Posições Máximo',
   'Posições Média',
   'Posições Mínimo',
-  'Estoque Atual (29/04)',
+  'Estoque Atual',
   'Posição Atual',
   'Para condicional',
   'Estoque Atual ( comparação de 5 Dias)',
@@ -108,7 +108,7 @@ function isHtmlResponse(txt: string): boolean {
 }
 
 function calcCond(row: DataRow | RowLista): CondClass {
-  const v = parseNumberBR(row['Estoque Atual (29/04)']) // V
+  const v = parseNumberBR(row['Estoque Atual']) // V
   const r = parseNumberBR(row['Estoque Ideal Mínimo']) // R
   const s = parseNumberBR(row['Estoque Ideal Máximo']) // S
   const t = parseNumberBR(row['Estoque Ideal Médio']) // T
@@ -121,7 +121,7 @@ function calcCond(row: DataRow | RowLista): CondClass {
 
 /** Dias de cobertura do estoque atual (Estoque ÷ Média 5 dias), alinhado ao eixo dos demais “dias de estoque”. */
 function diasEstoqueAtualCobertura(r: RowLista): number {
-  const est = parseNumberBR(r['Estoque Atual (29/04)'])
+  const est = parseNumberBR(r['Estoque Atual'])
   const med = parseNumberBR(r['Média ult. 5 dias'])
   if (med <= 0) return 0
   return Math.round((est / med) * 100) / 100
@@ -145,7 +145,7 @@ function exportarAlertasParaExcel(lista: RowLista[], filtro: FiltroPainelAlerta)
     SKU: r.sku || '',
     DESCRIÇÃO: r.descricao || '',
     'Estoque Ideal Máximo': r['Estoque Ideal Máximo'] ?? '',
-    'Estoque Atual (29/04)': r['Estoque Atual (29/04)'] ?? '',
+    'Estoque Atual': r['Estoque Atual'] ?? '',
     Status: calcCond(r),
   }))
   const ws = XLSX.utils.json_to_sheet(data)
@@ -527,7 +527,7 @@ export default function EstoqueSeguranca() {
     }
   }, [loading, error, rows])
   /** Colunas que ainda têm um gráfico de linha individual (demais estão nos comparativos). */
-  const metricasGraficos = useMemo<Coluna[]>(() => ['Estoque Atual (29/04)'], [])
+  const metricasGraficos = useMemo<Coluna[]>(() => ['Estoque Atual'], [])
 
   const rowsFiltradasSemaforo = rowsFiltradasGlobal
 
@@ -648,7 +648,7 @@ export default function EstoqueSeguranca() {
                         <th style={{ ...th, position: 'sticky', top: 0, zIndex: 1 }}>SKU</th>
                         <th style={{ ...th, position: 'sticky', top: 0, zIndex: 1, minWidth: 160 }}>DESCRIÇÃO</th>
                         <th style={{ ...th, position: 'sticky', top: 0, zIndex: 1 }}>Estoque Ideal Máximo</th>
-                        <th style={{ ...th, position: 'sticky', top: 0, zIndex: 1 }}>Estoque Atual (29/04)</th>
+                        <th style={{ ...th, position: 'sticky', top: 0, zIndex: 1 }}>Estoque Atual</th>
                         <th style={{ ...th, position: 'sticky', top: 0, zIndex: 1 }}>Status</th>
                       </tr>
                     </thead>
@@ -664,7 +664,7 @@ export default function EstoqueSeguranca() {
                             <td style={td}>{r.sku || '-'}</td>
                             <td style={{ ...td, whiteSpace: 'normal', wordBreak: 'break-word' }}>{r.descricao || '-'}</td>
                             <td style={td}>{r['Estoque Ideal Máximo'] || '-'}</td>
-                            <td style={td}>{r['Estoque Atual (29/04)'] || '-'}</td>
+                            <td style={td}>{r['Estoque Atual'] || '-'}</td>
                             <td style={{ ...td, fontWeight: 700, color: cor.fg }}>{st}</td>
                           </tr>
                         )
