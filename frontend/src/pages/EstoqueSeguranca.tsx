@@ -13,6 +13,17 @@ function todayYmdLocal(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
+function slugArquivoSeguro(s: string): string {
+  const t = String(s || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^\w.-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 48)
+  return t || 'export'
+}
+
 const COLUNAS = [
   'Categoria',
   'Pedido Méd. Abril',
@@ -157,6 +168,27 @@ function exportarAlertasParaExcel(lista: RowLista[], filtro: FiltroPainelAlerta)
   const ws = XLSX.utils.json_to_sheet(data)
   const wb = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, ws, 'Alertas')
+  XLSX.writeFile(wb, fileName)
+}
+
+/** Exporta a mesma visão da tabela (todos os itens do recorte, não só a página atual). */
+function exportarListaItensParaExcel(lista: RowLista[], slugSuffix: string) {
+  if (lista.length === 0) return
+  const fileName = `estoque-seguranca-lista-${todayYmdLocal()}-${slugSuffix}.xlsx`
+  const data = lista.map((r) => {
+    const row: Record<string, string> = {
+      SKU: r.sku || '',
+      DESCRIÇÃO: r.descricao || '',
+    }
+    COLUNAS.forEach((c) => {
+      row[c] = String(r[c] ?? '').trim()
+    })
+    row['Resultado condicional'] = calcCond(r)
+    return row
+  })
+  const ws = XLSX.utils.json_to_sheet(data)
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, 'Lista')
   XLSX.writeFile(wb, fileName)
 }
 
@@ -560,6 +592,20 @@ export default function EstoqueSeguranca() {
   const filtroSemaforoAtivo: 'Todos' | CondClass = filtroGlobal?.kind === 'cond' ? filtroGlobal.cond : 'Todos'
   const planilhaReadOnlyUrl = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/view?gid=${SHEET_GID}`
 
+  const { slugListaExport, rotuloListaExport } = useMemo(() => {
+    if (!filtroGlobal) return { slugListaExport: 'todos', rotuloListaExport: 'Todos' as const }
+    if (filtroGlobal.kind === 'sku') {
+      return {
+        slugListaExport: `sku-${slugArquivoSeguro(filtroGlobal.label)}`,
+        rotuloListaExport: `Item: ${filtroGlobal.label}`,
+      }
+    }
+    return {
+      slugListaExport: slugArquivoSeguro(filtroGlobal.cond).toLowerCase(),
+      rotuloListaExport: filtroGlobal.cond,
+    }
+  }, [filtroGlobal])
+
   return (
     <section style={{ maxWidth: 1500, margin: '0 auto', padding: '0 12px 26px', position: 'relative' }}>
       <div
@@ -811,7 +857,27 @@ export default function EstoqueSeguranca() {
             <SemaforoLinhasChart rows={rowsFiltradasGlobal} onCondClick={onGraficoCondClick} />
           </div>
 
-          <h3 style={{ margin: '10px 0 8px' }}>Lista de itens (formatação condicional)</h3>
+          <div
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 10,
+              margin: '10px 0 8px',
+            }}
+          >
+            <h3 style={{ margin: 0 }}>Lista de itens (formatação condicional)</h3>
+            <button
+              type="button"
+              style={{ ...pagerBtn, borderColor: '#16a34a', color: '#4ade80', fontWeight: 700 }}
+              disabled={rowsFiltradasSemaforo.length === 0}
+              title="Exporta todos os itens deste recorte (filtro ativo ou lista completa), com as mesmas colunas da tabela — não só a página visível."
+              onClick={() => exportarListaItensParaExcel(rowsFiltradasSemaforo, slugListaExport)}
+            >
+              Baixar Excel ({rowsFiltradasSemaforo.length} — {rotuloListaExport})
+            </button>
+          </div>
           <div style={filtrosSemaforoWrap}>
             {(['Todos', 'Excedido', 'Verde', 'Amarelo', 'Vermelho', 'Analisar'] as const).map((st) => (
               <button
