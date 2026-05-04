@@ -40,6 +40,12 @@ type DataRow = Record<Coluna, string>
 type RowLista = DataRow & { sku: string; descricao: string }
 type CondClass = 'Excedido' | 'Verde' | 'Amarelo' | 'Vermelho' | 'Analisar'
 
+/** Texto de ajuda sob gráficos de uma única coluna (eixo X = itens da lista). */
+const SUBTITULO_GRAFICO_METRICA: Partial<Record<Coluna, string>> = {
+  'Estoque Atual':
+    'Quantidade em estoque por item no eixo inferior (SKU ou categoria). Os valores são os mesmos da coluna «Estoque Atual» na planilha e na tabela abaixo.',
+}
+
 type GraficoFiltro = null | { kind: 'sku'; label: string } | { kind: 'cond'; cond: CondClass }
 
 const CONDICIONAL_LABELS: CondClass[] = ['Excedido', 'Verde', 'Amarelo', 'Vermelho', 'Analisar']
@@ -189,11 +195,13 @@ function formatTooltipEstoque(v: number, seriesLabel: string): string {
 
 function MetricChart({
   titulo,
+  subtitle,
   labels,
   values,
   onCategoryClick,
 }: {
   titulo: string
+  subtitle?: string
   labels: string[]
   values: number[]
   onCategoryClick?: (label: string) => void
@@ -205,6 +213,7 @@ function MetricChart({
   return (
     <ComparativoLinhasSvgChart
       title={titulo}
+      subtitle={subtitle}
       xLabels={labels}
       series={series}
       hideLegend
@@ -235,6 +244,7 @@ function ComboPedidosChart({
   return (
     <ComparativoLinhasSvgChart
       title="Pedido Méd. / Máx. / Média 5 dias (linhas)"
+      subtitle="Cada ponto no eixo inferior é um item (SKU ou categoria). Verde = média de pedidos em abril; azul = pico (máximo) em abril; laranja = média dos últimos 5 dias — útil para ver se o consumo recente acompanha ou foge do padrão de abril."
       xLabels={labels}
       series={series}
       yFormat={formatLineTooltipNumber}
@@ -264,6 +274,7 @@ function ComboPosicoesChart({
   return (
     <ComparativoLinhasSvgChart
       title="Comparativo de posições (linhas)"
+      subtitle="Mostra, por item, as colunas de posições da planilha: quantas posições o item ocupa no máximo, em média e no mínimo — ajuda a comparar ‘tamanho’ logístico entre SKUs."
       xLabels={labels}
       series={series}
       yFormat={formatLineTooltipNumber}
@@ -293,6 +304,7 @@ function ComboEstoqueIdealChart({
   return (
     <ComparativoLinhasSvgChart
       title="Comparativo de estoque ideal (linhas)"
+      subtitle="Três patamares de referência (máximo, médio e mínimo ideais) vindos da planilha. O resultado condicional da tabela compara o estoque atual a estes valores e às regras do semáforo."
       xLabels={labels}
       series={series}
       yFormat={formatLineTooltipNumber}
@@ -327,7 +339,7 @@ function ComboDiasEstoqueChart({
   return (
     <ComparativoLinhasSvgChart
       title="Comparativo de dias de estoque (linhas, 4 métricas)"
-      subtitle="Dias estoque atual: estoque atual ÷ média últ. 5 dias (cobertura em dias)."
+      subtitle="Três linhas vermelho/laranja/verde vêm das colunas Dias de Estoque (máximo, médio e mínimo) da planilha. A linha roxa é calculada aqui: estoque atual ÷ média dos últimos 5 dias — estima por quantos dias o estoque cobre o ritmo recente de saída."
       xLabels={labels}
       series={series}
       yFormat={formatLineTooltipNumber}
@@ -366,6 +378,7 @@ function SemaforoLinhasChart({
   return (
     <ComparativoLinhasSvgChart
       title="Semaforo — quantidade por status (linhas)"
+      subtitle="Eixo horizontal: cada status do condicional. Altura = quantidade de itens naquele status (contagem da lista filtrada). Cores seguem o semáforo. Clique num status para filtrar tabela e demais gráficos."
       xLabels={[...CONDICIONAL_LABELS]}
       series={series}
       hideLegend
@@ -757,9 +770,11 @@ export default function EstoqueSeguranca() {
               </button>
             </div>
           ) : (
-            <p style={{ margin: '0 0 12px 0', fontSize: 12, color: '#94a3b8' }}>
-              Clique em um <strong>ponto / linha</strong> no eixo SKU ou em um <strong>status</strong> no gráfico condicional para
-              filtrar todos os gráficos e a tabela.
+            <p style={{ margin: '0 0 12px 0', fontSize: 12, color: '#94a3b8', lineHeight: 1.5 }}>
+              Os gráficos usam os <strong>mesmos dados da planilha</strong> (uma série por item no eixo horizontal). Passe o cursor
+              para ver valores no tooltip. Clique num <strong>ponto</strong> no eixo do item ou num <strong>status</strong> no
+              gráfico do semáforo para filtrar <strong>todos</strong> os gráficos e a tabela; clique de novo no mesmo ponto para
+              limpar.
             </p>
           )}
           <div style={gridCharts}>
@@ -787,6 +802,7 @@ export default function EstoqueSeguranca() {
               <MetricChart
                 key={m}
                 titulo={m}
+                subtitle={SUBTITULO_GRAFICO_METRICA[m]}
                 labels={labelsSkuGraficos}
                 values={rowsFiltradasGlobal.map((r) => parseNumberBR(r[m]))}
                 onCategoryClick={onGraficoCategoriaClick}
