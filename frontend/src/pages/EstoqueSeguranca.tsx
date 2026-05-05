@@ -51,6 +51,16 @@ type DataRow = Record<Coluna, string>
 type RowLista = DataRow & { sku: string; descricao: string }
 type CondClass = 'Excedido' | 'Verde' | 'Amarelo' | 'Vermelho' | 'Analisar'
 
+/** Trava de confiabilidade do saldo + consumo (não substitui o semáforo da planilha). */
+type ConfiabilidadeClass = 'Confiável' | 'Conferir'
+
+const CONFIAB = {
+  eps: 1e-6,
+  ratioMin: 0.22,
+  ratioMax: 4.5,
+  diasExcedidoSuspeito: 80,
+} as const
+
 /** Texto de ajuda sob gráficos de uma única coluna (eixo X = itens da lista). */
 const SUBTITULO_GRAFICO_METRICA: Partial<Record<Coluna, string>> = {
   'Estoque Atual':
@@ -151,6 +161,24 @@ function diasEstoqueAtualCobertura(r: RowLista): number {
   return Math.round((est / med) * 100) / 100
 }
 
+function confiabilidadeEstoque(r: RowLista): ConfiabilidadeClass {
+  const est = parseNumberBR(r['Estoque Atual'])
+  const med5 = parseNumberBR(r['Média ult. 5 dias'])
+  const medAbril = parseNumberBR(r['Pedido Méd. Abril'])
+  const cond = paraCondicionalStatus(r)
+  const diasCob = diasEstoqueAtualCobertura(r)
+
+  if (est <= CONFIAB.eps && (cond === 'Verde' || cond === 'Amarelo')) return 'Conferir'
+  if (med5 <= CONFIAB.eps && est > CONFIAB.eps) return 'Conferir'
+  if (med5 > CONFIAB.eps && medAbril > CONFIAB.eps) {
+    const ratio = med5 / medAbril
+    if (ratio < CONFIAB.ratioMin || ratio > CONFIAB.ratioMax) return 'Conferir'
+  }
+  if (cond === 'Excedido' && med5 > CONFIAB.eps && diasCob >= CONFIAB.diasExcedidoSuspeito) return 'Conferir'
+
+  return 'Confiável'
+}
+
 function itensAmareloOuVermelho(rows: RowLista[]): RowLista[] {
   return rows.filter((r) => {
     const c = paraCondicionalStatus(r)
@@ -171,6 +199,7 @@ function exportarAlertasParaExcel(lista: RowLista[], filtro: FiltroPainelAlerta)
     'Estoque Ideal Máximo': r['Estoque Ideal Máximo'] ?? '',
     'Estoque Atual': r['Estoque Atual'] ?? '',
     Status: String(r['Para condicional'] ?? '').trim() || paraCondicionalStatus(r),
+    Confiabilidade: confiabilidadeEstoque(r),
   }))
   const ws = XLSX.utils.json_to_sheet(data)
   const wb = XLSX.utils.book_new()
@@ -190,6 +219,7 @@ function exportarListaItensParaExcel(lista: RowLista[], slugSuffix: string) {
     COLUNAS.forEach((c) => {
       row[c] = String(r[c] ?? '').trim()
     })
+    row.Confiabilidade = confiabilidadeEstoque(r)
     return row
   })
   const ws = XLSX.utils.json_to_sheet(data)
@@ -444,6 +474,7 @@ export default function EstoqueSeguranca() {
   const [painelAlertasAberto, setPainelAlertasAberto] = useState(false)
   const [filtroPainelAlerta, setFiltroPainelAlerta] = useState<FiltroPainelAlerta>('todos')
   const [filtroGlobal, setFiltroGlobal] = useState<GraficoFiltro>(null)
+  const [filtroConfiabilidade, setFiltroConfiabilidade] = useState<'todos' | 'conferir'>('todos')
 
   useEffect(() => {
     let alive = true
@@ -580,7 +611,10 @@ export default function EstoqueSeguranca() {
   /** Colunas que ainda têm um gráfico de linha individual (demais estão nos comparativos). */
   const metricasGraficos = useMemo<Coluna[]>(() => ['Estoque Atual'], [])
 
-  const rowsFiltradasSemaforo = rowsFiltradasGlobal
+  const rowsFiltradasSemaforo = useMemo(() => {
+    if (filtroConfiabilidade !== 'conferir') return rowsFiltradasGlobal
+    return rowsFiltradasGlobal.filter((r) => confiabilidadeEstoque(r) === 'Conferir')
+  }, [rowsFiltradasGlobal, filtroConfiabilidade])
 
   const totalPages = useMemo(() => Math.max(1, Math.ceil(rowsFiltradasSemaforo.length / 15)), [rowsFiltradasSemaforo.length])
   const rowsPagina = useMemo(() => {
@@ -591,7 +625,7 @@ export default function EstoqueSeguranca() {
 
   useEffect(() => {
     setPage(1)
-  }, [filtroGlobal, rows.length])
+  }, [filtroGlobal, filtroConfiabilidade, rows.length])
 
   const qtdAlertas = alertasAmareloVermelho.length
   const temFiltroAtivo = filtroGlobal !== null
@@ -599,18 +633,24 @@ export default function EstoqueSeguranca() {
   const planilhaReadOnlyUrl = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/view?gid=${SHEET_GID}`
 
   const { slugListaExport, rotuloListaExport } = useMemo(() => {
-    if (!filtroGlobal) return { slugListaExport: 'todos', rotuloListaExport: 'Todos' as const }
-    if (filtroGlobal.kind === 'sku') {
-      return {
-        slugListaExport: `sku-${slugArquivoSeguro(filtroGlobal.label)}`,
-        rotuloListaExport: `Item: ${filtroGlobal.label}`,
-      }
+    let slug: string
+    let rotulo: string
+    if (!filtroGlobal) {
+      slug = 'todos'
+      rotulo = 'Todos'
+    } else if (filtroGlobal.kind === 'sku') {
+      slug = `sku-${slugArquivoSeguro(filtroGlobal.label)}`
+      rotulo = `Item: ${filtroGlobal.label}`
+    } else {
+      slug = slugArquivoSeguro(filtroGlobal.cond).toLowerCase()
+      rotulo = filtroGlobal.cond
     }
-    return {
-      slugListaExport: slugArquivoSeguro(filtroGlobal.cond).toLowerCase(),
-      rotuloListaExport: filtroGlobal.cond,
+    if (filtroConfiabilidade === 'conferir') {
+      slug = `${slug}-conferir`
+      rotulo = `${rotulo} · só Conferir`
     }
-  }, [filtroGlobal])
+    return { slugListaExport: slug, rotuloListaExport: rotulo }
+  }, [filtroGlobal, filtroConfiabilidade])
 
   return (
     <section style={{ maxWidth: 1500, margin: '0 auto', padding: '0 12px 26px', position: 'relative' }}>
@@ -875,7 +915,14 @@ export default function EstoqueSeguranca() {
               margin: '10px 0 8px',
             }}
           >
-            <h3 style={{ margin: 0 }}>Lista de itens (formatação condicional)</h3>
+            <div style={{ flex: '1 1 280px' }}>
+              <h3 style={{ margin: 0 }}>Lista de itens (formatação condicional)</h3>
+              <p style={{ margin: '6px 0 0', fontSize: 11, color: '#94a3b8', lineHeight: 1.45, maxWidth: 720 }}>
+                <strong>Confiabilidade</strong> (calculada aqui) sinaliza saldo ou giro incoerente com o consumo; use{' '}
+                <strong>Só conferir estoque</strong> para focar na contagem cirúrgica. Limiares: constante{' '}
+                <code style={{ fontSize: 10 }}>CONFIAB</code> no código.
+              </p>
+            </div>
             <button
               type="button"
               style={{ ...pagerBtn, borderColor: '#16a34a', color: '#4ade80', fontWeight: 700 }}
@@ -886,7 +933,7 @@ export default function EstoqueSeguranca() {
               Baixar Excel ({rowsFiltradasSemaforo.length} — {rotuloListaExport})
             </button>
           </div>
-          <div style={filtrosSemaforoWrap}>
+          <div style={{ ...filtrosSemaforoWrap, alignItems: 'center' }}>
             {(['Todos', 'Excedido', 'Verde', 'Amarelo', 'Vermelho', 'Analisar'] as const).map((st) => (
               <button
                 key={st}
@@ -897,6 +944,24 @@ export default function EstoqueSeguranca() {
                 {st}
               </button>
             ))}
+            <button
+              type="button"
+              title="Mostra só itens marcados como Conferir (possível saldo ou giro incoerente). Os gráficos acima continuam com o recorte do semáforo/SKU."
+              onClick={() => setFiltroConfiabilidade((p) => (p === 'conferir' ? 'todos' : 'conferir'))}
+              style={{
+                marginLeft: 'auto',
+                borderRadius: 999,
+                border: '1px solid #d97706',
+                background: filtroConfiabilidade === 'conferir' ? 'rgba(217, 119, 6, 0.28)' : 'transparent',
+                color: '#fbbf24',
+                padding: '6px 12px',
+                cursor: 'pointer',
+                fontWeight: 700,
+                fontSize: 12,
+              }}
+            >
+              {filtroConfiabilidade === 'conferir' ? 'Conferir: ativo (clique para ver todos)' : 'Só conferir estoque'}
+            </button>
           </div>
           <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 8 }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1500 }}>
@@ -909,11 +974,18 @@ export default function EstoqueSeguranca() {
                       {h}
                     </th>
                   ))}
+                  <th
+                    style={th}
+                    title="Calculado na app: coerência entre estoque atual, consumo recente e semáforo da planilha."
+                  >
+                    Confiabilidade
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {rowsPagina.map((r, i) => {
                   const cond = paraCondicionalStatus(r)
+                  const conf = confiabilidadeEstoque(r)
                   const bgStatus =
                     cond === 'Excedido'
                       ? '#3b0764'
@@ -955,6 +1027,18 @@ export default function EstoqueSeguranca() {
                           </td>
                         )
                       })}
+                      <td
+                        style={{
+                          ...td,
+                          fontWeight: 700,
+                          background:
+                            conf === 'Conferir' ? 'rgba(217, 119, 6, 0.22)' : 'rgba(34, 197, 94, 0.12)',
+                          color: conf === 'Conferir' ? '#fbbf24' : '#86efac',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {conf}
+                      </td>
                     </tr>
                   )
                 })}
