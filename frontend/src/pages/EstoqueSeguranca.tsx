@@ -776,11 +776,25 @@ export default function EstoqueSeguranca() {
                         <th style={{ ...th, position: 'sticky', top: 0, zIndex: 1 }}>Estoque Ideal Máximo</th>
                         <th style={{ ...th, position: 'sticky', top: 0, zIndex: 1 }}>Estoque Atual</th>
                         <th style={{ ...th, position: 'sticky', top: 0, zIndex: 1 }}>Para condicional</th>
+                        <th style={{ ...th, position: 'sticky', top: 0, zIndex: 1, minWidth: 200 }}>
+                          Confiabilidade (decisão)
+                        </th>
                       </tr>
                     </thead>
                     <tbody>
                       {alertasPainelLista.map((r, i) => {
                         const st = paraCondicionalStatus(r)
+                        const conf = confiabilidadeEstoque(r)
+                        const bgStatus =
+                          st === 'Excedido'
+                            ? '#3b0764'
+                            : st === 'Verde'
+                              ? '#14532d'
+                              : st === 'Amarelo'
+                                ? '#713f12'
+                                : st === 'Vermelho'
+                                  ? '#7f1d1d'
+                                  : '#9d174d'
                         const cor =
                           st === 'Amarelo'
                             ? { bg: 'rgba(234, 179, 8, 0.2)', fg: '#eab308' }
@@ -793,6 +807,23 @@ export default function EstoqueSeguranca() {
                             <td style={td}>{r['Estoque Atual'] || '-'}</td>
                             <td style={{ ...td, fontWeight: 700, color: cor.fg }}>
                               {String(r['Para condicional'] ?? '').trim() || st}
+                            </td>
+                            <td
+                              style={{
+                                ...td,
+                                fontWeight: 700,
+                                fontSize: 12,
+                                lineHeight: 1.35,
+                                maxWidth: 280,
+                                whiteSpace: 'normal',
+                                wordBreak: 'break-word',
+                                background: bgStatus,
+                                color: '#f8fafc',
+                                boxShadow:
+                                  conf === 'Conferir' ? 'inset 0 0 0 2px rgba(251, 191, 36, 0.85)' : undefined,
+                              }}
+                            >
+                              {textoConfiabilidadeDecisao(r)}
                             </td>
                           </tr>
                         )
@@ -1261,7 +1292,7 @@ const modalOverlay: CSSProperties = {
 
 const modalBox: CSSProperties = {
   width: '100%',
-  maxWidth: 920,
+  maxWidth: 1100,
   maxHeight: '90vh',
   overflow: 'hidden',
   background: 'var(--code-bg)',
