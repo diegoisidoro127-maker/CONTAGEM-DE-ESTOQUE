@@ -415,6 +415,10 @@ function toISODateLocal(d: Date) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
 
+function isYmd(v: string | null | undefined): v is string {
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(v ?? ''))
+}
+
 function newSessionId() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID()
   return `sess-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`
@@ -762,6 +766,16 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
   useEffect(() => {
     const s = loadOfflineSession(sessionMode)
     if (s && s.status === 'aberta') {
+      const todayYmd = toISODateLocal(new Date())
+      if (isYmd(s.data_contagem_ymd) && s.data_contagem_ymd !== todayYmd) {
+        clearOfflineSession(sessionMode)
+        setOfflineSession(null)
+        setChecklistListMode('todos')
+        setStartFreshNotice(
+          `Sessão local de ${formatDateBRFromYmd(s.data_contagem_ymd)} encerrada automaticamente por virada de dia.`,
+        )
+        return
+      }
       setOfflineSession(s)
       const startedMs = new Date(String(s.started_at_iso ?? '')).getTime()
       if (Number.isFinite(startedMs)) {
@@ -976,6 +990,30 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
     const next = dataContagemYmdFromIso(toISOStringFromDatetimeLocal(dataHoraContagem))
     if (next && next !== contagemDiaYmd) setContagemDiaYmd(next)
   }, [dataHoraContagem, offlineSession?.status, contagemDiaYmd])
+
+  // Ao virar o dia no dispositivo, encerra automaticamente sessão aberta do dia anterior.
+  useEffect(() => {
+    if (!offlineSession || offlineSession.status !== 'aberta') return
+    if (!isYmd(offlineSession.data_contagem_ymd)) return
+    const checkViradaDia = () => {
+      const s = offlineSessionRef.current
+      if (!s || s.status !== 'aberta') return
+      if (!isYmd(s.data_contagem_ymd)) return
+      const todayYmd = toISODateLocal(new Date())
+      if (s.data_contagem_ymd === todayYmd) return
+      if (!inventario) void apagarRascunhoSupabaseParaSessao(s)
+      clearOfflineSession(sessionMode)
+      setOfflineSession(null)
+      setChecklistListMode('todos')
+      setChecklistError('')
+      setStartFreshNotice(
+        `Sessão local de ${formatDateBRFromYmd(s.data_contagem_ymd)} encerrada automaticamente por virada de dia.`,
+      )
+    }
+    checkViradaDia()
+    const id = window.setInterval(checkViradaDia, 60 * 1000)
+    return () => window.clearInterval(id)
+  }, [offlineSession?.status, offlineSession?.data_contagem_ymd, inventario, sessionMode])
 
   // Prévia do banco: sempre usa a data atual do dispositivo.
   useEffect(() => {
