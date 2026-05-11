@@ -144,23 +144,36 @@ export function listArmazemContagemCodigosOrdered(): ReadonlyArray<{ grupo: numb
   return out
 }
 
+/** Chaves candidatas para bater o mapa (cadastro às vezes perde zero à esquerda no 1º bloco). */
+function armazemCodigoLookupCandidates(codigo: string): string[] {
+  const t = String(codigo ?? '').trim()
+  const keys: string[] = []
+  const push = (s: string) => {
+    if (s && !keys.includes(s)) keys.push(s)
+  }
+  push(t)
+  push(normalizeCodigoInternoCompareKey(t))
+  const dig = t.replace(/\D/g, '')
+  if (dig.length === 7) push(dig.padStart(8, '0'))
+  if (dig.length === 8) push(dig)
+  return keys
+}
+
 export function getArmazemContagem(codigo: string): number | null {
-  const t = codigo.trim()
-  return (
-    ARMAZEM_POS_BY_CODIGO.get(t)?.contagem ??
-    ARMAZEM_POS_BY_CODIGO.get(normalizeCodigoInternoCompareKey(t))?.contagem ??
-    null
-  )
+  for (const k of armazemCodigoLookupCandidates(codigo)) {
+    const c = ARMAZEM_POS_BY_CODIGO.get(k)?.contagem
+    if (c != null) return c
+  }
+  return null
 }
 
 /** Índice na rota do grupo (0-based). Não confundir com POS da planilha física — usado para ordenar como na lista. */
 export function getArmazemPos(codigo: string): number {
-  const t = codigo.trim()
-  return (
-    ARMAZEM_POS_BY_CODIGO.get(t)?.pos ??
-    ARMAZEM_POS_BY_CODIGO.get(normalizeCodigoInternoCompareKey(t))?.pos ??
-    Number.MAX_SAFE_INTEGER
-  )
+  for (const k of armazemCodigoLookupCandidates(codigo)) {
+    const p = ARMAZEM_POS_BY_CODIGO.get(k)?.pos
+    if (p != null) return p
+  }
+  return Number.MAX_SAFE_INTEGER
 }
 
 export function getArmazemContagemForItem(it: OfflineChecklistItem): number | null {
