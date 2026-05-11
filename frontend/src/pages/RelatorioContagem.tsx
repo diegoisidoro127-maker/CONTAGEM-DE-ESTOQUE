@@ -17,6 +17,7 @@ import { formatContagemLabel, inventarioCamaraLabelFromGrupo } from '../componen
 import { deleteInventarioPlanilhaLinhasForContagensIds } from '../lib/inventarioPlanilhaLinhasDelete'
 import { isVencimentoAntesFabricacao } from '../lib/contagemDatasValidacao'
 import { normalizeCodigoInternoCompareKey } from '../lib/codigoInternoCompare'
+import { getArmazemContagem, getArmazemPos } from '../lib/armazemInventarioMap'
 
 type ContagemRow = {
   id: string
@@ -176,6 +177,26 @@ function mergeContagemRowsById(
 
 function relatorioItemDiaKey(dataYmd: string, codigo: string, descricao: string): string {
   return `${String(dataYmd ?? '').slice(0, 10)}|${normalizeCodigoInternoCompareKey(String(codigo ?? '')).toLowerCase()}|${String(descricao ?? '').trim().toLowerCase()}`
+}
+
+function sortRelatorioContagemDiaria(a: ContagemRow, b: ContagemRow): number {
+  const ga = getArmazemContagem(a.codigo_interno)
+  const gb = getArmazemContagem(b.codigo_interno)
+  if (ga != null && gb != null) {
+    if (ga !== gb) return ga - gb
+    const pa = getArmazemPos(a.codigo_interno)
+    const pb = getArmazemPos(b.codigo_interno)
+    if (pa !== pb) return pa - pb
+  } else if (ga != null) {
+    return -1
+  } else if (gb != null) {
+    return 1
+  }
+  const ca = normalizeCodigoInternoCompareKey(a.codigo_interno)
+  const cb = normalizeCodigoInternoCompareKey(b.codigo_interno)
+  const c = ca !== cb ? ca.localeCompare(cb, 'pt-BR') : a.codigo_interno.localeCompare(b.codigo_interno, 'pt-BR')
+  if (c !== 0) return c
+  return a.descricao.localeCompare(b.descricao, 'pt-BR')
 }
 
 /** Paginação (15 + “Mostrar tudo”) vale para Relatório completo e Todas as contagens — mesmo componente. */
@@ -1010,11 +1031,7 @@ export default function RelatorioContagem({
       // fallback silencioso para dados nativos de contagens_estoque
     }
 
-    return grouped.sort((a, b) => {
-      const c = a.codigo_interno.localeCompare(b.codigo_interno, 'pt-BR')
-      if (c !== 0) return c
-      return a.descricao.localeCompare(b.descricao, 'pt-BR')
-    })
+    return grouped.sort(sortRelatorioContagemDiaria)
   }
 
   async function fetchHistoricoRawRows(): Promise<{ rows: ContagemRow[]; origemAusenteNoResultado: boolean }> {
