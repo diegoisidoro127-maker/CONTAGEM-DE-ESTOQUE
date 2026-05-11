@@ -2206,15 +2206,8 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       let itemsRaw = await fetchListaChecklistFromDb()
 
       if (isListModeArmazem(listModeEfetivo)) {
-        const missing = itemsRaw.map((it) => it.codigo_interno).filter((codigo) => getArmazemContagem(codigo) === null)
-        setArmazemMissingCodes(missing)
-        if (missing.length > 0) {
-          throw new Error(
-            `Modo armazém não está completo: faltam ${missing.length} código(s) para mapear nos grupos 1–${INVENTARIO_ARMAZEM_NUM_GRUPOS} (armazém). ` +
-              `Ex.: ${missing.slice(0, 10).join(', ')}. ` +
-              `Para continuar (sem "OUTROS"), ajuste o mapeamento no app (armazemInventarioMap.ts).`,
-          )
-        }
+        itemsRaw = itemsRaw.filter((row) => getArmazemContagem(row.codigo_interno) != null)
+        setArmazemMissingCodes([])
 
         itemsRaw = itemsRaw.slice().sort((a, b) => {
           const ga = getArmazemContagem(a.codigo_interno) ?? 999
