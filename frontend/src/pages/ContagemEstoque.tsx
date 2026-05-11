@@ -2802,6 +2802,20 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       return
     }
 
+    const missing = offlineSession.items.filter((it) => {
+      if (String(it.codigo_interno ?? '').trim() === '') return false
+      if (offlineSession.listMode === 'planilha') {
+        const rodada = clampInventarioNumeroContagem(offlineSession.inventario_numero_contagem ?? 1)
+        return quantidadePlanilhaInventarioEfetiva(it, rodada) === ''
+      }
+      return String(it.quantidade_contada ?? '').trim() === ''
+    })
+    if (missing.length > 0) {
+      setMissingItemsForFinalize(missing)
+      setConfirmFinalizeMissingOpen(true)
+      return
+    }
+
     await finalizeInternal()
   }
 
@@ -6027,14 +6041,14 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                 ) : (
                   <>
                     {' '}
-                    Se você escolher <strong>Finalizar em branco</strong>, esses itens ficam sem quantidade e{' '}
-                    <strong>não serão gravados</strong> nesta finalização.
+                    Você pode salvar somente os itens preenchidos ou finalizar preenchendo esses itens com{' '}
+                    <strong>0</strong>.
                   </>
                 )}
                 <br />
                 <br />
-                Você pode voltar para preencher ou finalizar agora: serão salvos <strong>somente</strong> os produtos que
-                já têm quantidade digitada.
+                Você pode voltar para preencher, finalizar só o que já tem quantidade, ou gravar os pendentes com{' '}
+                <strong>0</strong>.
               </div>
 
               <div style={{ marginTop: 12, maxHeight: 320, overflow: 'auto' }}>
@@ -6083,7 +6097,30 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
                   onClick={() => void finalizeInternal()}
                   disabled={finalizing}
                 >
-                  {inventario ? 'Finalizar e gravar só os preenchidos' : 'Finalizar em branco'}
+                  Finalizar só preenchidos
+                </button>
+                <button
+                  type="button"
+                  style={{ ...buttonStyle, background: '#06c' }}
+                  onClick={() => {
+                    const session = offlineSession
+                    if (!session || session.status !== 'aberta') return
+                    const missingKeys = new Set(missingItemsForFinalize.map((it) => it.key))
+                    const patched: OfflineSession = {
+                      ...session,
+                      items: session.items.map((it) =>
+                        missingKeys.has(it.key) ? { ...it, quantidade_contada: '0' } : it,
+                      ),
+                      updatedAt: new Date().toISOString(),
+                    }
+                    finalizePendAutoZeroRef.current = missingKeys.size
+                    setOfflineSession(patched)
+                    saveOfflineSession(patched, sessionMode)
+                    void finalizeInternal(patched)
+                  }}
+                  disabled={finalizing}
+                >
+                  Finalizar pendentes com 0
                 </button>
               </div>
             </div>
