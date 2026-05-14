@@ -3945,6 +3945,10 @@ export default function ContagemDiariaAmbiental() {
             </button>
           </div>
 
+          <div style={{ fontWeight: 800, color: '#e5e7eb', fontSize: 18, margin: '2px 0 -2px' }}>
+            Gráficos de temperatura por câmara
+          </div>
+
           <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(3, minmax(0, 1fr))' }}>
             <TinyLineChart title="Câmara 11" color="#22c55e" rows={tempRows} valueOf={(r) => r.camara11_temp} showPointValues />
             <TinyLineChart title="Câmara 12" color="#38bdf8" rows={tempRows} valueOf={(r) => r.camara12_temp} showPointValues />

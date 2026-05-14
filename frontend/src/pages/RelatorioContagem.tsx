@@ -1065,16 +1065,16 @@ export default function RelatorioContagem({
 
   async function fetchHistoricoRawRows(): Promise<{ rows: ContagemRow[]; origemAusenteNoResultado: boolean }> {
     const cand1 =
-      'id,data_contagem,data_hora_contagem,conferente_id,origem,inventario_repeticao,inventario_numero_contagem,finalizacao_sessao_id'.replace(
+      'id,data_contagem,data_hora_contagem,conferente_id,codigo_interno,origem,inventario_repeticao,inventario_numero_contagem,finalizacao_sessao_id'.replace(
         /\s/g,
         '',
       )
     const cand1SemSess =
-      'id,data_contagem,data_hora_contagem,conferente_id,origem,inventario_repeticao,inventario_numero_contagem'.replace(
+      'id,data_contagem,data_hora_contagem,conferente_id,codigo_interno,origem,inventario_repeticao,inventario_numero_contagem'.replace(
         /\s/g,
         '',
       )
-    const cand2 = 'id,data_contagem,data_hora_contagem,conferente_id'.replace(/\s/g, '')
+    const cand2 = 'id,data_contagem,data_hora_contagem,conferente_id,codigo_interno'.replace(/\s/g, '')
     async function pull(sel: string): Promise<ContagemRow[]> {
       const acc: ContagemRow[] = []
       let from = 0
