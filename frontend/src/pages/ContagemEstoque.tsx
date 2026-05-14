@@ -98,6 +98,34 @@ const CONTAGEM_DIARIA_EXCLUIR_DA_LISTA = new Set([
 /** Senha exigida em "Excluir dia no banco" na prévia (proteção contra exclusão acidental). */
 const SENHA_EXCLUIR_TUDO_BANCO = 'AdminUltrapao'
 
+async function ensureContagemBrowserNotificationPermission(): Promise<boolean> {
+  if (typeof window === 'undefined' || !('Notification' in window)) return false
+  if (Notification.permission === 'granted') return true
+  if (Notification.permission === 'denied') return false
+  try {
+    return (await Notification.requestPermission()) === 'granted'
+  } catch {
+    return false
+  }
+}
+
+function notifyContagemFinalizada(opts: {
+  inventario: boolean
+  ymd: string
+  registros: number
+  conferenteNome?: string
+}) {
+  if (typeof window === 'undefined' || !('Notification' in window) || Notification.permission !== 'granted') return
+  const title = opts.inventario ? 'Inventário finalizado' : 'Contagem finalizada'
+  const conf = opts.conferenteNome ? ` por ${opts.conferenteNome}` : ''
+  const body = `${opts.registros} registro(s) salvos${conf} em ${formatDateBRFromYmd(opts.ymd)}.`
+  const notification = new Notification(title, {
+    body,
+    tag: `${opts.inventario ? 'inventario' : 'contagem'}-finalizada-${opts.ymd}`,
+  })
+  window.setTimeout(() => notification.close(), 9000)
+}
+
 type Conferente = {
   id: string
   nome: string
@@ -2874,6 +2902,7 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
       setConferenteId(session.conferente_id)
     }
 
+    const browserNotificationAllowed = await ensureContagemBrowserNotificationPermission()
     setFinalizing(true)
     try {
       for (const k of Object.keys(contagemDiariaPersistTimersRef.current)) {
@@ -3142,6 +3171,9 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
         cadastroEanDunAtualizados > 0
           ? ` Cadastro “Todos os Produtos”: ${cadastroEanDunAtualizados} produto(s) com EAN/DUN e datas de alteração atualizados.`
           : ''
+      const confRow = conferentes.find((x) => x.id === session.conferente_id)
+      const nomeConf =
+        confRow?.nome != null && String(confRow.nome).trim() !== '' ? String(confRow.nome).trim() : undefined
 
       if (inventario) {
         setSaveSuccess(
@@ -3150,9 +3182,6 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
           }${planilhaAviso ?? ''}${inventarioDbCompatMsg}${msgCadastroEanDun}`,
         )
       } else {
-        const confRow = conferentes.find((x) => x.id === session.conferente_id)
-        const nomeConf =
-          confRow?.nome != null && String(confRow.nome).trim() !== '' ? String(confRow.nome).trim() : undefined
         setSavedCountModal({
           ymd,
           registros: rows.length,
@@ -3164,6 +3193,14 @@ export default function ContagemEstoque({ inventario = false }: { inventario?: b
           elapsedLabel: formatSessionInterval(sessionStartedAtIso, sessionEndedAtIso),
         })
         setSaveSuccess(`Contagem salva no Supabase.${msgCadastroEanDun}`)
+      }
+      if (browserNotificationAllowed) {
+        notifyContagemFinalizada({
+          inventario,
+          ymd,
+          registros: rows.length,
+          conferenteNome: nomeConf,
+        })
       }
       setFinalizeProgress(
         planilhaGravada
