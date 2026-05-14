@@ -3945,8 +3945,37 @@ export default function ContagemDiariaAmbiental() {
             </button>
           </div>
 
-          <div style={{ fontWeight: 800, color: '#e5e7eb', fontSize: 18, margin: '2px 0 -2px' }}>
-            Gráficos de temperatura por câmara
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              padding: '12px 14px',
+              borderRadius: 14,
+              border: '1px solid rgba(34, 197, 94, .32)',
+              background: 'linear-gradient(135deg, rgba(34,197,94,.16), rgba(15,23,42,.2))',
+              boxShadow: 'inset 0 1px 0 rgba(255,255,255,.06)',
+            }}
+          >
+            <span
+              aria-hidden
+              style={{
+                width: 10,
+                height: 10,
+                borderRadius: 999,
+                background: '#22c55e',
+                boxShadow: '0 0 18px rgba(34,197,94,.9)',
+                flex: '0 0 auto',
+              }}
+            />
+            <div>
+              <div style={{ fontWeight: 900, color: '#f8fafc', fontSize: 19, letterSpacing: '.01em' }}>
+                Gráficos de temperatura por câmara
+              </div>
+              <div style={{ color: '#94a3b8', fontSize: 12, marginTop: 2 }}>
+                Acompanhe a variação diária das Câmaras 11, 12 e 13.
+              </div>
+            </div>
           </div>
 
           <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(3, minmax(0, 1fr))' }}>

@@ -1516,8 +1516,7 @@ export default function RelatorioContagem({
     if (prevCol('dun')) header.push('DUN')
     if (prevCol('foto')) header.push('Foto')
 
-    const aoa: (string | number)[][] = [header]
-    for (const r of rowsToExport) {
+    const buildRow = (r: ContagemRow): (string | number)[] => {
       const row: (string | number)[] = []
       if (useInventarioCols) {
         const cam = inventarioCamaraLabelFromGrupo(r.planilha_grupo_armazem)
@@ -1547,8 +1546,30 @@ export default function RelatorioContagem({
       if (prevCol('ean')) row.push(r.ean ?? '')
       if (prevCol('dun')) row.push(r.dun ?? '')
       if (prevCol('foto')) row.push(String(r.foto_base64 ?? '').trim() ? 'Com foto' : 'Sem foto')
-      aoa.push(row)
+      return row
     }
+
+    if (useInventarioCols) {
+      return [header, ...rowsToExport.map(buildRow)]
+    }
+
+    const aoa: (string | number)[][] = []
+    for (let contagem = 1; contagem <= 4; contagem++) {
+      const groupRows = rowsToExport.filter((r) => getArmazemContagem(r.codigo_interno) === contagem)
+      if (groupRows.length === 0) continue
+      if (aoa.length > 0) aoa.push([])
+      aoa.push([formatContagemLabel(contagem)])
+      aoa.push(header)
+      for (const r of groupRows) aoa.push(buildRow(r))
+    }
+    const extras = rowsToExport.filter((r) => getArmazemContagem(r.codigo_interno) == null)
+    if (extras.length > 0) {
+      if (aoa.length > 0) aoa.push([])
+      aoa.push(['FORA DA LISTA OFICIAL'])
+      aoa.push(header)
+      for (const r of extras) aoa.push(buildRow(r))
+    }
+    if (aoa.length === 0) return [header]
     return aoa
   }
 
