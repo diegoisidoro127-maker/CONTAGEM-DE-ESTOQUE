@@ -7,6 +7,7 @@ import { enrichContagemRowsWithPlanilhaLinhas } from '../lib/enrichContagemRowsW
 import { enrichContagemRowsEanDunFromTodosOsProdutos } from '../lib/enrichContagemRowsEanDunFromTodosOsProdutos'
 import { fetchConferentesNomesPorIds } from '../lib/conferentesNomesBatch'
 import {
+  diaCivilYmdContagemRow,
   fetchPlanilhaContagemIdsParaIntervalo,
   filterContagensPorModoListagem,
   ordenarLinhasInventarioComoPrevia,
@@ -207,7 +208,7 @@ function isCodigoRelatorioArmazem(codigo: string): boolean {
 function consolidarRelatorioContagemDiariaPorCodigo(rows: ContagemRow[]): ContagemRow[] {
   const byKey = new Map<string, ContagemRow>()
   for (const row of rows) {
-    const day = String(row.data_contagem ?? '').slice(0, 10)
+    const day = diaCivilYmdContagemRow(row) ?? ''
     const code = normalizeCodigoInternoCompareKey(row.codigo_interno).toLowerCase()
     const key = `${day}|${code}`
     const prev = byKey.get(key)
@@ -267,23 +268,11 @@ type AvaliacaoUmDiaContagem =
   | { kind: 'pendente'; aviso: AvisoCargaPendente }
   | { kind: 'ok' }
 
-/**
- * Dia civil (YMD) para histórico/lista:
- * - prioriza `data_contagem` (quando válida)
- * - fallback para `data_hora_contagem` (legado / migrações antigas)
- */
-function diaYmdSoDataContagemRow(r: Pick<ContagemRow, 'data_contagem' | 'data_hora_contagem'>): string | null {
-  const d = r.data_contagem != null ? String(r.data_contagem).slice(0, 10) : ''
-  if (/^\d{4}-\d{2}-\d{2}$/.test(d)) return d
-  const t = r.data_hora_contagem != null ? String(r.data_hora_contagem).slice(0, 10) : ''
-  return /^\d{4}-\d{2}-\d{2}$/.test(t) ? t : null
-}
-
 function computeMinMaxYmdDataContagemOnly(rows: ContagemRow[]): { minY: string; maxY: string } {
   let minY = '9999-12-31'
   let maxY = '1970-01-01'
   for (const r of rows) {
-    const day = diaYmdSoDataContagemRow(r)
+    const day = diaCivilYmdContagemRow(r)
     if (!day) continue
     if (day < minY) minY = day
     if (day > maxY) maxY = day
@@ -451,6 +440,27 @@ export default function RelatorioContagem({
     if (useSingleDay) return `Dia: ${formatDateBR(singleDay)}`
     return `${formatDateBR(startDate)} a ${formatDateBR(endDate)}`
   }, [allTime, useSingleDay, singleDay, startDate, endDate])
+
+  /** Nome da aba no .xlsx: reflete o filtro de datas (Excel: máx. 31 caracteres; sem \ / ? * : [ ]). */
+  const relatorioExcelSheetName = useMemo(() => {
+    const max = 31
+    const strip = (s: string) =>
+      s
+        .replace(/[/\\?*[\]:']/g, '-')
+        .replace(/\s+/g, '_')
+        .replace(/_+/g, '_')
+        .replace(/^_|_$/g, '')
+    const cut = (s: string) => (s.length > max ? s.slice(0, max) : s)
+    const base = (raw: string) => {
+      const s = strip(raw)
+      return cut(s || 'Contagens')
+    }
+    const prefix = useInventarioCols ? 'Inv_' : ''
+    if (allTime) return base(`${prefix}Todas_as_datas`)
+    if (useSingleDay) return base(`${prefix}${singleDay}`)
+    if (startDate === endDate) return base(`${prefix}${startDate}`)
+    return base(`${prefix}${startDate}_${endDate}`)
+  }, [useInventarioCols, allTime, useSingleDay, singleDay, startDate, endDate])
 
   /** Um único dia civil no filtro (inclui início = fim sem “Filtrar por dia”). */
   const isExportUmDiaCivil = useMemo(
@@ -972,8 +982,8 @@ export default function RelatorioContagem({
       minY = '9999-12-31'
       maxY = '1970-01-01'
       for (const r of data) {
-        const d = r.data_contagem != null ? String(r.data_contagem).slice(0, 10) : ''
-        if (/^\d{4}-\d{2}-\d{2}$/.test(d)) {
+        const d = diaCivilYmdContagemRow(r)
+        if (d) {
           if (d < minY) minY = d
           if (d > maxY) maxY = d
         }
@@ -1025,7 +1035,7 @@ export default function RelatorioContagem({
     // Alinha o nome da coluna Conferente com a view oficial de itens do painel.
     try {
       const byDay = grouped
-        .map((r) => String(r.data_contagem ?? '').slice(0, 10))
+        .map((r) => diaCivilYmdContagemRow(r) ?? '')
         .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d))
         .sort()
       if (byDay.length > 0) {
@@ -1049,7 +1059,7 @@ export default function RelatorioContagem({
             if (key && nome) nomeByKey.set(key, nome)
           }
           grouped = grouped.map((r) => {
-            const key = relatorioItemDiaKey(r.data_contagem, r.codigo_interno, r.descricao)
+            const key = relatorioItemDiaKey(diaCivilYmdContagemRow(r) ?? '', r.codigo_interno, r.descricao)
             const nome = nomeByKey.get(key)
             if (!nome) return r
             return { ...r, conferentes: { nome } }
@@ -1133,7 +1143,7 @@ export default function RelatorioContagem({
       }
     >()
     for (const r of filtered) {
-      const dataYmd = diaYmdSoDataContagemRow(r)
+      const dataYmd = diaCivilYmdContagemRow(r)
       if (!dataYmd) continue
       const cidRaw = String(r.conferente_id ?? '').trim()
       const conferenteId = cidRaw === '' ? null : cidRaw
@@ -1315,7 +1325,7 @@ export default function RelatorioContagem({
     })
     const { filtered } = await filtrarLinhasParaPrevia(rowsComRascunho, origemAusenteNoResultado)
     const rowsDia = filtered.filter(
-      (r) => diaYmdSoDataContagemRow(r) === diaYmd && isCodigoRelatorioArmazem(r.codigo_interno),
+      (r) => diaCivilYmdContagemRow(r) === diaYmd && isCodigoRelatorioArmazem(r.codigo_interno),
     )
     if (rowsDia.length === 0) return { kind: 'vazio' }
     const pendentes = rowsDia.filter((r) => r.contagem_rascunho === true)
@@ -1503,6 +1513,7 @@ export default function RelatorioContagem({
       header.push('Câmara', 'Rua', 'POS', 'Nível', 'Contagem')
     }
     header.push('Conferente')
+    if (!useInventarioCols) header.push('Data da contagem')
     if (prevCol('codigo')) header.push('Código do produto')
     if (prevCol('descricao')) header.push('Descrição')
     if (prevCol('unidade')) header.push('Unidade de medida')
@@ -1531,6 +1542,10 @@ export default function RelatorioContagem({
       {
         const nome = conferenteNomeRelatorio(r)
         row.push(nome === '—' ? '' : nome)
+      }
+      if (!useInventarioCols) {
+        const y = diaCivilYmdContagemRow(r)
+        row.push(y ? formatDateBRFromYmd(y) : '')
       }
       if (prevCol('codigo')) row.push(r.codigo_interno)
       if (prevCol('descricao')) row.push(r.descricao)
@@ -1588,7 +1603,7 @@ export default function RelatorioContagem({
           origemAusenteComRascunho,
         )
         const pendentesNoDia = filteredComRascunho.filter((r) => {
-          const ymd = String(r.data_contagem ?? r.data_hora_contagem ?? '').slice(0, 10)
+          const ymd = diaCivilYmdContagemRow(r) ?? ''
           return ymd === diaAlvo && r.contagem_rascunho === true && isCodigoRelatorioArmazem(r.codigo_interno)
         })
         if (pendentesNoDia.length > 0) {
@@ -1618,7 +1633,7 @@ export default function RelatorioContagem({
         const sorted = await aplicarMesmaRegraDaPreviaAsync(data, origemAusenteNoResultado)
         const ws = XLSX.utils.aoa_to_sheet(buildRelatorioExcelAoa(sorted))
         const wb = XLSX.utils.book_new()
-        XLSX.utils.book_append_sheet(wb, ws, 'Contagens')
+        XLSX.utils.book_append_sheet(wb, ws, relatorioExcelSheetName)
         const safeFile = dateRangeText.replace(/[/\\?*[\]:]/g, '-').replace(/\s+/g, '_')
         XLSX.writeFile(wb, `relatorio-contagem_${safeFile}.xlsx`)
         return
@@ -1631,7 +1646,7 @@ export default function RelatorioContagem({
       }
       const ws = XLSX.utils.aoa_to_sheet(buildRelatorioExcelAoa(exportRows))
       const wb = XLSX.utils.book_new()
-      XLSX.utils.book_append_sheet(wb, ws, 'Contagens')
+      XLSX.utils.book_append_sheet(wb, ws, relatorioExcelSheetName)
       const safeFile = dateRangeText.replace(/[/\\?*[\]:]/g, '-').replace(/\s+/g, '_')
       XLSX.writeFile(wb, `relatorio-contagem_${safeFile}.xlsx`)
     } catch (e: unknown) {

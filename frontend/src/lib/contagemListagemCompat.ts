@@ -110,6 +110,20 @@ type RowMergeContagemDiaria = Record<string, unknown> & {
   preview_conferentes_detalhe?: ConferenteDetalheGrupo[]
 }
 
+/**
+ * Dia civil (YYYY-MM-DD) para agrupar contagem diária:
+ * prioriza `data_contagem` válida; senão usa a data de `data_hora_contagem` (legado).
+ * Sem isso, linhas só com horário caem em `""` e duplicam no relatório/Excel frente a linhas com `data_contagem`.
+ */
+export function diaCivilYmdContagemRow(
+  r: Pick<RowMergeContagemDiaria, 'data_contagem' | 'data_hora_contagem'>,
+): string | null {
+  const d = r.data_contagem != null ? String(r.data_contagem).slice(0, 10) : ''
+  if (/^\d{4}-\d{2}-\d{2}$/.test(d)) return d
+  const t = r.data_hora_contagem != null ? String(r.data_hora_contagem).slice(0, 10) : ''
+  return /^\d{4}-\d{2}-\d{2}$/.test(t) ? t : null
+}
+
 function nomeConferenteJoinRow(r: Record<string, unknown>): string {
   const c = r.conferentes as { nome?: string } | Array<{ nome?: string }> | null | undefined
   if (!c) return ''
@@ -145,7 +159,7 @@ function conferenteNomeParaDetalhe(r: Record<string, unknown>): string {
 export function agruparContagemDiariaComoPrevia<T extends RowMergeContagemDiaria>(rows: T[]): T[] {
   const grouped = new Map<string, T>()
   for (const row of rows) {
-    const day = row.data_contagem != null ? String(row.data_contagem).slice(0, 10) : ''
+    const day = diaCivilYmdContagemRow(row) ?? ''
     const key = `${day}|${normalizeCodigoInternoCompareKey(String(row.codigo_interno ?? '')).toLowerCase()}|${String(row.descricao ?? '').trim().toLowerCase()}`
     const existing = grouped.get(key)
     const rowRec = row as Record<string, unknown>
@@ -227,7 +241,7 @@ export function contagemDiariaChaveProdutoDia(dataContagemYmd: string, codigo_in
 }
 
 function rowKeyCodigoBase(r: RowMergeContagemDiaria): string {
-  const day = r.data_contagem != null ? String(r.data_contagem).slice(0, 10) : ''
+  const day = diaCivilYmdContagemRow(r) ?? ''
   return contagemDiariaChaveProdutoDia(day, String(r.codigo_interno ?? ''), String(r.descricao ?? ''))
 }
 
